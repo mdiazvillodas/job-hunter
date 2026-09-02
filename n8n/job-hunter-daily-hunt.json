@@ -1,0 +1,182 @@
+{
+  "id": "jobhunterdaily01",
+  "name": "Job Hunter — Daily Hunt",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "0 8 * * *" } ] } },
+      "id": "sched-0001",
+      "name": "Schedule (daily 08:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 120]
+    },
+    {
+      "parameters": {},
+      "id": "manual-001",
+      "name": "Manual test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "response": { "response": { "fullResponse": true, "neverError": true } } }
+      },
+      "id": "post-run-01",
+      "name": "Start hunt (POST /run)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [ { "leftValue": "={{ $json.statusCode }}", "rightValue": 202, "operator": { "type": "number", "operation": "equals" } } ]
+        }
+      },
+      "id": "if-202-001",
+      "name": "Started? (202)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [480, 220]
+    },
+    {
+      "parameters": { "amount": 30, "unit": "seconds" },
+      "id": "wait-30-01",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [720, 120]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://host.docker.internal:8787/run/{{ $('Start hunt (POST /run)').item.json.body.runId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "response": { "response": { "fullResponse": true, "neverError": true } } }
+      },
+      "id": "get-run-01",
+      "name": "Poll status (GET /run/:id)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 120]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [ { "leftValue": "={{ $json.body.status }}", "rightValue": "success", "operator": { "type": "string", "operation": "equals" } } ]
+        }
+      },
+      "id": "if-succ-01",
+      "name": "success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1200, 120]
+    },
+    {
+      "parameters": {},
+      "id": "noop-succ-1",
+      "name": "SUCCESS",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1440, 40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [ { "leftValue": "={{ $json.body.status }}", "rightValue": "failed", "operator": { "type": "string", "operation": "equals" } } ]
+        }
+      },
+      "id": "if-fail-01",
+      "name": "failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": { "errorMessage": "=Hunt failed (runId={{ $('Start hunt (POST /run)').item.json.body.runId }}, exitCode={{ $json.body.exitCode }})" },
+      "id": "err-fail-01",
+      "name": "HUNT FAILED",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1680, 140]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [ { "leftValue": "={{ $json.body.stale }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } } ]
+        }
+      },
+      "id": "if-stale-1",
+      "name": "stale/timeout?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1680, 300]
+    },
+    {
+      "parameters": { "errorMessage": "=Hunt polling timed out / stale (runId={{ $('Start hunt (POST /run)').item.json.body.runId }})" },
+      "id": "err-stale-1",
+      "name": "TIMEOUT / STALE",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1920, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [ { "leftValue": "={{ $json.statusCode }}", "rightValue": 409, "operator": { "type": "number", "operation": "equals" } } ]
+        }
+      },
+      "id": "if-409-001",
+      "name": "Already running? (409)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [720, 380]
+    },
+    {
+      "parameters": {},
+      "id": "noop-409-1",
+      "name": "ALREADY RUNNING (skip)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [960, 320]
+    },
+    {
+      "parameters": { "errorMessage": "=Trigger error (statusCode={{ $json.statusCode }}) — service down or unauthorized" },
+      "id": "err-trig-01",
+      "name": "TRIGGER ERROR",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [960, 460]
+    }
+  ],
+  "connections": {
+    "Schedule (daily 08:00)": { "main": [ [ { "node": "Start hunt (POST /run)", "type": "main", "index": 0 } ] ] },
+    "Manual test": { "main": [ [ { "node": "Start hunt (POST /run)", "type": "main", "index": 0 } ] ] },
+    "Start hunt (POST /run)": { "main": [ [ { "node": "Started? (202)", "type": "main", "index": 0 } ] ] },
+    "Started? (202)": { "main": [ [ { "node": "Wait 30s", "type": "main", "index": 0 } ], [ { "node": "Already running? (409)", "type": "main", "index": 0 } ] ] },
+    "Wait 30s": { "main": [ [ { "node": "Poll status (GET /run/:id)", "type": "main", "index": 0 } ] ] },
+    "Poll status (GET /run/:id)": { "main": [ [ { "node": "success?", "type": "main", "index": 0 } ] ] },
+    "success?": { "main": [ [ { "node": "SUCCESS", "type": "main", "index": 0 } ], [ { "node": "failed?", "type": "main", "index": 0 } ] ] },
+    "failed?": { "main": [ [ { "node": "HUNT FAILED", "type": "main", "index": 0 } ], [ { "node": "stale/timeout?", "type": "main", "index": 0 } ] ] },
+    "stale/timeout?": { "main": [ [ { "node": "TIMEOUT / STALE", "type": "main", "index": 0 } ], [ { "node": "Wait 30s", "type": "main", "index": 0 } ] ] },
+    "Already running? (409)": { "main": [ [ { "node": "ALREADY RUNNING (skip)", "type": "main", "index": 0 } ], [ { "node": "TRIGGER ERROR", "type": "main", "index": 0 } ] ] }
+  }
+}

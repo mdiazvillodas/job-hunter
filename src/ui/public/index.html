@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Hunter</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">Job&nbsp;Hunter</div>
+      <input id="globalSearch" class="global-search" type="search" placeholder="Buscar título, empresa, ubicación…" />
+      <label class="sort">
+        Orden
+        <select id="sortSelect">
+          <option value="overall">Recomendadas / General</option>
+          <option value="newest">Más nuevas</option>
+          <option value="oldest">Más viejas</option>
+          <option value="title">Título</option>
+          <option value="company">Empresa</option>
+        </select>
+      </label>
+      <div class="mariano-linkedin">
+        <a class="ml-link" href="https://www.linkedin.com/in/mdiazvillodas/" target="_blank" rel="noopener">LinkedIn de Mariano ↗</a>
+        <button id="copyLinkedinBtn" class="btn ghost small" type="button">Copiar enlace</button>
+      </div>
+      <button id="diagBtn" class="btn ghost" type="button">Diagnóstico</button>
+    </header>
+
+    <main class="layout" id="mainLayout">
+      <!-- SIDEBAR -->
+      <aside class="sidebar" id="sidebar">
+        <section class="filters">
+          <div class="filter-group status-filter" id="statusFilter"></div>
+
+          <div class="filter-row">
+            <label>Decisión IA
+              <select id="aiDecisionFilter">
+                <option value="all">Todas</option>
+                <option value="YES">SÍ</option>
+                <option value="MAYBE">QUIZÁS</option>
+                <option value="NO">NO</option>
+              </select>
+            </label>
+            <label>Easy Apply
+              <select id="easyApplyFilter">
+                <option value="all">Todas</option>
+                <option value="yes">Easy Apply</option>
+                <option value="no">Sin Easy Apply</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="filter-row">
+            <label>Puntaje
+              <select id="scoreFilter">
+                <option value="0">Todos</option>
+                <option value="60">60+</option>
+                <option value="70">70+</option>
+                <option value="80">80+</option>
+              </select>
+            </label>
+            <label>Búsqueda
+              <select id="queryFilter"><option value="">Todas las búsquedas</option></select>
+            </label>
+          </div>
+
+          <div class="filter-row">
+            <label class="grow">Empresa
+              <input id="companyFilter" type="search" placeholder="Filtrar por empresa…" />
+            </label>
+          </div>
+
+          <div class="filter-group">
+            <div class="filter-label">Familias de rol</div>
+            <div id="familyFilter" class="chips"></div>
+          </div>
+        </section>
+
+        <div class="list-meta"><span id="listCount">0</span> ofertas</div>
+        <ul class="job-list" id="jobList"></ul>
+      </aside>
+
+      <!-- DETAIL -->
+      <section class="detail" id="detail">
+        <div class="empty" id="detailEmpty">
+          <p>Seleccioná una oferta para ver el detalle.</p>
+        </div>
+        <article class="detail-content" id="detailContent" hidden></article>
+      </section>
+    </main>
+
+    <!-- DISCARD MODAL -->
+    <div class="modal-backdrop" id="discardModal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="discardTitle">
+        <h3 id="discardTitle">¿Por qué descartás esta oferta?</h3>
+        <div id="discardReasons" class="reason-grid"></div>
+        <label class="comment-label">Comentario opcional
+          <textarea id="discardComment" rows="3" placeholder="Motivo libre…"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="btn ghost" id="discardCancel" type="button">Cancelar</button>
+          <button class="btn danger" id="discardConfirm" type="button">Descartar oferta</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIAGNOSTICS PANEL -->
+    <div class="modal-backdrop" id="diagPanel" hidden>
+      <div class="modal wide" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <h3>Diagnóstico</h3>
+          <button class="btn ghost" id="diagClose" type="button">Cerrar</button>
+        </div>
+        <div class="diag-cols">
+          <div>
+            <h4>Preferencias aprendidas</h4>
+            <div id="learnedPrefs" class="diag-body"></div>
+          </div>
+          <div>
+            <h4>Calibración IA vs usuario</h4>
+            <div id="calibration" class="diag-body"></div>
+          </div>
+        </div>
+        <p class="muted small">Solo lectura. No modifica preferencias, scoring ni IA.</p>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="/jobListLogic.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

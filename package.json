@@ -1,0 +1,26 @@
+{
+  "name": "job-hunter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "hunt": "node src/hunt.js",
+    "trigger": "node src/trigger/server.js",
+    "collect:linkedin": "node src/collect-linkedin-jobs.js",
+    "analyze:linkedin": "node src/analyze-linkedin-jobs.js",
+    "feedback:test": "node src/feedback-test.js",
+    "test:feedback": "node src/tests/feedback.test.js",
+    "ui": "node src/ui/server.js",
+    "test:ui": "node src/tests/ui.test.js",
+    "test:pipeline": "node src/tests/pipeline.test.js",
+    "test:trigger": "node src/tests/trigger.test.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

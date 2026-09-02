@@ -1,0 +1,44 @@
+# ============================================================================
+# Job Hunter — .gitignore
+# Excluye datos personales, secretos y artefactos locales del versionado.
+# ============================================================================
+
+# --- dependencias / build ---
+node_modules/
+
+# --- sesión de navegador / cookies de LinkedIn (NUNCA versionar) ---
+browser-profile/
+
+# --- logs de runs y audit trail local ---
+runs/
+
+# --- datos generados: ofertas reales + feedback/decisiones personales ---
+src/data/jobs/*.json
+src/data/hunt.lock
+
+# --- perfiles personales (CV, contexto, preferencias) ---
+src/ai/marianoProfile.json
+src/ai/marianoMatchingProfile.json
+src/ai/marianoCareerContext.json
+
+# --- secretos / entorno ---
+.env
+.env.*
+!.env.example
+
+# --- logs y temporales ---
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+.DS_Store
+Thumbs.db
+scratchpad/
+
+# ============================================================================
+# Se PERMITEN explícitamente (versionables) archivos como:
+#   .env.example
+#   src/data/jobs/.gitkeep      (conserva la carpeta vacía en el clon)
+#   src/ai/*.example.json       (plantillas de perfil sin datos reales)
+# ============================================================================
