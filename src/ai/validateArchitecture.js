@@ -13,10 +13,13 @@ const {
   getMarianoProfile,
   getMarianoMatchingProfile,
   getMarianoCareerContext,
+  ConfigurationRequiredError,
+  PROFILE_FILES,
 } = require('./marianoProfile');
 const { analyzeJob, buildSystemPrompt, isCareerContext } = require('./jobAnalyzer');
+const { PROFILE_DIR } = require('../runtime');
 
-const CAREER_CONTEXT_PATH = path.join(__dirname, 'marianoCareerContext.json');
+const CAREER_CONTEXT_PATH = path.join(PROFILE_DIR, PROFILE_FILES.careerContext);
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -88,9 +91,10 @@ async function main() {
   let context = null;
   try {
     context = getMarianoCareerContext();
-    check('marianoCareerContext.json es JSON valido y cargable', !!context);
+    check('careerContext.json es JSON valido y cargable', !!context);
   } catch (e) {
-    check('marianoCareerContext.json es JSON valido y cargable', false, e.message);
+    if (e instanceof ConfigurationRequiredError) throw e;
+    check('careerContext.json es JSON valido y cargable', false, e.message);
   }
 
   // 2) Contiene las secciones principales
@@ -212,4 +216,11 @@ async function main() {
   process.exitCode = failures === 0 ? 0 : 1;
 }
 
-main();
+main().catch((error) => {
+  if (error && error.code === 'CONFIGURATION_REQUIRED') {
+    console.error(error.message);
+  } else {
+    console.error(error);
+  }
+  process.exitCode = 1;
+});

@@ -17,7 +17,7 @@ const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UI_DIR = __dirname;
 
-const repository = createLocalRepository(); // dir por defecto: src/data/jobs
+const repository = createLocalRepository();
 const svc = createJobService(repository);
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };

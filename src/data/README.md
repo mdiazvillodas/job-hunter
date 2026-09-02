@@ -74,7 +74,7 @@ ai_underestimated_professional_fit · ai_correct · unknown` (conservador: `unkn
 const { createLocalRepository } = require('./src/data/jobRepository');
 const { createJobService } = require('./src/services/jobService');
 
-const svc = createJobService(createLocalRepository());       // dir por defecto: src/data/jobs
+const svc = createJobService(createLocalRepository());       // default: JOB_HUNTER_DATA_DIR/jobs
 svc.createJob(job);                                          // job con aiAnalysis del analyzer
 svc.markAsRead(jobId);
 svc.markAsInterested(jobId, { comment: '...' });

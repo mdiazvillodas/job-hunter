@@ -1,8 +1,9 @@
 const { chromium } = require('playwright');
+const { BROWSER_PROFILE_DIR } = require('./src/runtime');
 
 (async () => {
   const context = await chromium.launchPersistentContext(
-    './browser-profile',
+    BROWSER_PROFILE_DIR,
     {
       headless: false,
       channel: 'chromium',

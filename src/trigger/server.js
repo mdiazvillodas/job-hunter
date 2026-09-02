@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const { inspectLock } = require('../domain/huntLock');
+const { RUNS_DIR } = require('../runtime');
 
 const VERSION = '1';
 const SERVICE = 'job-hunter-trigger';
@@ -60,7 +61,7 @@ function sendJson(res, status, obj) {
 function createServer(options = {}) {
   const token = options.token !== undefined ? options.token : process.env.HUNT_TRIGGER_TOKEN;
   const projectRoot = options.projectRoot || PROJECT_ROOT;
-  const runsDir = options.runsDir || path.join(projectRoot, 'runs');
+  const runsDir = options.runsDir || RUNS_DIR;
   const spawnHunt = options.spawnHunt || (() => defaultSpawnHunt(projectRoot));
   const lockInspector = options.inspectLock || (() => inspectLock());
   const log = options.log || ((m) => console.log('[trigger] ' + m));

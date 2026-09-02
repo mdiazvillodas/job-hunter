@@ -96,7 +96,7 @@ function printDebugReport(s) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
-  // Lock compartido: impide dos hunts simultaneos (manual + trigger) sobre ./browser-profile.
+  // Lock compartido: impide dos hunts simultaneos (manual + trigger) sobre el perfil persistente.
   try {
     acquireLock();
   } catch (e) {
@@ -118,7 +118,7 @@ async function main() {
 }
 
 async function runHunt(options) {
-  const repository = createLocalRepository(); // src/data/jobs
+  const repository = createLocalRepository();
   const jobService = createJobService(repository);
 
   const activeQueries = getActiveSearchQueries();

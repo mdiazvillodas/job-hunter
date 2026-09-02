@@ -1,7 +1,7 @@
 'use strict';
 
 // Lock COMPARTIDO del hunt (Milestone 10B). Lo usan tanto `npm run hunt` (manual) como el
-// trigger service, para que NUNCA corran dos hunts a la vez sobre ./browser-profile.
+// trigger service, para que NUNCA corran dos hunts a la vez sobre el perfil persistente.
 //
 // Estrategia conservadora de stale-lock:
 //   - PID vivo            -> lock valido (busy).
@@ -11,9 +11,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { DATA_DIR } = require('../runtime');
 
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const DEFAULT_LOCK_PATH = path.join(PROJECT_ROOT, 'src', 'data', 'hunt.lock');
+const DEFAULT_LOCK_PATH = path.join(DATA_DIR, 'hunt.lock');
 
 // null = no se puede determinar.
 function isPidAlive(pid) {

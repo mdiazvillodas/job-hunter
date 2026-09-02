@@ -6,6 +6,9 @@
 # --- dependencias / build ---
 node_modules/
 
+# --- raiz unica de datos locales (secretos, perfiles y datos reales) ---
+runtime-data/
+
 # --- sesión de navegador / cookies de LinkedIn (NUNCA versionar) ---
 browser-profile/
 

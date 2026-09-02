@@ -6,11 +6,33 @@
 // Todo el contenido esta respaldado por el documento profesional ("Resumen Profesional / CV").
 // Este modulo NO llama a OpenAI: solo expone el perfil como objeto para que otras capas lo usen.
 
-const profile = require('./marianoProfile.json');
-const matchingProfile = require('./marianoMatchingProfile.json');
-// Fuente maestra de contexto profesional (creada manualmente, AUTORIZADA).
-// Es la verdad conceptual DETRAS del matching profile; NO se envia completa a OpenAI.
-const careerContext = require('./marianoCareerContext.json');
+const fs = require('fs');
+const path = require('path');
+const { PROFILE_DIR } = require('../runtime');
+
+const PROFILE_FILES = Object.freeze({
+  profile: 'profile.json',
+  matchingProfile: 'matchingProfile.json',
+  careerContext: 'careerContext.json',
+});
+
+class ConfigurationRequiredError extends Error {
+  constructor(fileName) {
+    super(`Job Hunter todavia no esta configurado. Falta ${fileName}.`);
+    this.name = 'ConfigurationRequiredError';
+    this.code = 'CONFIGURATION_REQUIRED';
+  }
+}
+
+function loadProfile(fileName) {
+  const filePath = path.join(PROFILE_DIR, fileName);
+  if (!fs.existsSync(filePath)) throw new ConfigurationRequiredError(fileName);
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`La configuracion ${fileName} no es valida: ${error.message}`);
+  }
+}
 
 /**
  * Devuelve el perfil completo de Mariano como objeto.
@@ -18,6 +40,7 @@ const careerContext = require('./marianoCareerContext.json');
  * @returns {object} perfil completo
  */
 function getMarianoProfile() {
+  const profile = loadProfile(PROFILE_FILES.profile);
   return JSON.parse(JSON.stringify(profile));
 }
 
@@ -28,6 +51,7 @@ function getMarianoProfile() {
  * @returns {object} matching profile
  */
 function getMarianoMatchingProfile() {
+  const matchingProfile = loadProfile(PROFILE_FILES.matchingProfile);
   return JSON.parse(JSON.stringify(matchingProfile));
 }
 
@@ -38,6 +62,7 @@ function getMarianoMatchingProfile() {
  * @returns {object} career context
  */
 function getMarianoCareerContext() {
+  const careerContext = loadProfile(PROFILE_FILES.careerContext);
   return JSON.parse(JSON.stringify(careerContext));
 }
 
@@ -46,6 +71,7 @@ function getMarianoCareerContext() {
  * @returns {object}
  */
 function getMarianoProfileSummary() {
+  const profile = loadProfile(PROFILE_FILES.profile);
   return {
     person: profile.meta.person,
     headline: profile.positioning.headline,
@@ -62,4 +88,6 @@ module.exports = {
   getMarianoMatchingProfile,
   getMarianoCareerContext,
   getMarianoProfileSummary,
+  ConfigurationRequiredError,
+  PROFILE_FILES,
 };

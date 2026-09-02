@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { JOBS_DIR } = require('../runtime');
 
 function safeJobFileName(jobId) {
   // jobIds de LinkedIn son numericos, pero saneamos por robustez.
@@ -21,7 +22,7 @@ function safeJobFileName(jobId) {
 }
 
 function createLocalRepository(options = {}) {
-  const dir = options.dir || path.join(__dirname, 'jobs');
+  const dir = options.dir || JOBS_DIR;
 
   function ensureDir() {
     fs.mkdirSync(dir, { recursive: true });

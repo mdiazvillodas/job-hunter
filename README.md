@@ -1,5 +1,17 @@
 # Job Hunter
 
+## Datos locales y configuracion
+
+Los datos privados se guardan bajo `JOB_HUNTER_DATA_DIR`. Por defecto se usa
+`runtime-data/` dentro del proyecto; las rutas relativas configuradas se resuelven tambien
+desde la raiz del proyecto. Se puede copiar `.env.example` como `.env` para definir esta
+ruta y otras variables locales sin versionar secretos.
+
+Un clon limpio no contiene perfiles reales. Antes de ejecutar un hunt deben existir
+`profile/profile.json`, `profile/matchingProfile.json` y `profile/careerContext.json`
+dentro de `JOB_HUNTER_DATA_DIR`; si faltan, la aplicacion informa de forma controlada que
+Job Hunter todavia no esta configurado.
+
 Aplicacion local para automatizar, por etapas, la busqueda laboral. Implementado con Playwright sobre un perfil de Chromium persistente.
 
 ## LinkedIn Collector
@@ -182,7 +194,7 @@ npm run test:ui         # lógica de lista + integración con el service
 npm run test:feedback   # Milestone 7 (garantiza que la UI no lo rompe)
 ```
 
-Los cambios de estado/feedback se persisten en `src/data/jobs/` y sobreviven al recargar.
+Los cambios de estado/feedback se persisten en `JOB_HUNTER_DATA_DIR/jobs/` y sobreviven al recargar.
 
 ## Pipeline end-to-end — `npm run hunt` (Milestone 9)
 
@@ -249,7 +261,7 @@ Polling en n8n: **HTTP Request POST /run → Wait → GET /run/:runId → IF sta
 `POST /run` y recibe `202` en ~80ms, y consulta el estado con requests cortas.
 
 - Comando **fijo** (`node src/hunt.js`), sin args del request → sin injection. `runId` validado (`^run_[A-Za-z0-9]+$`, anclado en `runs/`) → **sin path traversal**.
-- **Lock compartido** (`src/data/hunt.lock`): dos hunts nunca corren juntos (manual + trigger). `OPENAI_API_KEY`/`browser-profile` nunca cruzan HTTP. Auditoría progresiva en `runs/<runId>.json`.
+- **Lock compartido** (`JOB_HUNTER_DATA_DIR/hunt.lock`): dos hunts nunca corren juntos (manual + trigger). `OPENAI_API_KEY`/`browser-profile` nunca cruzan HTTP. Auditoría progresiva en `JOB_HUNTER_DATA_DIR/runs/<runId>.json`.
 - **`ANALYZE_LIMIT` semántica** (fijada en 10C): `0` = **no analizar** (solo discovery); `N>0` = máximo N jobs nuevos a OpenAI. (Distinto de `MAX_*_PER_SEARCH`, donde `0`=sin límite.)
 
 **Firewall (Windows, opcional — acotar el puerto a la red de Docker):** en este host Docker Desktop
@@ -299,6 +311,6 @@ al **iniciar sesión** en la sesión interactiva (necesario para Chromium visibl
 schtasks /Create /TN JobHunterTrigger /SC ONLOGON /IT /RL LIMITED /TR "C:\Users\maria\job-hunter\scripts\start-trigger.cmd"
 ```
 
-**Recovery / reinicio del trigger:** el lock (`src/data/hunt.lock`) y los `runs/<runId>.json` sobreviven;
+**Recovery / reinicio del trigger:** el lock (`JOB_HUNTER_DATA_DIR/hunt.lock`) y los archivos de `JOB_HUNTER_DATA_DIR/runs/` sobreviven;
 tras reiniciar el trigger no se inicia nada solo, y un run interrumpido queda `stale:true` (limitación
 de 10C — Node no reconecta el stdout de un hijo previo).

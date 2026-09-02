@@ -14,13 +14,14 @@
     "test:ui": "node src/tests/ui.test.js",
     "test:pipeline": "node src/tests/pipeline.test.js",
     "test:trigger": "node src/tests/trigger.test.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test:distribution": "node src/tests/distribution.test.js",
+    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "devDependencies": {
+  "dependencies": {
     "playwright": "^1.62.1"
   }
 }

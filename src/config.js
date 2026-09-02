@@ -1,6 +1,5 @@
 const path = require('path');
-
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+const { BROWSER_PROFILE_DIR } = require('./runtime');
 
 function readPositiveIntegerEnv(name, fallback) {
   const value = Number.parseInt(process.env[name], 10);
@@ -123,5 +122,5 @@ module.exports = {
   // (Distinto de MAX_*_PER_SEARCH, donde 0 = sin limite: aqui 0 = ninguno, por seguridad de gasto.)
   ANALYZE_LIMIT: readNonNegativeIntegerEnv('ANALYZE_LIMIT', 50),
 
-  BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile'),
+  BROWSER_PROFILE_DIR,
 };

@@ -1,0 +1,10 @@
+{
+  "name": "Example User",
+  "linkedinPersonalUrl": "https://www.linkedin.com/in/example-user/",
+  "homeLocation": "Example City",
+  "searchLocations": ["Example City"],
+  "workplaceTypes": ["hybrid", "remote"],
+  "targetRoles": ["Operations Manager"],
+  "cvSource": "profile.example.json",
+  "workPreferences": ["Collaborative teams"]
+}

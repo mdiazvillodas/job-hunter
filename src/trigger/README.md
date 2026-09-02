@@ -82,14 +82,14 @@ Configurá el **timeout del nodo HTTP Request** normal (segundos), no minutos.
 
 ## Concurrencia (lock compartido)
 
-`src/data/hunt.lock` (`{pid, startedAt, hostname}`) se adquiere al inicio de `hunt.js` y se libera en
+`JOB_HUNTER_DATA_DIR/hunt.lock` (`{pid, startedAt, hostname}`) se adquiere al inicio de `hunt.js` y se libera en
 `finally`. Lo respetan **`npm run hunt` manual y el trigger**. Nunca dos Chromium sobre el mismo
 `browser-profile`. PID vivo → `409`/rechazo; PID muerto → stale recuperable; corrupto/indeterminado
 → conservador (ocupado).
 
 ## Recovery / reinicio del trigger
 
-El estado en memoria se pierde si el trigger se reinicia, pero `runs/<runId>.json` persiste. Tras un
+El estado en memoria se pierde si el trigger se reinicia, pero `JOB_HUNTER_DATA_DIR/runs/<runId>.json` persiste. Tras un
 reinicio, el servicio **no** inicia nada solo; el lock impide duplicar; `GET /run/:runId` lee el
 archivo y marca `stale:true` si había quedado en `running/starting` sin proceso vivo. **Limitación:**
 Node no puede reconectar stdout/stderr de un hijo previo, así que un run interrumpido no pasa solo a
@@ -97,9 +97,9 @@ Node no puede reconectar stdout/stderr de un hijo previo, así que un run interr
 
 ## Logs / seguridad
 
-- Auditoría en `runs/<runId>.json` (progresivo). Sin secretos. `runs/` está en `.gitignore`.
+- Auditoría en `JOB_HUNTER_DATA_DIR/runs/<runId>.json` (progresivo). Sin secretos. La raíz de runtime está en `.gitignore`.
 - Comando fijo, sin args del request → sin injection. Token bearer (timing-safe). `runId` validado
-  contra `^run_[A-Za-z0-9]+$` y anclado dentro de `runs/` → **sin path traversal**. Endpoint no público
+  contra `^run_[A-Za-z0-9]+$` y anclado dentro del directorio de runs → **sin path traversal**. Endpoint no público
   (bind + firewall). `browser-profile` nunca cruza HTTP.
 
 ## Firewall / Windows startup
