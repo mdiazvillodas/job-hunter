@@ -6,23 +6,14 @@
 //
 // Reutiliza la arquitectura existente. La UI (npm run ui) ve automaticamente lo persistido.
 
-const {
-  BROWSER_PROFILE_DIR,
-  LINKEDIN_FILTERS,
-  OPENAI_MODEL,
-  ANALYZE_LIMIT,
-  MAX_PAGES_PER_SEARCH,
-  MAX_RESULTS_PER_SEARCH,
-  getActiveSearchQueries,
-} = require('./config');
-const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
+const config = require('./config');
 const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectMultipleSearches } = require('./linkedin/multiSearch');
 const { assertAuthenticatedSession } = require('./linkedin/session');
 const { createLocalRepository } = require('./data/jobRepository');
 const { createJobService } = require('./services/jobService');
-const { getMarianoMatchingProfile } = require('./ai/marianoProfile');
+const { getMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob } = require('./ai/jobAnalyzer');
 const { runPipeline } = require('./pipeline/pipeline');
 const { acquireLock, releaseLock } = require('./domain/huntLock');
@@ -34,7 +25,7 @@ function parseArgs(argv) {
 // Mock transport para --dry-run (no llama a OpenAI). Analisis valido segun schema.
 function mockTransport({ messages }) {
   return Promise.resolve({
-    model: (process.env.OPENAI_MODEL || OPENAI_MODEL) + ' (MOCK)',
+    model: (process.env.OPENAI_MODEL || config.OPENAI_MODEL) + ' (MOCK)',
     usage: { prompt_tokens: Math.round(messages.reduce((a, m) => a + m.content.length, 0) / 4), completion_tokens: 200, total_tokens: 0 },
     choices: [{ message: { content: JSON.stringify({
       decision: 'MAYBE', overallMatchScore: 68, professionalFitScore: 72, interestFitScore: 60, cvFitScore: 78,
@@ -95,6 +86,7 @@ function printDebugReport(s) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  const executionConfig = getExecutionConfig();
 
   // Lock compartido: impide dos hunts simultaneos (manual + trigger) sobre el perfil persistente.
   try {
@@ -111,26 +103,39 @@ async function main() {
   }
 
   try {
-    await runHunt(options);
+    await runHunt(options, executionConfig);
   } finally {
     releaseLock();
   }
 }
 
-async function runHunt(options) {
+function getExecutionConfig() {
+  return {
+    BROWSER_PROFILE_DIR: config.BROWSER_PROFILE_DIR,
+    LINKEDIN_FILTERS: config.LINKEDIN_FILTERS,
+    ANALYZE_LIMIT: config.ANALYZE_LIMIT,
+    CANDIDATE_NAME: config.CANDIDATE_NAME,
+    MAX_PAGES_PER_SEARCH: config.MAX_PAGES_PER_SEARCH,
+    MAX_RESULTS_PER_SEARCH: config.MAX_RESULTS_PER_SEARCH,
+    activeQueries: config.getActiveSearchQueries(),
+  };
+}
+
+async function runHunt(options, executionConfig = getExecutionConfig()) {
+  const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
+  const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, CANDIDATE_NAME, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH, activeQueries } = executionConfig;
   const repository = createLocalRepository();
   const jobService = createJobService(repository);
 
-  const activeQueries = getActiveSearchQueries();
-  const matchingProfile = getMarianoMatchingProfile();
+  const matchingProfile = getMatchingProfile();
 
   // Decidir el modo de analisis.
   let analyze = null;
   if (options.dryRun) {
-    analyze = (job) => analyzeJob(matchingProfile, job, { transport: mockTransport });
+    analyze = (job) => analyzeJob(matchingProfile, job, { transport: mockTransport, candidateName: CANDIDATE_NAME });
     console.error('MODO --dry-run: no se llamara a OpenAI (mock).');
   } else if (process.env.OPENAI_API_KEY) {
-    analyze = (job) => analyzeJob(matchingProfile, job, {}); // REAL
+    analyze = (job) => analyzeJob(matchingProfile, job, { candidateName: CANDIDATE_NAME }); // REAL
   } else {
     console.error('AVISO: OPENAI_API_KEY ausente. Se hara discovery + detail + persistencia,');
     console.error('       pero el analisis de OpenAI queda pendiente (jobs en analysisStatus=pending).');
@@ -196,4 +201,6 @@ async function runHunt(options) {
   console.log(JSON.stringify(summary, null, 2));
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { main, runHunt, getExecutionConfig };

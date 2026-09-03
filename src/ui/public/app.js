@@ -10,6 +10,7 @@ const state = {
   filters: { status: 'inbox', aiDecision: 'all', easyApply: 'all', minScore: 0, families: [], company: '', matchedQuery: '', search: '' },
   sort: 'overall',
   selectedId: null,
+  userConfig: null,
 };
 
 /* ---------- utils ---------- */
@@ -39,16 +40,15 @@ const REASON_LABELS = { role_type: 'Tipo de rol', too_commercial: 'Demasiado com
 function lbl(map, key, fb) { if (key != null && map[key]) return map[key]; return fb !== undefined ? fb : (key == null ? '' : String(key)); }
 function reasonLabel(k) { return lbl(REASON_LABELS, k, titleCase(String(k || '').replace(/_/g, ' '))); }
 
-/* ---------- LinkedIn de Mariano (URL pública, no es secreto) ---------- */
-const MARIANO_LINKEDIN = 'https://www.linkedin.com/in/mdiazvillodas/';
-async function copyMarianoLink(btn) {
+/* ---------- LinkedIn del usuario (configuracion publica local) ---------- */
+async function copyUserLinkedinLink(btn) {
   const original = btn.dataset.label || btn.textContent;
   btn.dataset.label = original;
   let ok = false;
   // 1) Preferimos el Clipboard API (contexto seguro + gesto del usuario).
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(MARIANO_LINKEDIN);
+      await navigator.clipboard.writeText(state.userConfig.linkedinUrl);
       ok = true;
     }
   } catch (e) {
@@ -58,7 +58,7 @@ async function copyMarianoLink(btn) {
   if (!ok) {
     try {
       const ta = document.createElement('textarea');
-      ta.value = MARIANO_LINKEDIN;
+      ta.value = state.userConfig.linkedinUrl;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
       document.body.appendChild(ta);
@@ -111,6 +111,20 @@ async function loadAll() {
     renderList();
   } catch (e) {
     toast('No se pudieron cargar las ofertas: ' + e.message, true);
+  }
+}
+
+async function loadUserConfig() {
+  try {
+    state.userConfig = await api('/api/user-config');
+    const link = el('userLinkedinLink');
+    const copyBtn = el('copyLinkedinBtn');
+    link.href = state.userConfig.linkedinUrl;
+    link.textContent = `LinkedIn de ${state.userConfig.name} ↗`;
+    link.hidden = false;
+    copyBtn.hidden = false;
+  } catch (_) {
+    // Un clon sin configurar sigue mostrando la UI; simplemente oculta el enlace personal.
   }
 }
 
@@ -395,12 +409,13 @@ function init() {
   el('discardModal').addEventListener('click', (e) => { if (e.target.id === 'discardModal') closeDiscardModal(); });
 
   const copyBtn = el('copyLinkedinBtn');
-  if (copyBtn) copyBtn.addEventListener('click', () => copyMarianoLink(copyBtn));
+  if (copyBtn) copyBtn.addEventListener('click', () => copyUserLinkedinLink(copyBtn));
 
   el('diagBtn').addEventListener('click', openDiagnostics);
   el('diagClose').addEventListener('click', () => { el('diagPanel').hidden = true; });
   el('diagPanel').addEventListener('click', (e) => { if (e.target.id === 'diagPanel') el('diagPanel').hidden = true; });
 
   loadAll();
+  loadUserConfig();
 }
 document.addEventListener('DOMContentLoaded', init);

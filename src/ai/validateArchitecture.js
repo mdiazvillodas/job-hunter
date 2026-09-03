@@ -10,9 +10,9 @@ const path = require('path');
 const crypto = require('crypto');
 
 const {
-  getMarianoProfile,
-  getMarianoMatchingProfile,
-  getMarianoCareerContext,
+  getProfile,
+  getMatchingProfile,
+  getCareerContext,
   ConfigurationRequiredError,
   PROFILE_FILES,
 } = require('./marianoProfile');
@@ -90,7 +90,7 @@ async function main() {
   check('marianoCareerContext.json existe', exists);
   let context = null;
   try {
-    context = getMarianoCareerContext();
+    context = getCareerContext();
     check('careerContext.json es JSON valido y cargable', !!context);
   } catch (e) {
     if (e instanceof ConfigurationRequiredError) throw e;
@@ -119,21 +119,21 @@ async function main() {
 
   // 3) No se modifica durante la ejecucion del analyzer
   const hashBefore = sha256(CAREER_CONTEXT_PATH);
-  const matching = getMarianoMatchingProfile();
+  const matching = getMatchingProfile();
   await analyzeJob(matching, SAMPLE_JOB, { transport: mockTransport });
   const hashAfter = sha256(CAREER_CONTEXT_PATH);
   check('career context NO se modifica durante la ejecucion', hashBefore === hashAfter);
 
   // 4) Independencia / no mutabilidad
-  const c1 = getMarianoCareerContext();
+  const c1 = getCareerContext();
   c1.professionalIdentity.positioning = 'MUTATED';
-  check('getMarianoCareerContext() devuelve copia no mutable', getMarianoCareerContext().professionalIdentity.positioning !== 'MUTATED');
+  check('getCareerContext() devuelve copia no mutable', getCareerContext().professionalIdentity.positioning !== 'MUTATED');
 
-  const m1 = getMarianoMatchingProfile();
+  const m1 = getMatchingProfile();
   m1.positioning.headline = 'MUTATED';
-  check('getMarianoMatchingProfile() sigue independiente y no mutable', getMarianoMatchingProfile().positioning.headline !== 'MUTATED');
+  check('getMatchingProfile() sigue independiente y no mutable', getMatchingProfile().positioning.headline !== 'MUTATED');
 
-  check('career context y matching profile son objetos distintos', getMarianoCareerContext() !== getMarianoMatchingProfile());
+  check('career context y matching profile son objetos distintos', getCareerContext() !== getMatchingProfile());
 
   // 5) El analyzer usa el matching profile (y rechaza el career context)
   const okMatching = await analyzeJob(matching, SAMPLE_JOB, { transport: mockTransport })
@@ -141,13 +141,13 @@ async function main() {
     .catch(() => false);
   check('analyzer funciona con el matching profile', okMatching);
 
-  check('isCareerContext detecta el career context', isCareerContext(getMarianoCareerContext()) === true);
-  check('isCareerContext NO marca el matching profile', isCareerContext(getMarianoMatchingProfile()) === false);
-  check('isCareerContext NO marca el full profile', isCareerContext(getMarianoProfile()) === false);
+  check('isCareerContext detecta el career context', isCareerContext(getCareerContext()) === true);
+  check('isCareerContext NO marca el matching profile', isCareerContext(getMatchingProfile()) === false);
+  check('isCareerContext NO marca el full profile', isCareerContext(getProfile()) === false);
 
   let rejected = false;
   try {
-    await analyzeJob(getMarianoCareerContext(), SAMPLE_JOB, { transport: mockTransport });
+    await analyzeJob(getCareerContext(), SAMPLE_JOB, { transport: mockTransport });
   } catch (e) {
     rejected = /career context/i.test(e.message);
   }
@@ -162,7 +162,7 @@ async function main() {
 
   // 7) Cambios A–E aplicados al matching profile (grounded en el career context)
   console.log('\n--- matching profile: cambios A–E ---');
-  const mp = getMarianoMatchingProfile();
+  const mp = getMatchingProfile();
   const flat = JSON.stringify(mp).toLowerCase();
 
   // A — careerPreferences

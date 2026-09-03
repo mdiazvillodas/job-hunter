@@ -5,7 +5,7 @@
 //
 // Uso: node src/ai/compareProfiles.js
 
-const { getMarianoProfile, getMarianoMatchingProfile } = require('./marianoProfile');
+const { getProfile, getMatchingProfile } = require('./marianoProfile');
 
 // Aproximacion habitual para modelos OpenAI: ~4 caracteres por token.
 function approxTokens(str) {
@@ -28,8 +28,8 @@ function topLevelKeys(obj) {
 }
 
 function main() {
-  const full = getMarianoProfile();
-  const matching = getMarianoMatchingProfile();
+  const full = getProfile();
+  const matching = getMatchingProfile();
 
   const fullSize = sizeOf(full);
   const matchingSize = sizeOf(matching);
@@ -54,17 +54,17 @@ function main() {
   console.log('present in matching but not in full:', added.length ? added.join(', ') : '(none)');
 
   console.log('\n=== IMMUTABILITY / INDEPENDENCE ===');
-  const a = getMarianoProfile();
+  const a = getProfile();
   a.positioning.headline = 'MUTATED';
-  const fullIndependent = getMarianoProfile().positioning.headline !== 'MUTATED';
+  const fullIndependent = getProfile().positioning.headline !== 'MUTATED';
 
-  const m = getMarianoMatchingProfile();
+  const m = getMatchingProfile();
   m.positioning.headline = 'MUTATED';
-  const matchingIndependent = getMarianoMatchingProfile().positioning.headline !== 'MUTATED';
+  const matchingIndependent = getMatchingProfile().positioning.headline !== 'MUTATED';
 
-  const crossIndependent = getMarianoProfile() !== getMarianoMatchingProfile();
-  console.log('getMarianoProfile() devuelve copia no mutable:', fullIndependent ? 'OK' : 'FAIL');
-  console.log('getMarianoMatchingProfile() devuelve copia no mutable:', matchingIndependent ? 'OK' : 'FAIL');
+  const crossIndependent = getProfile() !== getMatchingProfile();
+  console.log('getProfile() devuelve copia no mutable:', fullIndependent ? 'OK' : 'FAIL');
+  console.log('getMatchingProfile() devuelve copia no mutable:', matchingIndependent ? 'OK' : 'FAIL');
   console.log('ambas son objetos independientes entre si:', crossIndependent ? 'OK' : 'FAIL');
 
   console.log('\n=== MATCHING PROFILE REQUIRED SECTIONS ===');

@@ -1,5 +1,5 @@
-const path = require('path');
 const { BROWSER_PROFILE_DIR } = require('./runtime');
+const { getUserConfig } = require('./config/userConfig');
 
 function readPositiveIntegerEnv(name, fallback) {
   const value = Number.parseInt(process.env[name], 10);
@@ -14,64 +14,14 @@ function readNonNegativeIntegerEnv(name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-// Busquedas agrupadas por familia. Primera version experimental.
-// Estructura pensada para poder, mas adelante:
-//  - activar/desactivar familias (family.enabled);
-//  - activar/desactivar queries individuales (query.enabled);
-//  - asignar prioridades (family.priority; menor = antes).
-const SEARCH_QUERIES = [
-  {
-    family: 'operations',
-    label: 'Operations',
-    enabled: true,
-    priority: 1,
-    queries: [
-      { query: 'Head of Operations', enabled: true },
-      { query: 'Operations Lead', enabled: true },
-      { query: 'Business Operations', enabled: true },
-      { query: 'Business Operations Lead', enabled: true },
-      { query: 'Operations Manager', enabled: true },
-    ],
-  },
-  {
-    family: 'delivery',
-    label: 'Delivery',
-    enabled: true,
-    priority: 2,
-    queries: [
-      { query: 'Head of Delivery', enabled: true },
-      { query: 'Delivery Lead', enabled: true },
-      { query: 'Delivery Manager', enabled: true },
-    ],
-  },
-  {
-    family: 'strategy',
-    label: 'Strategy / Transformation',
-    enabled: true,
-    priority: 3,
-    queries: [
-      { query: 'Strategy & Operations', enabled: true },
-      { query: 'Business Transformation', enabled: true },
-      { query: 'Digital Transformation', enabled: true },
-    ],
-  },
-  {
-    family: 'product',
-    label: 'Product / Hybrid',
-    enabled: true,
-    priority: 4,
-    queries: [
-      { query: 'Head of Product Operations', enabled: true },
-      { query: 'Product Operations', enabled: true },
-      { query: 'Product Operations Manager', enabled: true },
-    ],
-  },
-];
+function configuredSearch() {
+  return getUserConfig().search;
+}
 
 // Aplana SEARCH_QUERIES a una lista ordenada por prioridad de familia,
 // respetando los flags enabled de familia y de query.
 // Devuelve: [{ query, family, familyLabel, priority }]
-function getActiveSearchQueries(groups = SEARCH_QUERIES) {
+function getActiveSearchQueries(groups = configuredSearch().queryGroups) {
   return groups
     .filter((g) => g.enabled)
     .slice()
@@ -88,17 +38,7 @@ function getActiveSearchQueries(groups = SEARCH_QUERIES) {
     );
 }
 
-module.exports = {
-  LINKEDIN_SEARCH_QUERY: 'Head of Operations',
-
-  // Filtros de la busqueda de prueba. Se aplican por UI (no por parametros de URL asumidos).
-  LINKEDIN_FILTERS: {
-    location: 'Barcelona',
-    employmentType: 'Full-time',
-    datePosted: 'Past week',
-  },
-
-  SEARCH_QUERIES,
+const config = {
   getActiveSearchQueries,
 
   // Limite de JOBS UNICOS por busqueda individual. 0 => sin limite. (Milestone 4)
@@ -124,3 +64,21 @@ module.exports = {
 
   BROWSER_PROFILE_DIR,
 };
+
+Object.defineProperties(config, {
+  CANDIDATE_NAME: { enumerable: true, get: () => getUserConfig().identity.name },
+  USER_LINKEDIN_URL: { enumerable: true, get: () => getUserConfig().identity.linkedinUrl },
+  SEARCH_QUERIES: { enumerable: true, get: () => configuredSearch().queryGroups },
+  LINKEDIN_SEARCH_QUERY: { enumerable: true, get: () => getActiveSearchQueries()[0].query },
+  // El collector actual consume una sola ubicacion: la primera es la primaria.
+  LINKEDIN_FILTERS: {
+    enumerable: true,
+    get: () => ({
+      location: configuredSearch().locations[0],
+      employmentType: 'Full-time',
+      datePosted: 'Past week',
+    }),
+  },
+});
+
+module.exports = config;

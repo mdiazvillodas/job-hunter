@@ -1,12 +1,4 @@
-const {
-  BROWSER_PROFILE_DIR,
-  DETAIL_LIMIT,
-  LINKEDIN_FILTERS,
-  MAX_PAGES_PER_SEARCH,
-  MAX_RESULTS_PER_SEARCH,
-  getActiveSearchQueries,
-} = require('./config');
-const { getInitialPage, launchLinkedInBrowser, waitForBrowserClose } = require('./linkedin/browser');
+const config = require('./config');
 const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectMultipleSearches } = require('./linkedin/multiSearch');
@@ -20,13 +12,18 @@ function parseCliArgs(argv) {
 
 async function main() {
   const options = parseCliArgs(process.argv.slice(2));
+  const BROWSER_PROFILE_DIR = config.BROWSER_PROFILE_DIR;
+  const DETAIL_LIMIT = config.DETAIL_LIMIT;
+  const LINKEDIN_FILTERS = config.LINKEDIN_FILTERS;
+  const MAX_PAGES_PER_SEARCH = config.MAX_PAGES_PER_SEARCH;
+  const MAX_RESULTS_PER_SEARCH = config.MAX_RESULTS_PER_SEARCH;
+  const activeQueries = config.getActiveSearchQueries();
+  const { getInitialPage, launchLinkedInBrowser, waitForBrowserClose } = require('./linkedin/browser');
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   const page = await getInitialPage(context);
 
   try {
     await assertAuthenticatedSession(context, page);
-
-    const activeQueries = getActiveSearchQueries();
 
     const result = await collectMultipleSearches(page, activeQueries, LINKEDIN_FILTERS, {
       ...options,
@@ -71,4 +68,6 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { main };

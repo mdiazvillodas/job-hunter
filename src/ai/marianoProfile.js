@@ -1,6 +1,6 @@
 'use strict';
 
-// Perfil profesional estructurado de Mariano Díaz Villodas, optimizado para job matching.
+// Loader de perfiles del candidato, optimizados para job matching.
 //
 // Fuente unica de la verdad: ./marianoProfile.json
 // Todo el contenido esta respaldado por el documento profesional ("Resumen Profesional / CV").
@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { PROFILE_DIR } = require('../runtime');
+const { ConfigurationRequiredError } = require('../config/configurationError');
 
 const PROFILE_FILES = Object.freeze({
   profile: 'profile.json',
@@ -16,17 +17,9 @@ const PROFILE_FILES = Object.freeze({
   careerContext: 'careerContext.json',
 });
 
-class ConfigurationRequiredError extends Error {
-  constructor(fileName) {
-    super(`Job Hunter todavia no esta configurado. Falta ${fileName}.`);
-    this.name = 'ConfigurationRequiredError';
-    this.code = 'CONFIGURATION_REQUIRED';
-  }
-}
-
 function loadProfile(fileName) {
   const filePath = path.join(PROFILE_DIR, fileName);
-  if (!fs.existsSync(filePath)) throw new ConfigurationRequiredError(fileName);
+  if (!fs.existsSync(filePath)) throw new ConfigurationRequiredError(`Falta profile/${fileName}.`);
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (error) {
@@ -35,11 +28,11 @@ function loadProfile(fileName) {
 }
 
 /**
- * Devuelve el perfil completo de Mariano como objeto.
+ * Devuelve el perfil completo del candidato como objeto.
  * Se devuelve una copia profunda para evitar mutaciones accidentales del perfil base.
  * @returns {object} perfil completo
  */
-function getMarianoProfile() {
+function getProfile() {
   const profile = loadProfile(PROFILE_FILES.profile);
   return JSON.parse(JSON.stringify(profile));
 }
@@ -50,7 +43,7 @@ function getMarianoProfile() {
  * Nota: el analyzer todavia NO la usa automaticamente; se expone para revision/uso explicito.
  * @returns {object} matching profile
  */
-function getMarianoMatchingProfile() {
+function getMatchingProfile() {
   const matchingProfile = loadProfile(PROFILE_FILES.matchingProfile);
   return JSON.parse(JSON.stringify(matchingProfile));
 }
@@ -61,7 +54,7 @@ function getMarianoMatchingProfile() {
  * a OpenAI (el analyzer usa el matching profile). Se expone para referencia/analisis, no para el prompt.
  * @returns {object} career context
  */
-function getMarianoCareerContext() {
+function getCareerContext() {
   const careerContext = loadProfile(PROFILE_FILES.careerContext);
   return JSON.parse(JSON.stringify(careerContext));
 }
@@ -70,7 +63,7 @@ function getMarianoCareerContext() {
  * Resumen compacto del perfil (util para logging o para un prompt breve).
  * @returns {object}
  */
-function getMarianoProfileSummary() {
+function getProfileSummary() {
   const profile = loadProfile(PROFILE_FILES.profile);
   return {
     person: profile.meta.person,
@@ -84,10 +77,15 @@ function getMarianoProfileSummary() {
 }
 
 module.exports = {
-  getMarianoProfile,
-  getMarianoMatchingProfile,
-  getMarianoCareerContext,
-  getMarianoProfileSummary,
+  getProfile,
+  getMatchingProfile,
+  getCareerContext,
+  getProfileSummary,
+  // Aliases temporales para consumidores externos/legacy.
+  getMarianoProfile: getProfile,
+  getMarianoMatchingProfile: getMatchingProfile,
+  getMarianoCareerContext: getCareerContext,
+  getMarianoProfileSummary: getProfileSummary,
   ConfigurationRequiredError,
   PROFILE_FILES,
 };

@@ -12,6 +12,7 @@ const { createJobService } = require('../services/jobService');
 const { computeLearnedPreferences } = require('../ai/learnedPreferences');
 const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
+const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
 
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -72,6 +73,10 @@ async function handleApi(req, res, url) {
   // GET /api/jobs
   if (method === 'GET' && parts.length === 2 && parts[1] === 'jobs') {
     return sendJson(res, 200, { jobs: svc.getAllJobs() });
+  }
+  // GET /api/user-config (solo campos publicos; nunca secretos)
+  if (method === 'GET' && parts.length === 2 && parts[1] === 'user-config') {
+    return sendJson(res, 200, toPublicUserConfig(getUserConfig()));
   }
   // GET /api/reasons
   if (method === 'GET' && parts[1] === 'reasons') {
@@ -151,7 +156,10 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     // No filtrar stack traces al cliente; log en consola para desarrollo.
     console.error('[ui-server] error:', err && err.message ? err.message : err);
-    if (!res.headersSent) sendJson(res, 400, { error: err && err.message ? err.message : 'Error interno' });
+    if (!res.headersSent) {
+      const status = err && err.code === 'CONFIGURATION_REQUIRED' ? 409 : 400;
+      sendJson(res, status, { error: err && err.message ? err.message : 'Error interno', code: err && err.code });
+    }
   }
 });
 

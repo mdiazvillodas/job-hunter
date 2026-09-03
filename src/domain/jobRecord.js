@@ -3,7 +3,7 @@
 // Modelo de Job + transiciones de estado (puras). No persisten: eso lo hace jobService.
 // Separacion conceptual clave:
 //   - aiAnalysis  = resultado del OpenAI Job Analyzer (NO se toca al cambiar el estado del usuario).
-//   - userState   = decisiones/acciones de Mariano (new/read/interested/discarded/applied/priority).
+//   - userState   = decisiones/acciones del usuario (new/read/interested/discarded/applied/priority).
 //   - feedback    = ultimo resumen de descarte (reasons + comment).
 //   - feedbackEvents = historial completo de eventos (nunca se sobreescribe silenciosamente).
 

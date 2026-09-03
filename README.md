@@ -12,6 +12,12 @@ Un clon limpio no contiene perfiles reales. Antes de ejecutar un hunt deben exis
 dentro de `JOB_HUNTER_DATA_DIR`; si faltan, la aplicacion informa de forma controlada que
 Job Hunter todavia no esta configurado.
 
+La configuracion no secreta del usuario vive en `JOB_HUNTER_DATA_DIR/config/user.json`;
+`src/config/user.example.json` documenta su estructura (`identity` y `search`). La API key
+continua exclusivamente en `.env`/`process.env`. Aunque `search.locations` admite varias
+ubicaciones para evolucion futura, en esta version el collector consume solamente la primera
+como ubicacion primaria. `search.modalities` se guarda pero aun no altera los filtros del collector.
+
 Aplicacion local para automatizar, por etapas, la busqueda laboral. Implementado con Playwright sobre un perfil de Chromium persistente.
 
 ## LinkedIn Collector

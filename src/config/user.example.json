@@ -1,10 +1,24 @@
 {
-  "name": "Example User",
-  "linkedinPersonalUrl": "https://www.linkedin.com/in/example-user/",
-  "homeLocation": "Example City",
-  "searchLocations": ["Example City"],
-  "workplaceTypes": ["hybrid", "remote"],
-  "targetRoles": ["Operations Manager"],
+  "identity": {
+    "name": "Example User",
+    "linkedinUrl": "https://www.linkedin.com/in/example-user/"
+  },
+  "search": {
+    "locations": ["Example City", "Second Example City"],
+    "modalities": ["hybrid", "remote"],
+    "queryGroups": [
+      {
+        "family": "operations",
+        "label": "Operations",
+        "enabled": true,
+        "priority": 1,
+        "queries": [
+          { "query": "Operations Manager", "enabled": true },
+          { "query": "Operations Lead", "enabled": true }
+        ]
+      }
+    ]
+  },
   "cvSource": "profile.example.json",
   "workPreferences": ["Collaborative teams"]
 }

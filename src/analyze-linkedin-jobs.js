@@ -3,7 +3,7 @@
 // Prueba de calibracion del OpenAI Job Analyzer (Milestone 6B).
 //
 // Flujo:
-//  1. Ejecuta la busqueda actual con los filtros (Barcelona + Full-time + Past week).
+//  1. Ejecuta la busqueda actual con la ubicacion configurada + Full-time + Past week.
 //  2. Toma las primeras ANALYZE_LIMIT (default 5) ofertas.
 //  3. Abre sus detalles y obtiene la descripcion completa.
 //  4. Pasa cada oferta al analyzer (OpenAI) y muestra el resultado estructurado.
@@ -14,19 +14,12 @@
 //   $env:OPENAI_API_KEY="..."; $env:ANALYZE_LIMIT=5; npm run analyze:linkedin -- --debug
 //   npm run analyze:linkedin -- --debug --dry-run   (sin API key: usa un mock para validar el pipeline)
 
-const {
-  BROWSER_PROFILE_DIR,
-  LINKEDIN_FILTERS,
-  OPENAI_MODEL,
-  ANALYZE_LIMIT,
-  getActiveSearchQueries,
-} = require('./config');
-const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
+const config = require('./config');
 const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectSearchScope } = require('./linkedin/searchScope');
 const { assertAuthenticatedSession } = require('./linkedin/session');
-const { getMarianoProfile, getMarianoMatchingProfile } = require('./ai/marianoProfile');
+const { getProfile, getMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob, MissingApiKeyError, AnalyzerError } = require('./ai/jobAnalyzer');
 
 function parseArgs(argv) {
@@ -39,7 +32,7 @@ function parseArgs(argv) {
 // Perfil por defecto: el matching (condensado). USE_MATCHING_PROFILE=false fuerza el completo.
 function selectProfile() {
   const useMatching = process.env.USE_MATCHING_PROFILE !== 'false';
-  const profile = useMatching ? getMarianoMatchingProfile() : getMarianoProfile();
+  const profile = useMatching ? getMatchingProfile() : getProfile();
   const chars = JSON.stringify(profile).length;
   return { profile, kind: useMatching ? 'matching' : 'full', chars, approxTokens: Math.round(chars / 4) };
 }
@@ -129,14 +122,15 @@ function printJobResult(index, totalCount, job, result) {
   console.log(`Summary: ${a.summary}`);
 }
 
-async function collectJobsWithDetails(options) {
+async function collectJobsWithDetails(options, executionConfig) {
+  const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
+  const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, activeQueries } = executionConfig;
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   try {
     const page = await getInitialPage(context);
     await assertAuthenticatedSession(context, page);
 
-    const active = getActiveSearchQueries();
-    const primary = active[0] || { query: 'Head of Operations', family: 'operations' };
+    const primary = activeQueries[0];
 
     // Una sola busqueda para la calibracion (rapida y suficiente para 5 ofertas).
     const scope = await collectSearchScope(page, primary.query, LINKEDIN_FILTERS, {
@@ -170,6 +164,15 @@ async function collectJobsWithDetails(options) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const transport = options.dryRun ? mockTransport : undefined;
+  const executionConfig = {
+    BROWSER_PROFILE_DIR: config.BROWSER_PROFILE_DIR,
+    LINKEDIN_FILTERS: config.LINKEDIN_FILTERS,
+    OPENAI_MODEL: config.OPENAI_MODEL,
+    ANALYZE_LIMIT: config.ANALYZE_LIMIT,
+    CANDIDATE_NAME: config.CANDIDATE_NAME,
+    activeQueries: config.getActiveSearchQueries(),
+  };
+  const { LINKEDIN_FILTERS, OPENAI_MODEL, ANALYZE_LIMIT, CANDIDATE_NAME } = executionConfig;
 
   if (options.dryRun) {
     console.error('MODO --dry-run: no se llamara a OpenAI. Se usa un mock para validar el pipeline.');
@@ -177,7 +180,7 @@ async function main() {
 
   let collected;
   try {
-    collected = await collectJobsWithDetails(options);
+    collected = await collectJobsWithDetails(options, executionConfig);
   } catch (error) {
     if (error instanceof SecurityChallengeError) {
       console.error(error.message);
@@ -213,7 +216,7 @@ async function main() {
   for (let i = 0; i < jobs.length; i += 1) {
     const job = jobs[i];
     try {
-      const result = await analyzeJob(profile, job, { transport, debug: options.debug });
+      const result = await analyzeJob(profile, job, { transport, debug: options.debug, candidateName: CANDIDATE_NAME });
       analyses.push({
         jobId: job.jobId,
         url: job.url,
@@ -362,4 +365,6 @@ function printCalibrationReport(output) {
   });
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { main, collectJobsWithDetails };

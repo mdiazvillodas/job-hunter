@@ -15,7 +15,8 @@
     "test:pipeline": "node src/tests/pipeline.test.js",
     "test:trigger": "node src/tests/trigger.test.js",
     "test:distribution": "node src/tests/distribution.test.js",
-    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution"
+    "test:phase1": "node src/tests/phase1.test.js",
+    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution && npm run test:phase1"
   },
   "keywords": [],
   "author": "",
