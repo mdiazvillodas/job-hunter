@@ -86,8 +86,6 @@ function printDebugReport(s) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const executionConfig = getExecutionConfig();
-
   // Lock compartido: impide dos hunts simultaneos (manual + trigger) sobre el perfil persistente.
   try {
     acquireLock();
@@ -103,7 +101,18 @@ async function main() {
   }
 
   try {
-    await runHunt(options, executionConfig);
+    const summary = await runHunt(options);
+    if (options.debug) printDebugReport(summary);
+    console.log(JSON.stringify(summary, null, 2));
+  } catch (err) {
+    if (err instanceof SecurityChallengeError) {
+      console.error(err.message);
+      console.error('Pipeline detenido por un desafio de seguridad de LinkedIn. No se intenta evadir.');
+    } else {
+      console.error('Error en el pipeline: ' + (err.message || err));
+    }
+    console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
+    process.exitCode = 1;
   } finally {
     releaseLock();
   }
@@ -121,7 +130,7 @@ function getExecutionConfig() {
   };
 }
 
-async function runHunt(options, executionConfig = getExecutionConfig()) {
+async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
   const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
   const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, CANDIDATE_NAME, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH, activeQueries } = executionConfig;
   const repository = createLocalRepository();
@@ -142,7 +151,6 @@ async function runHunt(options, executionConfig = getExecutionConfig()) {
   }
 
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
-  let summary;
   let searchResultsUrl = null;
   try {
     const page = await getInitialPage(context);
@@ -171,7 +179,7 @@ async function runHunt(options, executionConfig = getExecutionConfig()) {
       return r.details[0];
     };
 
-    summary = await runPipeline({
+    return await runPipeline({
       jobService,
       discover,
       fetchDetails,
@@ -179,28 +187,20 @@ async function runHunt(options, executionConfig = getExecutionConfig()) {
       analyzeLimit: ANALYZE_LIMIT,
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
     });
-  } catch (err) {
-    if (err instanceof SecurityChallengeError) {
-      console.error(err.message);
-      console.error('Pipeline detenido por un desafio de seguridad de LinkedIn. No se intenta evadir.');
-      console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
-      await context.close().catch(() => {});
-      process.exitCode = 1;
-      return;
-    }
-    console.error('Error en el pipeline: ' + (err.message || err));
-    console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
+  } finally {
     await context.close().catch(() => {});
-    process.exitCode = 1;
-    return;
   }
-
-  await context.close().catch(() => {});
-
-  if (options.debug) printDebugReport(summary);
-  console.log(JSON.stringify(summary, null, 2));
 }
 
-if (require.main === module) main();
+function runCli(entry = main) {
+  return Promise.resolve()
+    .then(() => entry())
+    .catch(() => {
+      console.error('Error fatal inesperado al ejecutar Job Hunter.');
+      process.exitCode = 1;
+    });
+}
 
-module.exports = { main, runHunt, getExecutionConfig };
+if (require.main === module) runCli();
+
+module.exports = { main, runHunt, runCli, getExecutionConfig };

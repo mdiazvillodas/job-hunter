@@ -28,6 +28,31 @@
       <button id="diagBtn" class="btn ghost" type="button">Diagnóstico</button>
     </header>
 
+    <section class="operations" aria-label="Operaciones">
+      <div class="operation-card">
+        <div>
+          <h2>LinkedIn</h2>
+          <p id="linkedinSessionStatus" class="operation-status">Consultando sesión…</p>
+        </div>
+        <div class="operation-actions">
+          <button id="linkedinOpenBtn" class="btn primary" type="button">Conectar LinkedIn</button>
+          <button id="linkedinVerifyBtn" class="btn" type="button">Verificar sesión</button>
+          <button id="linkedinCloseBtn" class="btn ghost" type="button">Cerrar ventana</button>
+        </div>
+      </div>
+      <div class="operation-card">
+        <div>
+          <h2>Búsqueda</h2>
+          <p id="huntStatus" class="operation-status">Sin ejecutar</p>
+          <p id="huntSummary" class="operation-summary" hidden></p>
+        </div>
+        <div class="operation-actions">
+          <button id="huntStartBtn" class="btn primary" type="button" disabled>Buscar oportunidades ahora</button>
+          <a id="completeSetupLink" class="btn ghost" href="/setup" hidden>Completar configuración</a>
+        </div>
+      </div>
+    </section>
+
     <main class="layout" id="mainLayout">
       <!-- SIDEBAR -->
       <aside class="sidebar" id="sidebar">

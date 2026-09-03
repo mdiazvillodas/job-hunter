@@ -11,6 +11,9 @@ const state = {
   sort: 'overall',
   selectedId: null,
   userConfig: null,
+  setupReady: false,
+  linkedinSession: null,
+  hunt: null,
 };
 
 /* ---------- utils ---------- */
@@ -127,6 +130,88 @@ async function loadUserConfig() {
     // Un clon sin configurar sigue mostrando la UI y ofrece el setup local.
     el('setupNotice').hidden = false;
   }
+}
+
+/* ---------- LinkedIn session + hunt operativo ---------- */
+const SESSION_LABELS = {
+  NOT_INITIALIZED: 'No conectado', LOGIN_REQUIRED: 'Requiere login',
+  AUTHENTICATED: 'Sesión activa', CHECKPOINT_REQUIRED: 'Verificación necesaria', ERROR: 'Error',
+};
+const HUNT_LABELS = { IDLE: 'Sin ejecutar', STARTING: 'Iniciando', RUNNING: 'Buscando oportunidades', COMPLETED: 'Completado', FAILED: 'Error' };
+let huntPollTimer = null;
+
+function renderOperations() {
+  const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
+  const hunt = state.hunt || { status: 'IDLE' };
+  el('linkedinSessionStatus').textContent = SESSION_LABELS[session.state] || 'Estado desconocido';
+  el('linkedinOpenBtn').disabled = !!session.windowOpen;
+  el('linkedinCloseBtn').disabled = !session.windowOpen;
+  el('huntStatus').textContent = HUNT_LABELS[hunt.status] || hunt.status;
+  const active = hunt.status === 'STARTING' || hunt.status === 'RUNNING';
+  el('huntStartBtn').disabled = !state.setupReady || session.state !== 'AUTHENTICATED' || session.windowOpen || active;
+  el('completeSetupLink').hidden = state.setupReady;
+  const summary = hunt.summary;
+  const summaryEl = el('huntSummary');
+  if (summary && summary.discovery && summary.analysis) {
+    summaryEl.textContent = `${summary.discovery.uniqueResults || 0} encontradas · ${summary.discovery.newJobs || 0} nuevas · ${summary.analysis.analyzed || 0} analizadas`;
+    summaryEl.hidden = false;
+  } else {
+    summaryEl.hidden = true;
+  }
+}
+
+async function refreshSession() {
+  state.linkedinSession = await api('/api/linkedin/session/status');
+  renderOperations();
+}
+
+async function refreshHunt() {
+  state.hunt = await api('/api/hunt/status');
+  renderOperations();
+  if (state.hunt.status === 'COMPLETED' || state.hunt.status === 'FAILED') {
+    clearInterval(huntPollTimer);
+    huntPollTimer = null;
+    if (state.hunt.status === 'COMPLETED') loadAll();
+  }
+}
+
+function startHuntPolling() {
+  clearInterval(huntPollTimer);
+  huntPollTimer = setInterval(() => refreshHunt().catch((e) => toast(e.message, true)), 2000);
+}
+
+async function loadOperations() {
+  try {
+    const [setup, session, hunt] = await Promise.all([
+      api('/api/setup/status'), api('/api/linkedin/session/status'), api('/api/hunt/status'),
+    ]);
+    state.setupReady = !!setup.readyForHunt;
+    state.linkedinSession = session;
+    state.hunt = hunt;
+    renderOperations();
+    if (hunt.status === 'STARTING' || hunt.status === 'RUNNING') startHuntPolling();
+  } catch (e) { toast('No se pudo cargar el estado operativo: ' + e.message, true); }
+}
+
+async function openLinkedinSession() {
+  try {
+    state.linkedinSession = await api('/api/linkedin/session/open', 'POST');
+    renderOperations();
+    toast('Se abrió LinkedIn. Iniciá sesión manualmente y luego verificá la sesión.');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function closeLinkedinSession() {
+  try { state.linkedinSession = await api('/api/linkedin/session/close', 'POST'); renderOperations(); }
+  catch (e) { toast(e.message, true); }
+}
+
+async function startHunt() {
+  try {
+    state.hunt = await api('/api/hunt', 'POST');
+    renderOperations();
+    startHuntPolling();
+  } catch (e) { toast(e.message, true); }
 }
 
 function currentView() {
@@ -416,7 +501,13 @@ function init() {
   el('diagClose').addEventListener('click', () => { el('diagPanel').hidden = true; });
   el('diagPanel').addEventListener('click', (e) => { if (e.target.id === 'diagPanel') el('diagPanel').hidden = true; });
 
+  el('linkedinOpenBtn').addEventListener('click', openLinkedinSession);
+  el('linkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
+  el('linkedinCloseBtn').addEventListener('click', closeLinkedinSession);
+  el('huntStartBtn').addEventListener('click', startHunt);
+
   loadAll();
   loadUserConfig();
+  loadOperations();
 }
 document.addEventListener('DOMContentLoaded', init);

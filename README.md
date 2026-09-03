@@ -209,6 +209,23 @@ npm run test:feedback   # Milestone 7 (garantiza que la UI no lo rompe)
 
 Los cambios de estado/feedback se persisten en `JOB_HUNTER_DATA_DIR/jobs/` y sobreviven al recargar.
 
+### Sesión de LinkedIn y búsqueda desde la UI
+
+La pantalla principal permite abrir LinkedIn en Chromium con el perfil persistente local
+`JOB_HUNTER_DATA_DIR/browser-profile`. El inicio de sesión, 2FA y cualquier verificación son
+siempre manuales: Job Hunter no solicita ni guarda usuario, contraseña o códigos, y no intenta
+resolver CAPTCHA/checkpoints. Cerrá la ventana manual antes de iniciar una búsqueda para evitar
+dos procesos usando el mismo perfil.
+
+Con setup completo y sesión verificada, **Buscar oportunidades ahora** inicia el motor existente
+de forma asíncrona; la UI consulta su estado y muestra el resumen real al finalizar. Chromium de
+Playwright debe estar disponible en el equipo. Si falta, se informa un error controlado; su
+instalación automática queda para Fase 4.
+
+Limitación técnica de v0.2: si el proceso de la UI termina abruptamente mientras la ventana
+manual de Chromium continúa viva, cerrá esa ventana manualmente antes de volver a usar Job
+Hunter. El manejo integral de procesos huérfanos se abordará en Fase 4.
+
 ## Pipeline end-to-end — `npm run hunt` (Milestone 9)
 
 Conecta todo el sistema en un solo comando:

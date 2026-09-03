@@ -18,7 +18,8 @@
     "test:phase1": "node src/tests/phase1.test.js",
     "test:phase2a": "node src/tests/phase2a.test.js",
     "test:phase2b": "node src/tests/phase2b.test.js",
-    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution && npm run test:phase1 && npm run test:phase2a && npm run test:phase2b"
+    "test:phase3": "node src/tests/phase3.test.js",
+    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution && npm run test:phase1 && npm run test:phase2a && npm run test:phase2b && npm run test:phase3"
   },
   "keywords": [],
   "author": "",

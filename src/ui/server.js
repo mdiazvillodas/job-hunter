@@ -14,6 +14,8 @@ const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
 const { createSetupService } = require('../setup/setupService');
+const { createLinkedinSessionService } = require('../session/linkedinSessionService');
+const { createHuntRunManager } = require('../run/huntRunManager');
 
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -72,9 +74,25 @@ function calibrationsFor(jobs) {
     .filter((c) => c.aiDecision && c.userStatus && c.userStatus !== 'new');
 }
 
-async function handleApi(req, res, url, svc, setupService) {
+async function handleApi(req, res, url, svc, setupService, linkedinSessionService, huntRunManager) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = req.method;
+
+  if (method === 'POST' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'open') {
+    return sendJson(res, 202, await linkedinSessionService.open());
+  }
+  if (method === 'GET' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'status') {
+    return sendJson(res, 200, await linkedinSessionService.getStatus());
+  }
+  if (method === 'POST' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'close') {
+    return sendJson(res, 200, await linkedinSessionService.close());
+  }
+  if (method === 'POST' && parts.length === 2 && parts[1] === 'hunt') {
+    return sendJson(res, 202, await huntRunManager.start());
+  }
+  if (method === 'GET' && parts[1] === 'hunt' && parts[2] === 'status') {
+    return sendJson(res, 200, huntRunManager.getStatus());
+  }
 
   // GET /api/jobs
   if (method === 'GET' && parts.length === 2 && parts[1] === 'jobs') {
@@ -188,11 +206,13 @@ function createServer(options = {}) {
   const repository = options.repository || createLocalRepository();
   const svc = options.jobService || createJobService(repository);
   const setupService = options.setupService || createSetupService();
+  const linkedinSessionService = options.linkedinSessionService || createLinkedinSessionService();
+  const huntRunManager = options.huntRunManager || createHuntRunManager({ setupService, sessionService: linkedinSessionService });
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     try {
       if (url.pathname.startsWith('/api/')) {
-        await handleApi(req, res, url, svc, setupService);
+        await handleApi(req, res, url, svc, setupService, linkedinSessionService, huntRunManager);
       } else {
         handleStatic(req, res, url);
       }
