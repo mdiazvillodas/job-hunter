@@ -1,6 +1,7 @@
 'use strict';
 
 const byId = (id) => document.getElementById(id);
+let currentDraft = null;
 
 async function api(path, method, body) {
   const response = await fetch(path, {
@@ -17,6 +18,39 @@ function renderStatus(status) {
   const basic = status.readyForProfileSetup ? 'Configuración básica completa.' : 'Configuración básica pendiente.';
   const profiles = status.readyForHunt ? 'Perfiles listos para buscar.' : 'Siguiente paso: crear perfil profesional.';
   byId('setupStatus').textContent = `${basic} ${profiles}`;
+  byId('profileStatus').textContent = status.profileDraft && !status.profileDraftValid
+    ? 'Existe un borrador inválido. Descartalo o regenerá el perfil.'
+    : status.profileDraftValid
+      ? 'Generado — pendiente de confirmación'
+    : status.readyForHunt ? 'Generado y confirmado' : 'Pendiente';
+}
+
+function listText(value) {
+  return Array.isArray(value) && value.length ? value.map((item) => `• ${item}`).join('\n') : 'No evidenciado';
+}
+
+function renderDraft(draft) {
+  currentDraft = draft;
+  const summary = draft.summary;
+  byId('previewPositioning').textContent = summary.positioning || 'No evidenciado';
+  byId('previewRoles').textContent = listText(summary.targetRoles);
+  byId('previewCapabilities').textContent = listText(summary.capabilities);
+  byId('previewExperience').textContent = listText(summary.experience);
+  byId('previewSeniority').textContent = summary.seniority || 'No evidenciado';
+  byId('previewStrengths').textContent = listText(summary.strengths);
+  byId('previewUnknowns').textContent = listText(summary.notEvidenced);
+  byId('previewPreferences').textContent = listText(summary.preferences);
+  byId('previewAvoid').textContent = listText(summary.rolesToAvoid);
+  byId('profileTechnicalDetail').textContent = JSON.stringify({
+    careerContext: draft.careerContext,
+    profile: draft.profile,
+    matchingProfile: draft.matchingProfile,
+    metadata: draft.metadata,
+  }, null, 2);
+  byId('profilePreview').hidden = false;
+  byId('discardDraft').hidden = false;
+  byId('generateProfile').textContent = 'Regenerar perfil';
+  byId('profileStatus').textContent = 'Generado — pendiente de confirmación';
 }
 
 async function loadSetup() {
@@ -31,6 +65,8 @@ async function loadSetup() {
       byId('openAiKey').placeholder = 'Configurada — dejar vacío para conservar';
     }
     renderStatus(status);
+    if (status.profileDraftValid) renderDraft(await api('/api/setup/profile/draft'));
+    if (status.profileDraft && !status.profileDraftValid) byId('discardDraft').hidden = false;
   } catch (error) {
     byId('setupMessage').textContent = error.message;
     byId('setupMessage').className = 'setup-message error';
@@ -57,6 +93,65 @@ byId('setupForm').addEventListener('submit', async (event) => {
     const status = await api('/api/setup/status');
     renderStatus(status);
     if (status.openAiKey) byId('openAiKey').placeholder = 'Configurada — dejar vacío para conservar';
+  } catch (error) {
+    message.textContent = error.message;
+    message.className = 'setup-message error';
+  }
+});
+
+byId('generateProfile').addEventListener('click', async () => {
+  const button = byId('generateProfile');
+  const message = byId('profileMessage');
+  button.disabled = true;
+  message.className = 'setup-message';
+  message.textContent = 'Generando…';
+  byId('profileStatus').textContent = 'Generando';
+  try {
+    const draft = await api('/api/setup/profile/generate', 'POST', {
+      professionalText: byId('professionalText').value,
+      preferencesText: byId('preferencesText').value,
+    });
+    renderDraft(draft);
+    message.textContent = 'Borrador generado. Revisalo antes de confirmar.';
+  } catch (error) {
+    byId('profileStatus').textContent = currentDraft ? 'Generado — pendiente de confirmación' : 'Error';
+    message.textContent = error.message;
+    message.className = 'setup-message error';
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId('confirmProfile').addEventListener('click', async () => {
+  const button = byId('confirmProfile');
+  const message = byId('profileMessage');
+  button.disabled = true;
+  try {
+    await api('/api/setup/profile/confirm', 'POST');
+    currentDraft = null;
+    byId('profilePreview').hidden = true;
+    byId('discardDraft').hidden = true;
+    byId('generateProfile').textContent = 'Generar perfil';
+    message.textContent = 'Perfil confirmado y listo para usar.';
+    renderStatus(await api('/api/setup/status'));
+  } catch (error) {
+    message.textContent = error.message;
+    message.className = 'setup-message error';
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId('discardDraft').addEventListener('click', async () => {
+  const message = byId('profileMessage');
+  try {
+    await api('/api/setup/profile/draft', 'DELETE');
+    currentDraft = null;
+    byId('profilePreview').hidden = true;
+    byId('discardDraft').hidden = true;
+    byId('generateProfile').textContent = 'Generar perfil';
+    message.textContent = 'Borrador descartado. Los perfiles confirmados no cambiaron.';
+    renderStatus(await api('/api/setup/status'));
   } catch (error) {
     message.textContent = error.message;
     message.className = 'setup-message error';

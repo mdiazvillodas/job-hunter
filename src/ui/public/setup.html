@@ -16,6 +16,7 @@
 
       <div id="setupStatus" class="setup-status">Comprobando configuración…</div>
       <form id="setupForm">
+        <h2>Configuración básica</h2>
         <fieldset><legend>Identidad</legend>
           <label>Nombre<input id="name" required autocomplete="name" /></label>
           <label>LinkedIn personal URL<input id="linkedinUrl" required type="url" placeholder="https://www.linkedin.com/in/example-user/" /></label>
@@ -37,6 +38,41 @@
         <div id="setupMessage" class="setup-message" role="status"></div>
         <button class="btn primary" type="submit">Guardar configuración</button>
       </form>
+
+      <section class="profile-builder" aria-labelledby="profileBuilderTitle">
+        <h2 id="profileBuilderTitle">Perfil profesional</h2>
+        <div id="profileStatus" class="setup-status">Pendiente</div>
+        <p class="muted">Pegá información completa y fiel. Cuanto más contexto profesional aportes, mejor será el perfil generado.</p>
+        <label>CV, LinkedIn, experiencia y otra información profesional relevante
+          <textarea id="professionalText" rows="14" placeholder="Pegá aquí tu CV, LinkedIn, experiencia, estudios, habilidades y logros…"></textarea>
+        </label>
+        <label>Preferencias y objetivos profesionales (opcional)
+          <textarea id="preferencesText" rows="6" placeholder="Roles buscados, responsabilidades, seniority, industria, entorno, restricciones y motivaciones…"></textarea>
+        </label>
+        <div class="setup-actions">
+          <button id="generateProfile" class="btn primary" type="button">Generar perfil</button>
+          <button id="discardDraft" class="btn ghost" type="button" hidden>Descartar borrador</button>
+        </div>
+        <div id="profileMessage" class="setup-message" role="status"></div>
+        <section id="profilePreview" class="profile-preview" hidden>
+          <h3>Resumen generado</h3>
+          <dl>
+            <dt>Posicionamiento profesional</dt><dd id="previewPositioning"></dd>
+            <dt>Roles objetivo inferidos</dt><dd id="previewRoles"></dd>
+            <dt>Capacidades principales</dt><dd id="previewCapabilities"></dd>
+            <dt>Experiencia resumida</dt><dd id="previewExperience"></dd>
+            <dt>Seniority / alcance</dt><dd id="previewSeniority"></dd>
+            <dt>Fortalezas</dt><dd id="previewStrengths"></dd>
+            <dt>Áreas no evidenciadas</dt><dd id="previewUnknowns"></dd>
+            <dt>Preferencias profesionales</dt><dd id="previewPreferences"></dd>
+            <dt>Tipos de rol a evitar</dt><dd id="previewAvoid"></dd>
+          </dl>
+          <details><summary>Ver detalle técnico</summary><pre id="profileTechnicalDetail"></pre></details>
+          <div class="setup-actions">
+            <button id="confirmProfile" class="btn primary" type="button">Confirmar perfil</button>
+          </div>
+        </section>
+      </section>
     </main>
     <script src="/setup.js"></script>
   </body>

@@ -87,6 +87,21 @@ async function handleApi(req, res, url, svc, setupService) {
   if (method === 'GET' && parts[1] === 'setup' && parts[2] === 'status') {
     return sendJson(res, 200, setupService.getStatus());
   }
+  if (method === 'POST' && parts[1] === 'setup' && parts[2] === 'profile' && parts[3] === 'generate') {
+    requireJsonContentType(req);
+    return sendJson(res, 200, await setupService.generateProfileDraft(await readBody(req)));
+  }
+  if (method === 'GET' && parts[1] === 'setup' && parts[2] === 'profile' && parts[3] === 'draft') {
+    const draft = setupService.getProfileDraft();
+    if (!draft) return sendJson(res, 404, { error: 'No existe un borrador de perfil.' });
+    return sendJson(res, 200, draft);
+  }
+  if (method === 'POST' && parts[1] === 'setup' && parts[2] === 'profile' && parts[3] === 'confirm') {
+    return sendJson(res, 200, setupService.confirmProfileDraft());
+  }
+  if (method === 'DELETE' && parts[1] === 'setup' && parts[2] === 'profile' && parts[3] === 'draft') {
+    return sendJson(res, 200, setupService.deleteProfileDraft());
+  }
   if (method === 'GET' && parts.length === 2 && parts[1] === 'setup') {
     return sendJson(res, 200, setupService.getEditableSetup());
   }

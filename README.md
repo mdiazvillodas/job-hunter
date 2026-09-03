@@ -12,6 +12,13 @@ Un clon limpio no contiene perfiles reales. Antes de ejecutar un hunt deben exis
 dentro de `JOB_HUNTER_DATA_DIR`; si faltan, la aplicacion informa de forma controlada que
 Job Hunter todavia no esta configurado.
 
+La pantalla local `/setup` incluye un Profile Builder: la persona pega texto de su CV,
+LinkedIn o experiencia profesional y OpenAI genera un borrador de los tres perfiles. El
+borrador se muestra para revisión y sólo reemplaza los perfiles vigentes cuando el usuario
+lo confirma. El texto original no se persiste. Esta primera versión no admite PDF ni DOCX.
+El modelo se configura con `OPENAI_PROFILE_MODEL`; si falta, usa `OPENAI_MODEL` y finalmente
+el default `gpt-4.1-mini`.
+
 La configuracion no secreta del usuario vive en `JOB_HUNTER_DATA_DIR/config/user.json`;
 `src/config/user.example.json` documenta su estructura (`identity` y `search`). La API key
 continua exclusivamente en `.env`/`process.env`. Aunque `search.locations` admite varias

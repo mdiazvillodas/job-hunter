@@ -11,3 +11,13 @@ legend { font-weight: 700; padding: 0 8px; }
 .setup-card input:not([type="checkbox"]), .setup-card textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 7px; padding: 10px; background: var(--bg); color: var(--text); }
 .modalities { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 12px; }
 .modalities label { display: flex; flex-direction: row; gap: 6px; margin: 0; }
+.profile-builder { border-top: 1px solid var(--border); margin-top: 28px; padding-top: 18px; }
+.profile-builder h2 { margin-bottom: 8px; }
+.setup-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.profile-preview { margin-top: 20px; border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+.profile-preview dl { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr; gap: 8px 16px; }
+.profile-preview dt { font-weight: 700; }
+.profile-preview dd { margin: 0; white-space: pre-wrap; }
+.profile-preview pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); padding: 12px; border-radius: 7px; }
+button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 620px) { .profile-preview dl { grid-template-columns: 1fr; } }
