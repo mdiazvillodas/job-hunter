@@ -13,13 +13,11 @@ const { computeLearnedPreferences } = require('../ai/learnedPreferences');
 const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
+const { createSetupService } = require('../setup/setupService');
 
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UI_DIR = __dirname;
-
-const repository = createLocalRepository();
-const svc = createJobService(repository);
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 
@@ -46,14 +44,22 @@ function readBody(req) {
     let data = '';
     req.on('data', (c) => {
       data += c;
-      if (data.length > 1e6) reject(new Error('Body demasiado grande'));
+      if (data.length > 1e6) {
+        const error = new Error('Body demasiado grande');
+        error.statusCode = 413;
+        error.expose = true;
+        reject(error);
+      }
     });
     req.on('end', () => {
       if (!data) return resolve({});
       try {
         resolve(JSON.parse(data));
       } catch (e) {
-        reject(new Error('JSON invalido en el body'));
+        const error = new Error('JSON invalido en el body');
+        error.statusCode = 400;
+        error.expose = true;
+        reject(error);
       }
     });
     req.on('error', reject);
@@ -66,7 +72,7 @@ function calibrationsFor(jobs) {
     .filter((c) => c.aiDecision && c.userStatus && c.userStatus !== 'new');
 }
 
-async function handleApi(req, res, url) {
+async function handleApi(req, res, url, svc, setupService) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = req.method;
 
@@ -77,6 +83,21 @@ async function handleApi(req, res, url) {
   // GET /api/user-config (solo campos publicos; nunca secretos)
   if (method === 'GET' && parts.length === 2 && parts[1] === 'user-config') {
     return sendJson(res, 200, toPublicUserConfig(getUserConfig()));
+  }
+  if (method === 'GET' && parts[1] === 'setup' && parts[2] === 'status') {
+    return sendJson(res, 200, setupService.getStatus());
+  }
+  if (method === 'GET' && parts.length === 2 && parts[1] === 'setup') {
+    return sendJson(res, 200, setupService.getEditableSetup());
+  }
+  if (method === 'PUT' && parts[1] === 'setup' && parts[2] === 'user-config') {
+    requireJsonContentType(req);
+    return sendJson(res, 200, setupService.saveUserConfig(await readBody(req)));
+  }
+  if (method === 'PUT' && parts[1] === 'setup' && parts[2] === 'openai-key') {
+    requireJsonContentType(req);
+    const body = await readBody(req);
+    return sendJson(res, 200, setupService.saveOpenAiKey(body.openAiKey));
   }
   // GET /api/reasons
   if (method === 'GET' && parts[1] === 'reasons') {
@@ -129,6 +150,9 @@ async function handleApi(req, res, url) {
 }
 
 function handleStatic(req, res, url) {
+  if (url.pathname === '/setup') {
+    return sendFile(res, path.join(PUBLIC_DIR, 'setup.html'));
+  }
   if (url.pathname === '/' || url.pathname === '/index.html') {
     return sendFile(res, path.join(PUBLIC_DIR, 'index.html'));
   }
@@ -145,28 +169,56 @@ function handleStatic(req, res, url) {
   return sendFile(res, filePath);
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  try {
-    if (url.pathname.startsWith('/api/')) {
-      await handleApi(req, res, url);
-    } else {
-      handleStatic(req, res, url);
+function createServer(options = {}) {
+  const repository = options.repository || createLocalRepository();
+  const svc = options.jobService || createJobService(repository);
+  const setupService = options.setupService || createSetupService();
+  return http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    try {
+      if (url.pathname.startsWith('/api/')) {
+        await handleApi(req, res, url, svc, setupService);
+      } else {
+        handleStatic(req, res, url);
+      }
+    } catch (err) {
+      const expectedStatus = err && (err.statusCode || (err.code === 'CONFIGURATION_REQUIRED' ? 409 : undefined));
+      const status = expectedStatus || 500;
+      if (status >= 500) {
+        const identity = err && (err.code || err.name) ? (err.code || err.name) : 'Error';
+        console.error(`[ui-server] internal error: ${identity}`);
+      }
+      if (!res.headersSent) {
+        const expose = !!(err && (err.expose || err.code === 'CONFIGURATION_REQUIRED'));
+        sendJson(res, status, expose
+          ? { error: err.message, code: err.code }
+          : { error: 'Error interno' });
+      }
     }
-  } catch (err) {
-    // No filtrar stack traces al cliente; log en consola para desarrollo.
-    console.error('[ui-server] error:', err && err.message ? err.message : err);
-    if (!res.headersSent) {
-      const status = err && err.code === 'CONFIGURATION_REQUIRED' ? 409 : 400;
-      sendJson(res, status, { error: err && err.message ? err.message : 'Error interno', code: err && err.code });
-    }
+  });
+}
+
+function requireJsonContentType(req) {
+  const contentType = req.headers['content-type'] || '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    const error = new Error('Content-Type debe ser application/json.');
+    error.statusCode = 415;
+    error.expose = true;
+    throw error;
   }
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`Job Hunter UI corriendo en  http://localhost:${PORT}`);
-  console.log(`Repository local: ${repository.dir}`);
-  console.log('Ctrl+C para detener.');
-});
+function startServer(options = {}) {
+  const port = options.port === undefined ? PORT : options.port;
+  const host = '127.0.0.1';
+  const server = createServer(options);
+  server.listen(port, host, () => {
+    console.log(`Job Hunter UI corriendo en  http://${host}:${server.address().port}`);
+    console.log('Ctrl+C para detener.');
+  });
+  return server;
+}
 
-module.exports = { server };
+if (require.main === module) startServer();
+
+module.exports = { createServer, startServer, handleApi, handleStatic, readBody, requireJsonContentType };

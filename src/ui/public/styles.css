@@ -29,6 +29,8 @@ body {
   display: flex;
   flex-direction: column;
 }
+.setup-notice { padding: 10px 16px; text-align: center; background: #fff3cd; color: #5f4700; border-bottom: 1px solid #e3c96a; }
+.setup-notice a { color: inherit; font-weight: 700; }
 
 /* Topbar */
 .topbar {

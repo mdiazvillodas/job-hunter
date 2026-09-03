@@ -1,0 +1,13 @@
+.setup-page { min-height: 100vh; background: var(--bg); padding: 32px 16px; }
+.setup-card { width: min(720px, 100%); margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
+.setup-heading { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+.setup-heading h1 { margin: 8px 0 0; }
+.setup-status, .setup-message { padding: 12px; border-radius: 8px; margin: 12px 0; background: var(--surface-2); }
+.setup-message:empty { display: none; }
+.setup-message.error { color: var(--no); }
+fieldset { border: 1px solid var(--border); border-radius: 10px; margin: 18px 0; padding: 18px; }
+legend { font-weight: 700; padding: 0 8px; }
+.setup-card label { display: grid; gap: 6px; margin: 12px 0; }
+.setup-card input:not([type="checkbox"]), .setup-card textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 7px; padding: 10px; background: var(--bg); color: var(--text); }
+.modalities { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 12px; }
+.modalities label { display: flex; flex-direction: row; gap: 6px; margin: 0; }

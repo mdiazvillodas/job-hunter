@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Configurar Job Hunter</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/setup.css" />
+  </head>
+  <body class="setup-page">
+    <main class="setup-card">
+      <div class="setup-heading">
+        <div><div class="brand">Job&nbsp;Hunter</div><h1>Configuración local</h1></div>
+        <a class="btn ghost" href="/">Volver</a>
+      </div>
+
+      <div id="setupStatus" class="setup-status">Comprobando configuración…</div>
+      <form id="setupForm">
+        <fieldset><legend>Identidad</legend>
+          <label>Nombre<input id="name" required autocomplete="name" /></label>
+          <label>LinkedIn personal URL<input id="linkedinUrl" required type="url" placeholder="https://www.linkedin.com/in/example-user/" /></label>
+        </fieldset>
+        <fieldset><legend>Búsqueda</legend>
+          <label>Ubicación principal<input id="location" required placeholder="Example City" /></label>
+          <label>Roles / queries objetivo, uno por línea<textarea id="queries" required rows="7" placeholder="Operations Manager&#10;Strategy &amp; Operations"></textarea></label>
+          <div class="modalities"><span>Modalidades preferidas</span>
+            <label><input type="checkbox" name="modality" value="onsite" /> Onsite</label>
+            <label><input type="checkbox" name="modality" value="hybrid" /> Hybrid</label>
+            <label><input type="checkbox" name="modality" value="remote" /> Remote</label>
+          </div>
+          <p class="muted small">Estas preferencias quedan guardadas; el filtrado automático por modalidad se incorporará posteriormente.</p>
+        </fieldset>
+        <fieldset><legend>OpenAI</legend>
+          <label>API key<input id="openAiKey" type="password" autocomplete="off" placeholder="Ingresar una API key" /></label>
+          <p id="keyHint" class="muted small">La key se guarda localmente en .env y nunca se vuelve a mostrar.</p>
+        </fieldset>
+        <div id="setupMessage" class="setup-message" role="status"></div>
+        <button class="btn primary" type="submit">Guardar configuración</button>
+      </form>
+    </main>
+    <script src="/setup.js"></script>
+  </body>
+</html>

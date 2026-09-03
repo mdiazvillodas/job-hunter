@@ -124,7 +124,8 @@ async function loadUserConfig() {
     link.hidden = false;
     copyBtn.hidden = false;
   } catch (_) {
-    // Un clon sin configurar sigue mostrando la UI; simplemente oculta el enlace personal.
+    // Un clon sin configurar sigue mostrando la UI y ofrece el setup local.
+    el('setupNotice').hidden = false;
   }
 }
 
