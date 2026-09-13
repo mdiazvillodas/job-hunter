@@ -126,10 +126,16 @@ function validateUsefulContent(career, profile, matching) {
   if (!matchingUseful) throw new ProfileBuilderError('El matching profile no contiene información profesional útil.', 'EMPTY_MATCHING_PROFILE', 502);
 }
 
+function normalizeSemanticToken(value) {
+  return typeof value === 'string' ? value.toLowerCase().replace(/[\s_-]+/g, '') : '';
+}
+
 function validateMatchingArchitecture(matching) {
   const philosophy = matching.decisionPhilosophy;
   const mapping = philosophy.scoreMapping;
-  const validMapping = /cando/i.test(mapping.professionalFitScore) && /wantstodo/i.test(mapping.interestFitScore) && /cansell/i.test(mapping.cvFitScore);
+  const validMapping = normalizeSemanticToken(mapping.professionalFitScore).includes('cando')
+    && normalizeSemanticToken(mapping.interestFitScore).includes('wantstodo')
+    && normalizeSemanticToken(mapping.cvFitScore).includes('cansell');
   if (!meaningful(philosophy.canDo) || !meaningful(philosophy.wantsToDo) || !meaningful(philosophy.canSell) || !validMapping || !meaningful(philosophy.overallGuidance)) throw new ProfileBuilderError('La filosofía de decisión del matching profile es inválida.', 'INVALID_PROFILE_ARCHITECTURE', 502);
   if (matching.transferability.classificationLevels.length !== 4 || !/absence of (a )?keyword/i.test(matching.transferability.principle)) throw new ProfileBuilderError('Las reglas de transferibilidad del matching profile son inválidas.', 'INVALID_PROFILE_ARCHITECTURE', 502);
   if (matching.learnedPreferences.length !== 0) throw new ProfileBuilderError('learnedPreferences debe comenzar vacío.', 'INVALID_PROFILE_ARCHITECTURE', 502);
@@ -202,4 +208,4 @@ async function generateProfiles(input, options = {}) {
   return { ...generated, metadata: { generatedAt: new Date().toISOString(), model: (body && body.model) || model } };
 }
 
-module.exports = { PROFILE_BUILDER_SCHEMA, DEFAULT_PROFILE_MODEL, ProfileBuilderError, buildProfileSystemPrompt, buildProfileUserPrompt, validateProfileDraft, validateUsefulContent, validateMatchingArchitecture, generateProfiles, defaultTransport, matchesSchema, normalizeName };
+module.exports = { PROFILE_BUILDER_SCHEMA, DEFAULT_PROFILE_MODEL, ProfileBuilderError, buildProfileSystemPrompt, buildProfileUserPrompt, validateProfileDraft, validateUsefulContent, validateMatchingArchitecture, normalizeSemanticToken, generateProfiles, defaultTransport, matchesSchema, normalizeName };

@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { createSetupService } = require('../setup/setupService');
-const { buildProfileSystemPrompt, generateProfiles, defaultTransport, ProfileBuilderError } = require('../ai/profileBuilder');
+const { buildProfileSystemPrompt, generateProfiles, defaultTransport, ProfileBuilderError, validateMatchingArchitecture } = require('../ai/profileBuilder');
 const { analyzeJob } = require('../ai/jobAnalyzer');
 const { createLocalRepository } = require('../data/jobRepository');
 const { createJobService } = require('../services/jobService');
@@ -86,6 +86,16 @@ function professionalText() {
   return 'Taylor has led operations delivery, process improvements, and cross-functional stakeholder coordination for several documented initiatives.';
 }
 
+function matchingArchitecture(mapping = {}) {
+  const matching = JSON.parse(JSON.stringify(candidateOutput().matchingProfile));
+  Object.assign(matching.decisionPhilosophy.scoreMapping, mapping);
+  return matching;
+}
+
+function architectureIsValid(matching) {
+  try { validateMatchingArchitecture(matching); return true; } catch (_) { return false; }
+}
+
 function request(server, method, pathname, body) {
   const address = server.address();
   return new Promise((resolve, reject) => {
@@ -129,6 +139,21 @@ async function run() {
   const prompt = buildProfileSystemPrompt('Taylor Example').toLowerCase();
   const promptConcepts = ['only supplied user information', 'do not invent facts', 'evidence from interpretation', 'missing evidence does not mean absence', 'one particular vacancy', 'preserve unknowns', 'careercontext first', 'condensed representation'];
   ok('prompt contiene todos los principios obligatorios', promptConcepts.every((concept) => prompt.includes(concept)));
+
+  ok('decision mapping camelCase válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'canDo', interestFitScore: 'wantsToDo', cvFitScore: 'canSell' })));
+  ok('decision mapping con espacios válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'can do', interestFitScore: 'wants to do', cvFitScore: 'can sell' })));
+  ok('decision mapping con guiones válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'can-do', interestFitScore: 'wants-to-do', cvFitScore: 'can-sell' })));
+  ok('decision mapping en mayúsculas válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'CAN DO', interestFitScore: 'WANTS TO DO', cvFitScore: 'CAN SELL' })));
+  ok('decision mapping cruzado inválido', !architectureIsValid(matchingArchitecture({ professionalFitScore: 'can sell', interestFitScore: 'wants to do', cvFitScore: 'can do' })));
+  const missingMapping = matchingArchitecture(); delete missingMapping.decisionPhilosophy.scoreMapping.cvFitScore;
+  ok('decision mapping incompleto inválido', !architectureIsValid(missingMapping));
+  for (const field of ['canDo', 'wantsToDo', 'canSell']) { const emptyDescription = matchingArchitecture(); emptyDescription.decisionPhilosophy[field] = ' '; ok(`decision description ${field} vacía inválida`, !architectureIsValid(emptyDescription)); }
+  const emptyGuidance = matchingArchitecture(); emptyGuidance.decisionPhilosophy.overallGuidance = '';
+  ok('overallGuidance vacío inválido', !architectureIsValid(emptyGuidance));
+  const invalidTransferability = matchingArchitecture(); invalidTransferability.transferability.classificationLevels.pop();
+  ok('transferability conserva validación', !architectureIsValid(invalidTransferability));
+  const invalidLearnedPreferences = matchingArchitecture(); invalidLearnedPreferences.learnedPreferences.push('inferred preference');
+  ok('learnedPreferences conserva validación', !architectureIsValid(invalidLearnedPreferences));
 
   const oldProfiles = { careerContext: { old: 'career' }, profile: { old: 'profile' }, matchingProfile: { old: 'matching' } };
   fs.mkdirSync(profileDir, { recursive: true });
