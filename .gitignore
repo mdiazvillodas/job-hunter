@@ -6,6 +6,7 @@
 # --- dependencias / build ---
 node_modules/
 runtime-managed/
+dist/
 
 # --- raiz unica de datos locales (secretos, perfiles y datos reales) ---
 runtime-data/
