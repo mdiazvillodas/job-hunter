@@ -184,6 +184,10 @@ body {
 .operation-status, .operation-summary { margin: 0; color: var(--muted); font-size: 12px; }
 .operation-summary { margin-top: 4px; color: var(--text); }
 .operation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.schedule-card { grid-column: 1 / -1; }
+.schedule-controls, .schedule-days { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.schedule-controls label { font-size: 12px; }
+.schedule-controls input[type="time"] { border: 1px solid var(--border); border-radius: 6px; padding: 5px; }
 .btn:disabled { opacity: .48; cursor: not-allowed; }
 
 /* Diagnóstico estructurado: evaluación de requisitos + cobertura de capacidades */

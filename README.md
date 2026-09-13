@@ -1,5 +1,36 @@
 # Job Hunter
 
+## Inicio recomendado en Windows (v0.2)
+
+Ejecutá `start-job-hunter.cmd` con doble click. El launcher prefiere el Node 22 portable
+administrado en `runtime-managed/node/node.exe`, valida la preparación, inicia la UI sólo en
+`127.0.0.1`, espera su health check y abre `http://127.0.0.1:4173` en el navegador predeterminado.
+No modifica el PATH global, ExecutionPolicy ni requiere permisos de administrador. Si todavía
+no hay runtime portable, puede usar un Node 22 compatible disponible localmente; el empaquetado
+del runtime portable junto a la distribución queda para la preparación final de Fase 5.
+
+El flujo recomendado es: preparar/abrir Job Hunter → completar setup → preparar Chromium con
+la acción explícita de la UI → conectar LinkedIn manualmente → buscar ahora o activar un horario.
+La preparación de Chromium usa el instalador oficial de Playwright, lo guarda en
+`runtime-managed/playwright-browsers` y nunca usa el Chrome personal.
+
+El scheduler local guarda `config/schedule.json` dentro de `JOB_HUNTER_DATA_DIR`, usa días
+`0=domingo ... 6=sábado` y hora local `HH:MM`. Job Hunter debe permanecer abierto: si estaba
+cerrado a la hora indicada no hace catch-up, sino que calcula la próxima ejecución futura.
+Las búsquedas programadas usan el mismo lifecycle, validaciones, lock y estado que una búsqueda
+manual. En los cambios de hora estacionales, una hora inexistente o ambigua puede desplazarse.
+La integración trigger/n8n continúa disponible como opción legacy, pero no es obligatoria.
+
+Código (`APP_DIR`), datos privados (`JOB_HUNTER_DATA_DIR`) y runtime administrado
+(`JOB_HUNTER_RUNTIME_DIR`, por defecto `runtime-managed/`) están separados. El bootstrap es
+idempotente y nunca borra configuración, perfiles, sesión, jobs, runs, feedback ni `.env`.
+
+El contrato de distribución final incluye el código de Job Hunter, Node 22 portable bajo
+`runtime-managed/node`, las dependencias de producción (`node_modules`) preparadas durante el
+packaging y Chromium administrado bajo `runtime-managed/playwright-browsers`. Los datos privados
+permanecen separados en `runtime-data`. Node portable y `node_modules` no se versionan en esta
+fase: su incorporación física al paquete corresponde a Fase 5.
+
 ## Datos locales y configuracion
 
 Los datos privados se guardan bajo `JOB_HUNTER_DATA_DIR`. Por defecto se usa

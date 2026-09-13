@@ -289,7 +289,7 @@ async function run() {
 
   console.log('\n### HTTP y frontend');
   const endpointSession = { open: async () => ({ state: 'LOGIN_REQUIRED', message: 'manual', windowOpen: true }), getStatus: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }), close: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }) };
-  const endpointRuns = { start: async () => ({ runId: 'run_http', status: 'STARTING' }), getStatus: () => ({ runId: 'run_http', status: 'RUNNING', error: null }) };
+  const endpointRuns = { start: async () => ({ runId: 'run_http', status: 'STARTING' }), waitForRun: async () => ({ runId: 'run_http', status: 'COMPLETED' }), getStatus: () => ({ runId: 'run_http', status: 'RUNNING', error: null }) };
   const server = startServer({ port: 0, jobService: {}, setupService: {}, linkedinSessionService: endpointSession, huntRunManager: endpointRuns });
   if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
   const openResponse = await request(server, 'POST', '/api/linkedin/session/open');

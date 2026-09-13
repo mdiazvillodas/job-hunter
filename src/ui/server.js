@@ -16,6 +16,12 @@ const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
 const { createSetupService } = require('../setup/setupService');
 const { createLinkedinSessionService } = require('../session/linkedinSessionService');
 const { createHuntRunManager } = require('../run/huntRunManager');
+const { createRuntimeService } = require('../install/runtimeService');
+const { createBrowserInstallManager } = require('../install/browserInstallManager');
+const { createScheduleStore } = require('../scheduler/scheduleStore');
+const { createLocalScheduler } = require('../scheduler/localScheduler');
+const { acquireUiLock, releaseUiLock } = require('../runtime/uiLock');
+const { version: APP_VERSION } = require('../../package.json');
 
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -74,9 +80,32 @@ function calibrationsFor(jobs) {
     .filter((c) => c.aiDecision && c.userStatus && c.userStatus !== 'new');
 }
 
-async function handleApi(req, res, url, svc, setupService, linkedinSessionService, huntRunManager) {
+async function handleApi(req, res, url, svc, setupService, linkedinSessionService, huntRunManager, operations = {}) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = req.method;
+
+  if (method === 'GET' && parts.length === 2 && parts[1] === 'health') {
+    return sendJson(res, 200, { status: 'ok', app: 'job-hunter', version: APP_VERSION, setupReady: !!setupService.getStatus().readyForHunt });
+  }
+  if (method === 'GET' && parts[1] === 'runtime' && parts[2] === 'status') {
+    return sendJson(res, 200, operations.runtimeService.getStatus());
+  }
+  if (method === 'POST' && parts[1] === 'runtime' && parts[2] === 'install-browser') {
+    return sendJson(res, 202, operations.browserInstallManager.start());
+  }
+  if (method === 'GET' && parts[1] === 'runtime' && parts[2] === 'install-browser') {
+    return sendJson(res, 200, operations.browserInstallManager.getStatus());
+  }
+  if (method === 'GET' && parts.length === 2 && parts[1] === 'schedule') {
+    return sendJson(res, 200, operations.scheduler.getStatus());
+  }
+  if (method === 'PUT' && parts.length === 2 && parts[1] === 'schedule') {
+    requireJsonContentType(req);
+    return sendJson(res, 200, operations.scheduler.update(await readBody(req)));
+  }
+  if (method === 'GET' && parts[1] === 'schedule' && parts[2] === 'status') {
+    return sendJson(res, 200, operations.scheduler.getStatus());
+  }
 
   if (method === 'POST' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'open') {
     return sendJson(res, 202, await linkedinSessionService.open());
@@ -88,6 +117,10 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
     return sendJson(res, 200, await linkedinSessionService.close());
   }
   if (method === 'POST' && parts.length === 2 && parts[1] === 'hunt') {
+    if (operations.lifecycle && operations.lifecycle.shuttingDown) {
+      const error = new Error('Job Hunter se está cerrando.');
+      error.code = 'APP_SHUTTING_DOWN'; error.statusCode = 503; error.expose = true; throw error;
+    }
     return sendJson(res, 202, await huntRunManager.start());
   }
   if (method === 'GET' && parts[1] === 'hunt' && parts[2] === 'status') {
@@ -208,11 +241,17 @@ function createServer(options = {}) {
   const setupService = options.setupService || createSetupService();
   const linkedinSessionService = options.linkedinSessionService || createLinkedinSessionService();
   const huntRunManager = options.huntRunManager || createHuntRunManager({ setupService, sessionService: linkedinSessionService });
+  const runtimeService = options.runtimeService || createRuntimeService();
+  const browserInstallManager = options.browserInstallManager || createBrowserInstallManager();
+  const scheduleStore = options.scheduleStore || createScheduleStore();
+  const scheduler = options.scheduler || createLocalScheduler({ scheduleStore, huntRunManager, browserInstallManager });
+  const lifecycle = options.lifecycle || { shuttingDown: false };
+  const operations = { runtimeService, browserInstallManager, scheduler, lifecycle };
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     try {
       if (url.pathname.startsWith('/api/')) {
-        await handleApi(req, res, url, svc, setupService, linkedinSessionService, huntRunManager);
+        await handleApi(req, res, url, svc, setupService, linkedinSessionService, huntRunManager, operations);
       } else {
         handleStatic(req, res, url);
       }
@@ -246,7 +285,21 @@ function requireJsonContentType(req) {
 function startServer(options = {}) {
   const port = options.port === undefined ? PORT : options.port;
   const host = '127.0.0.1';
-  const server = createServer(options);
+  const ephemeral = port === 0 && !options.acquireUiLock && !options.releaseUiLock;
+  const lock = ephemeral ? (() => {}) : (options.acquireUiLock || acquireUiLock);
+  const unlock = ephemeral ? (() => {}) : (options.releaseUiLock || releaseUiLock);
+  lock();
+  let server;
+  try { server = createServer(options); }
+  catch (error) { unlock(); throw error; }
+  let released = false;
+  server.once('close', () => { if (!released) { released = true; unlock(); } });
+  server.once('error', (error) => {
+    if (!server.listening && !released) { released = true; unlock(); }
+    if (error && error.code === 'EADDRINUSE') console.error(`Job Hunter no pudo iniciar: el puerto ${port} ya está ocupado.`);
+    else console.error('Job Hunter no pudo iniciar el servidor local.');
+    process.exitCode = 1;
+  });
   server.listen(port, host, () => {
     console.log(`Job Hunter UI corriendo en  http://${host}:${server.address().port}`);
     console.log('Ctrl+C para detener.');
@@ -254,6 +307,65 @@ function startServer(options = {}) {
   return server;
 }
 
-if (require.main === module) startServer();
+function installShutdownHandlers(server, options = {}) {
+  const sessionService = options.linkedinSessionService;
+  const scheduler = options.scheduler;
+  const browserInstallManager = options.browserInstallManager;
+  const huntRunManager = options.huntRunManager;
+  const lifecycle = options.lifecycle || { shuttingDown: false };
+  const shutdownTimeoutMs = options.shutdownTimeoutMs === undefined ? 30000 : options.shutdownTimeoutMs;
+  const scheduleTimeout = options.setTimeout || setTimeout;
+  const cancelTimeout = options.clearTimeout || clearTimeout;
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    lifecycle.shuttingDown = true;
+    process.removeListener('SIGINT', shutdown);
+    process.removeListener('SIGTERM', shutdown);
+    if (huntRunManager && huntRunManager.stopAccepting) huntRunManager.stopAccepting();
+    try { if (scheduler) scheduler.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el scheduler limpiamente.'); }
+    try { if (browserInstallManager && browserInstallManager.stop) browserInstallManager.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el instalador de Chromium limpiamente.'); }
+    try { if (sessionService) await sessionService.close(); } catch (_) { console.error('[shutdown] No se pudo cerrar la ventana manual limpiamente.'); }
+    if (huntRunManager && huntRunManager.waitForIdle) {
+      let timeout;
+      const timedOut = await Promise.race([
+        huntRunManager.waitForIdle().then(() => false),
+        new Promise((resolve) => { timeout = scheduleTimeout(() => resolve(true), shutdownTimeoutMs); }),
+      ]);
+      if (timeout) cancelTimeout(timeout);
+      if (timedOut) console.error('[shutdown] El hunt sigue activo después del tiempo de espera; no se lo cancela ni se elimina su lock.');
+    }
+    await new Promise((resolve) => { if (!server.listening) return resolve(); server.close(resolve); });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+  return shutdown;
+}
 
-module.exports = { createServer, startServer, handleApi, handleStatic, readBody, requireJsonContentType };
+function startupErrorMessage(error) {
+  if (error && error.code === 'UI_LOCK_HELD') return 'Job Hunter ya está abierto.';
+  if (error && error.code === 'EADDRINUSE') return 'Job Hunter no pudo iniciar: el puerto local ya está ocupado.';
+  return 'Job Hunter no pudo iniciar.';
+}
+
+if (require.main === module) {
+  const setupService = createSetupService();
+  const linkedinSessionService = createLinkedinSessionService();
+  const scheduleStore = createScheduleStore();
+  const browserInstallManager = createBrowserInstallManager();
+  const huntRunManager = createHuntRunManager({ setupService, sessionService: linkedinSessionService });
+  const scheduler = createLocalScheduler({ scheduleStore, huntRunManager, browserInstallManager });
+  const lifecycle = { shuttingDown: false };
+  try {
+    const server = startServer({ setupService, linkedinSessionService, huntRunManager, scheduleStore, scheduler, browserInstallManager, lifecycle });
+    try { scheduler.start(); }
+    catch (error) { console.error(`[scheduler] ${error.code || 'INVALID_SCHEDULE'}: configuración inválida; scheduler desactivado.`); }
+    installShutdownHandlers(server, { linkedinSessionService, scheduler, browserInstallManager, huntRunManager, lifecycle });
+  } catch (error) {
+    console.error(startupErrorMessage(error));
+    process.exitCode = 1;
+  }
+}
+
+module.exports = { createServer, startServer, installShutdownHandlers, startupErrorMessage, handleApi, handleStatic, readBody, requireJsonContentType };

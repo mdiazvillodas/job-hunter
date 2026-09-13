@@ -53,10 +53,13 @@ function createHuntRunManager(options = {}) {
   const now = options.clock || (() => new Date());
   const makeId = options.makeRunId || (() => `run_${crypto.randomBytes(8).toString('hex')}`);
   let current = { runId: null, status: 'IDLE', startedAt: null, finishedAt: null, summary: null, error: null };
+  let accepting = true;
+  let activePromise = null;
 
   const snapshot = () => JSON.parse(JSON.stringify(current));
 
   async function start(huntOptions = {}) {
+    if (!accepting) throw operationalError('APP_SHUTTING_DOWN', 'Job Hunter se está cerrando.', 503);
     if (ACTIVE.has(current.status)) throw operationalError('HUNT_ALREADY_RUNNING', 'Ya hay una búsqueda en curso.');
     if (sessionService.isOpen()) throw operationalError('SESSION_WINDOW_OPEN', 'Cerrá la ventana manual de LinkedIn antes de buscar.');
     if (!setupService.getStatus().readyForHunt) throw operationalError('SETUP_REQUIRED', 'Completá la configuración antes de buscar.');
@@ -71,7 +74,7 @@ function createHuntRunManager(options = {}) {
     }
     current = { runId: makeId(), status: 'STARTING', startedAt: now().toISOString(), finishedAt: null, summary: null, error: null };
     const response = snapshot();
-    Promise.resolve().then(async () => {
+    activePromise = Promise.resolve().then(async () => {
       current.status = 'RUNNING';
       console.log(`[hunt-run] started runId=${current.runId}`);
       try {
@@ -83,13 +86,21 @@ function createHuntRunManager(options = {}) {
         current.status = 'FAILED';
       } finally {
         current.finishedAt = now().toISOString();
-        unlock();
+        try { unlock(); } catch (_) { console.error('[hunt-run] no se pudo liberar el lock limpiamente.'); }
+        activePromise = null;
       }
+      return snapshot();
     });
     return response;
   }
 
-  return { start, getStatus: snapshot };
+  function stopAccepting() { accepting = false; }
+  function waitForIdle() { return activePromise || Promise.resolve(); }
+  function waitForRun(runId) {
+    if (!runId || current.runId !== runId) throw operationalError('HUNT_RUN_NOT_FOUND', 'La ejecución solicitada no está disponible.', 404);
+    return activePromise ? activePromise.then((result) => JSON.parse(JSON.stringify(result))) : Promise.resolve(snapshot());
+  }
+  return { start, getStatus: snapshot, stopAccepting, waitForIdle, waitForRun };
 }
 
 module.exports = { createHuntRunManager, safeSummary, safeError };

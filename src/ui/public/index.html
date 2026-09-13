@@ -51,6 +51,33 @@
           <a id="completeSetupLink" class="btn ghost" href="/setup" hidden>Completar configuración</a>
         </div>
       </div>
+      <div class="operation-card">
+        <div>
+          <h2>Runtime</h2>
+          <p id="runtimeStatus" class="operation-status">Comprobando componentes…</p>
+        </div>
+        <div class="operation-actions">
+          <button id="installBrowserBtn" class="btn" type="button">Preparar navegador de LinkedIn</button>
+        </div>
+      </div>
+      <div class="operation-card schedule-card">
+        <div>
+          <h2>Búsqueda automática</h2>
+          <p id="scheduleStatus" class="operation-status">Desactivada</p>
+          <p class="operation-summary">Job Hunter debe permanecer abierto para ejecutar el horario.</p>
+        </div>
+        <div class="schedule-controls">
+          <label><input id="scheduleEnabled" type="checkbox" /> Activar</label>
+          <div id="scheduleDays" class="schedule-days">
+            <label><input type="checkbox" value="1" /> Lu</label><label><input type="checkbox" value="2" /> Ma</label>
+            <label><input type="checkbox" value="3" /> Mi</label><label><input type="checkbox" value="4" /> Ju</label>
+            <label><input type="checkbox" value="5" /> Vi</label><label><input type="checkbox" value="6" /> Sá</label>
+            <label><input type="checkbox" value="0" /> Do</label>
+          </div>
+          <input id="scheduleTime" type="time" value="09:00" />
+          <button id="saveScheduleBtn" class="btn" type="button">Guardar horario</button>
+        </div>
+      </div>
     </section>
 
     <main class="layout" id="mainLayout">

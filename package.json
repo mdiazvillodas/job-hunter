@@ -1,6 +1,6 @@
 {
   "name": "job-hunter",
-  "version": "1.0.0",
+  "version": "0.2.0-dev",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -19,7 +19,9 @@
     "test:phase2a": "node src/tests/phase2a.test.js",
     "test:phase2b": "node src/tests/phase2b.test.js",
     "test:phase3": "node src/tests/phase3.test.js",
-    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution && npm run test:phase1 && npm run test:phase2a && npm run test:phase2b && npm run test:phase3"
+    "test:phase4": "node src/tests/phase4.test.js",
+    "bootstrap": "node scripts/bootstrap.js",
+    "test": "npm run test:feedback && npm run test:pipeline && npm run test:ui && npm run test:trigger && npm run test:distribution && npm run test:phase1 && npm run test:phase2a && npm run test:phase2b && npm run test:phase3 && npm run test:phase4"
   },
   "keywords": [],
   "author": "",

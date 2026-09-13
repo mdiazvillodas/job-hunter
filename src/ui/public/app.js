@@ -14,6 +14,9 @@ const state = {
   setupReady: false,
   linkedinSession: null,
   hunt: null,
+  schedule: null,
+  runtime: null,
+  browserInstall: null,
 };
 
 /* ---------- utils ---------- */
@@ -139,6 +142,7 @@ const SESSION_LABELS = {
 };
 const HUNT_LABELS = { IDLE: 'Sin ejecutar', STARTING: 'Iniciando', RUNNING: 'Buscando oportunidades', COMPLETED: 'Completado', FAILED: 'Error' };
 let huntPollTimer = null;
+let browserInstallPollTimer = null;
 
 function renderOperations() {
   const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
@@ -191,6 +195,64 @@ async function loadOperations() {
     renderOperations();
     if (hunt.status === 'STARTING' || hunt.status === 'RUNNING') startHuntPolling();
   } catch (e) { toast('No se pudo cargar el estado operativo: ' + e.message, true); }
+}
+
+function renderRuntime(runtime) {
+  state.runtime = runtime;
+  el('runtimeStatus').textContent = `Node: ${runtime.node} · Dependencias: ${runtime.dependencies} · Chromium: ${runtime.chromium}`;
+  const installing = state.browserInstall && state.browserInstall.status === 'RUNNING';
+  el('installBrowserBtn').disabled = runtime.chromium === 'ready' || runtime.dependencies !== 'ready' || installing;
+  el('installBrowserBtn').textContent = installing ? 'Preparando Chromium…' : 'Preparar navegador de LinkedIn';
+}
+
+async function refreshBrowserInstall() {
+  state.browserInstall = await api('/api/runtime/install-browser');
+  renderRuntime(state.runtime);
+  if (state.browserInstall.status === 'COMPLETED' || state.browserInstall.status === 'FAILED') {
+    clearInterval(browserInstallPollTimer); browserInstallPollTimer = null;
+    const runtime = await api('/api/runtime/status'); renderRuntime(runtime);
+    if (state.browserInstall.status === 'FAILED') toast(state.browserInstall.error ? state.browserInstall.error.message : 'No se pudo instalar Chromium.', true);
+  }
+}
+
+function startBrowserInstallPolling() {
+  clearInterval(browserInstallPollTimer);
+  browserInstallPollTimer = setInterval(() => refreshBrowserInstall().catch((e) => toast(e.message, true)), 1000);
+}
+
+function renderSchedule(schedule) {
+  state.schedule = schedule;
+  el('scheduleEnabled').checked = schedule.enabled;
+  el('scheduleTime').value = schedule.time;
+  el('scheduleDays').querySelectorAll('input').forEach((input) => { input.checked = schedule.daysOfWeek.includes(Number(input.value)); });
+  const next = schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : 'sin próxima ejecución';
+  el('scheduleStatus').textContent = schedule.enabled ? `Activa · próxima: ${next}` : 'Desactivada';
+}
+
+async function loadRuntimeAndSchedule() {
+  try {
+    const [runtime, schedule, browserInstall] = await Promise.all([api('/api/runtime/status'), api('/api/schedule/status'), api('/api/runtime/install-browser')]);
+    state.browserInstall = browserInstall;
+    renderRuntime(runtime); renderSchedule(schedule);
+    if (browserInstall.status === 'RUNNING') startBrowserInstallPolling();
+  } catch (e) { toast('No se pudo cargar runtime/schedule: ' + e.message, true); }
+}
+
+async function installBrowser() {
+  try {
+    state.browserInstall = await api('/api/runtime/install-browser', 'POST');
+    renderRuntime(state.runtime); startBrowserInstallPolling();
+    toast('Preparación de Chromium iniciada.');
+  }
+  catch (e) { toast(e.message, true); }
+}
+
+async function saveSchedule() {
+  const daysOfWeek = Array.from(el('scheduleDays').querySelectorAll('input:checked')).map((input) => Number(input.value));
+  try {
+    renderSchedule(await api('/api/schedule', 'PUT', { enabled: el('scheduleEnabled').checked, daysOfWeek, time: el('scheduleTime').value }));
+    toast('Horario guardado.');
+  } catch (e) { toast(e.message, true); }
 }
 
 async function openLinkedinSession() {
@@ -505,9 +567,12 @@ function init() {
   el('linkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
   el('linkedinCloseBtn').addEventListener('click', closeLinkedinSession);
   el('huntStartBtn').addEventListener('click', startHunt);
+  el('installBrowserBtn').addEventListener('click', installBrowser);
+  el('saveScheduleBtn').addEventListener('click', saveSchedule);
 
   loadAll();
   loadUserConfig();
   loadOperations();
+  loadRuntimeAndSchedule();
 }
 document.addEventListener('DOMContentLoaded', init);

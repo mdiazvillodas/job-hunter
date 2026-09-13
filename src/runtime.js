@@ -41,18 +41,32 @@ function resolveDataDir(value = process.env.JOB_HUNTER_DATA_DIR) {
 const dataDir = resolveDataDir();
 const configDir = path.join(dataDir, 'config');
 const profileDir = path.join(dataDir, 'profile');
+const runtimeDir = process.env.JOB_HUNTER_RUNTIME_DIR
+  ? (path.isAbsolute(process.env.JOB_HUNTER_RUNTIME_DIR) ? path.normalize(process.env.JOB_HUNTER_RUNTIME_DIR) : path.resolve(PROJECT_ROOT, process.env.JOB_HUNTER_RUNTIME_DIR))
+  : path.join(PROJECT_ROOT, 'runtime-managed');
+const managedNodeExecutable = path.join(runtimeDir, 'node', 'node.exe');
+const playwrightBrowsersDir = path.join(runtimeDir, 'playwright-browsers');
+process.env.PLAYWRIGHT_BROWSERS_PATH = playwrightBrowsersDir;
 
 module.exports = {
+  APP_DIR: PROJECT_ROOT,
   PROJECT_ROOT,
   DATA_DIR: dataDir,
+  RUNTIME_DIR: runtimeDir,
+  MANAGED_NODE_EXECUTABLE: managedNodeExecutable,
+  PLAYWRIGHT_BROWSERS_DIR: playwrightBrowsersDir,
   BROWSER_PROFILE_DIR: path.join(dataDir, 'browser-profile'),
   JOBS_DIR: path.join(dataDir, 'jobs'),
   RUNS_DIR: path.join(dataDir, 'runs'),
   FEEDBACK_DIR: path.join(dataDir, 'feedback'),
   CONFIG_DIR: configDir,
   USER_CONFIG_PATH: path.join(configDir, 'user.json'),
+  SCHEDULE_CONFIG_PATH: path.join(configDir, 'schedule.json'),
+  UI_LOCK_PATH: path.join(dataDir, 'ui.lock'),
   PROFILE_DIR: profileDir,
   parseDotEnv,
   loadDotEnv,
   resolveDataDir,
+  getManagedNodeExecutable: (base = runtimeDir) => path.join(base, 'node', 'node.exe'),
+  getPlaywrightBrowsersDir: (base = runtimeDir) => path.join(base, 'playwright-browsers'),
 };
