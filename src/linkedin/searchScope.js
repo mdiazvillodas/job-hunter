@@ -46,6 +46,22 @@ const KEYWORD_INPUT_SELECTORS = [
   'input[role="combobox"][aria-label="Busca por cargo, aptitud o empresa"]',
 ];
 
+const ALL_FILTERS_BUTTON_SELECTORS = [
+  'button.search-reusables__all-filters-pill-button',
+  'button[aria-label="Show all filters. Clicking this button displays all available filter options."]',
+  'button[aria-label="Mostrar todos los filtros. Al hacer clic en este botón, se muestran todas las opciones de filtros disponibles."]',
+  'button:has-text("All filters")',
+  'button:has-text("Todos los filtros")',
+];
+
+const SHOW_RESULTS_BUTTON_SELECTORS = [
+  'button.search-reusables__secondary-filters-show-results-button',
+  'button[aria-label="Apply current filters to show results"]',
+  'button[aria-label="Aplicar los filtros actuales para mostrar resultados"]',
+  'button:has-text("Show results")',
+  'button:has-text("Mostrar resultados")',
+];
+
 async function resolveSearchInput(page, selectors, description) {
   try {
     await page.locator(selectors.join(', ')).first().waitFor({ state: 'visible', timeout: 15000 });
@@ -67,6 +83,29 @@ function getLocationInput(page) {
 
 function getKeywordInput(page) {
   return resolveSearchInput(page, KEYWORD_INPUT_SELECTORS, 'keyword');
+}
+
+async function resolveFilterButton(scope, selectors, description) {
+  try {
+    await scope.locator(selectors.join(', ')).first().waitFor({ state: 'visible', timeout: 15000 });
+    for (const selector of selectors) {
+      const candidate = scope.locator(selector).first();
+      if (await candidate.isVisible().catch(() => false)) return candidate;
+    }
+  } catch (_) {
+    // Se reemplaza el timeout dependiente del selector por un error estable y accionable.
+  }
+  const error = new Error(`LinkedIn ${description} button was not found.`);
+  error.name = 'LinkedInSelectorError';
+  throw error;
+}
+
+function getAllFiltersButton(page) {
+  return resolveFilterButton(page, ALL_FILTERS_BUTTON_SELECTORS, 'all filters');
+}
+
+function getShowResultsButton(modal) {
+  return resolveFilterButton(modal, SHOW_RESULTS_BUTTON_SELECTORS, 'show results');
 }
 
 // Click robusto sobre un input de filtro: prefiere el <label for> visible, con fallback a check().
@@ -120,11 +159,7 @@ async function applyModalFilters(page, filters, options) {
   const datePostedId = DATE_POSTED_IDS[String(filters.datePosted || '').toLowerCase()];
   const jobTypeId = JOB_TYPE_IDS[String(filters.employmentType || '').toLowerCase()];
 
-  const allFiltersButton = page
-    .locator(
-      'button[aria-label="Show all filters. Clicking this button displays all available filter options."], button:has-text("All filters")'
-    )
-    .first();
+  const allFiltersButton = await getAllFiltersButton(page);
   await allFiltersButton.click();
 
   const modal = page.locator('.artdeco-modal, [role="dialog"]').first();
@@ -141,9 +176,7 @@ async function applyModalFilters(page, filters, options) {
     employmentSelected = await clickFilterOption(page, jobTypeId);
   }
 
-  const showResults = page
-    .locator('button[aria-label="Apply current filters to show results"], button:has-text("Show results")')
-    .first();
+  const showResults = await getShowResultsButton(modal);
   await showResults.click();
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
@@ -437,6 +470,11 @@ module.exports = {
   getLocationInput,
   getKeywordInput,
   applyLocationFilter,
+  applyModalFilters,
+  getAllFiltersButton,
+  getShowResultsButton,
   LOCATION_INPUT_SELECTORS,
   KEYWORD_INPUT_SELECTORS,
+  ALL_FILTERS_BUTTON_SELECTORS,
+  SHOW_RESULTS_BUTTON_SELECTORS,
 };

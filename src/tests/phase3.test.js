@@ -12,8 +12,13 @@ const {
   getLocationInput,
   getKeywordInput,
   applyLocationFilter,
+  applyModalFilters,
+  getAllFiltersButton,
+  getShowResultsButton,
   LOCATION_INPUT_SELECTORS,
   KEYWORD_INPUT_SELECTORS,
+  ALL_FILTERS_BUTTON_SELECTORS,
+  SHOW_RESULTS_BUTTON_SELECTORS,
 } = require('../linkedin/searchScope');
 const { startServer } = require('../ui/server');
 const { acquireLock: acquireFilesystemLock, releaseLock: releaseFilesystemLock } = require('../domain/huntLock');
@@ -587,6 +592,61 @@ async function run() {
   let missingSelectorError;
   try { await getLocationInput(selectorPage('not-present')); } catch (error) { missingSelectorError = error; }
   ok('31g. input ausente produce error claro y estable', missingSelectorError && missingSelectorError.name === 'LinkedInSelectorError' && missingSelectorError.message === 'LinkedIn search location input was not found.');
+
+  const preferredAllFilters = await getAllFiltersButton(selectorPage(ALL_FILTERS_BUTTON_SELECTORS[0]));
+  const englishAllFilters = await getAllFiltersButton(selectorPage(ALL_FILTERS_BUTTON_SELECTORS[1]));
+  const spanishAllFilters = await getAllFiltersButton(selectorPage(ALL_FILTERS_BUTTON_SELECTORS[2]));
+  const preferredShowResults = await getShowResultsButton(selectorPage(SHOW_RESULTS_BUTTON_SELECTORS[0]));
+  const spanishShowResults = await getShowResultsButton(selectorPage(SHOW_RESULTS_BUTTON_SELECTORS[2]));
+  ok('31h. modal prefiere clases estructurales independientes del locale', preferredAllFilters.selector === ALL_FILTERS_BUTTON_SELECTORS[0] && preferredShowResults.selector === SHOW_RESULTS_BUTTON_SELECTORS[0]);
+  ok('31i. modal conserva fallback inglés', englishAllFilters.selector === ALL_FILTERS_BUTTON_SELECTORS[1]);
+  ok('31j. modal acepta fallbacks españoles observados', spanishAllFilters.selector === ALL_FILTERS_BUTTON_SELECTORS[2] && spanishShowResults.selector === SHOW_RESULTS_BUTTON_SELECTORS[2]);
+  let missingButtonError;
+  try { await getAllFiltersButton(selectorPage('not-present')); } catch (error) { missingButtonError = error; }
+  ok('31k. botón ausente produce error claro y estable', missingButtonError && missingButtonError.name === 'LinkedInSelectorError' && missingButtonError.message === 'LinkedIn all filters button was not found.');
+
+  function modalFilterPage() {
+    const actions = [];
+    const visible = new Set([
+      ALL_FILTERS_BUTTON_SELECTORS[0],
+      '.artdeco-modal, [role="dialog"]',
+      SHOW_RESULTS_BUTTON_SELECTORS[0],
+      'label[for="advanced-filter-timePostedRange-r604800"]',
+      'label[for="advanced-filter-jobType-F"]',
+    ]);
+    const page = {
+      actions,
+      locator: (selector) => {
+        const candidate = {
+          selector,
+          first: () => candidate,
+          nth: () => candidate,
+          locator: (childSelector) => page.locator(childSelector),
+          waitFor: async () => {
+            if (![...visible].some((entry) => selector.includes(entry))) throw new Error('not visible');
+          },
+          isVisible: async () => visible.has(selector),
+          count: async () => visible.has(selector) ? 1 : 0,
+          click: async () => { actions.push(['click', selector]); },
+          check: async () => { actions.push(['check', selector]); },
+          innerText: async () => '',
+        };
+        return candidate;
+      },
+      waitForTimeout: async () => {},
+      waitForLoadState: async () => {},
+      url: () => 'https://www.linkedin.com/jobs/search/',
+    };
+    return page;
+  }
+  const modalPage = modalFilterPage();
+  const modalResult = await applyModalFilters(modalPage, { datePosted: 'past week', employmentType: 'full-time' }, {});
+  ok('31l. flujo modal conserva selección y confirmación existentes', modalResult.datePostedSelected && modalResult.employmentSelected && JSON.stringify(modalPage.actions) === JSON.stringify([
+    ['click', ALL_FILTERS_BUTTON_SELECTORS[0]],
+    ['click', 'label[for="advanced-filter-timePostedRange-r604800"]'],
+    ['click', 'label[for="advanced-filter-jobType-F"]'],
+    ['click', SHOW_RESULTS_BUTTON_SELECTORS[0]],
+  ]));
 
   console.log('\n### Reutilización y aislamiento');
   const node = process.execPath;
