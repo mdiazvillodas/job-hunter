@@ -140,13 +140,10 @@ async function run() {
   const promptConcepts = ['only supplied user information', 'do not invent facts', 'evidence from interpretation', 'missing evidence does not mean absence', 'one particular vacancy', 'preserve unknowns', 'careercontext first', 'condensed representation'];
   ok('prompt contiene todos los principios obligatorios', promptConcepts.every((concept) => prompt.includes(concept)));
 
-  ok('decision mapping camelCase válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'canDo', interestFitScore: 'wantsToDo', cvFitScore: 'canSell' })));
-  ok('decision mapping con espacios válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'can do', interestFitScore: 'wants to do', cvFitScore: 'can sell' })));
-  ok('decision mapping con guiones válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'can-do', interestFitScore: 'wants-to-do', cvFitScore: 'can-sell' })));
-  ok('decision mapping en mayúsculas válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'CAN DO', interestFitScore: 'WANTS TO DO', cvFitScore: 'CAN SELL' })));
-  ok('decision mapping cruzado inválido', !architectureIsValid(matchingArchitecture({ professionalFitScore: 'can sell', interestFitScore: 'wants to do', cvFitScore: 'can do' })));
-  const missingMapping = matchingArchitecture(); delete missingMapping.decisionPhilosophy.scoreMapping.cvFitScore;
-  ok('decision mapping incompleto inválido', !architectureIsValid(missingMapping));
+  ok('scoreMapping con labels originales válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'CAN DO', interestFitScore: 'WANTS TO DO', cvFitScore: 'CAN SELL' })));
+  ok('scoreMapping con prosa descriptiva sin tokens válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'Evaluates demonstrated ability to perform the responsibilities.', interestFitScore: "Measures alignment with the candidate's stated career preferences.", cvFitScore: 'Measures how convincingly the available evidence can be presented.' })));
+  ok('scoreMapping con prosa equivalente en español válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'Evalúa la capacidad demostrada para cumplir las responsabilidades.', interestFitScore: 'Mide la afinidad con las preferencias profesionales declaradas.', cvFitScore: 'Mide cuán convincentemente puede presentarse la evidencia disponible.' })));
+  for (const field of ['professionalFitScore', 'interestFitScore', 'cvFitScore']) { const emptyMapping = matchingArchitecture(); emptyMapping.decisionPhilosophy.scoreMapping[field] = ' '; ok(`scoreMapping ${field} vacío inválido`, !architectureIsValid(emptyMapping)); }
   const alternativePhilosophy = matchingArchitecture(); Object.assign(alternativePhilosophy.decisionPhilosophy, { canDo: 'Judge demonstrated capability and credible adjacency', wantsToDo: 'Respect only preferences the person actually stated', canSell: 'Consider whether the evidence can be presented credibly', overallGuidance: 'Resolve conflicting dimensions with evidence-aware judgment' });
   ok('decision philosophy con prosa alternativa válida', architectureIsValid(alternativePhilosophy));
   const spanishPhilosophy = matchingArchitecture(); Object.assign(spanishPhilosophy.decisionPhilosophy, { canDo: 'Evalúa capacidades demostradas y transferibles', wantsToDo: 'Respeta únicamente preferencias expresas', canSell: 'Evalúa si la evidencia puede presentarse de forma creíble', overallGuidance: 'Resuelve dimensiones en conflicto según la evidencia' });
@@ -209,6 +206,8 @@ async function run() {
   ok('property extra se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(extra) }), 'INVALID_PROFILE_RESPONSE'));
   const missingPhilosophyField = candidateOutput(); delete missingPhilosophyField.matchingProfile.decisionPhilosophy.overallGuidance;
   ok('campo estructural obligatorio ausente se rechaza por schema', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(missingPhilosophyField) }), 'INVALID_PROFILE_RESPONSE'));
+  const missingScoreMappingField = candidateOutput(); delete missingScoreMappingField.matchingProfile.decisionPhilosophy.scoreMapping.cvFitScore;
+  ok('campo scoreMapping obligatorio ausente se rechaza por schema', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(missingScoreMappingField) }), 'INVALID_PROFILE_RESPONSE'));
   const inconsistentArtifacts = candidateOutput(); inconsistentArtifacts.matchingProfile.targetRoles.primary[0].roles = ['Invented Role'];
   ok('consistencia cross-artifact sigue estricta', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(inconsistentArtifacts) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
   const emptyProfile = candidateOutput(); emptyProfile.profile.positioning.headline = ''; emptyProfile.profile.experience = []; emptyProfile.profile.capabilities = []; emptyProfile.profile.targetRoles.families = []; emptyProfile.summary.positioning = '';

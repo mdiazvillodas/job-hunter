@@ -127,17 +127,13 @@ function validateUsefulContent(career, profile, matching) {
   if (!matchingUseful) throw new ProfileBuilderError('El matching profile no contiene información profesional útil.', 'EMPTY_MATCHING_PROFILE', 502);
 }
 
-function normalizeSemanticToken(value) {
-  return typeof value === 'string' ? value.toLowerCase().replace(/[\s_-]+/g, '') : '';
-}
-
 function validateMatchingArchitecture(matching) {
   const philosophy = matching.decisionPhilosophy;
   const mapping = philosophy.scoreMapping;
-  const validMapping = normalizeSemanticToken(mapping.professionalFitScore).includes('cando')
-    && normalizeSemanticToken(mapping.interestFitScore).includes('wantstodo')
-    && normalizeSemanticToken(mapping.cvFitScore).includes('cansell');
-  if (!nonEmptyString(philosophy.canDo) || !nonEmptyString(philosophy.wantsToDo) || !nonEmptyString(philosophy.canSell) || !validMapping || !nonEmptyString(philosophy.overallGuidance)) throw new ProfileBuilderError('La filosofía de decisión del matching profile es inválida.', 'INVALID_PROFILE_ARCHITECTURE', 502);
+  const mappingComplete = nonEmptyString(mapping.professionalFitScore)
+    && nonEmptyString(mapping.interestFitScore)
+    && nonEmptyString(mapping.cvFitScore);
+  if (!nonEmptyString(philosophy.canDo) || !nonEmptyString(philosophy.wantsToDo) || !nonEmptyString(philosophy.canSell) || !mappingComplete || !nonEmptyString(philosophy.overallGuidance)) throw new ProfileBuilderError('La filosofía de decisión del matching profile es inválida.', 'INVALID_PROFILE_ARCHITECTURE', 502);
   if (matching.transferability.classificationLevels.length !== 4 || !nonEmptyString(matching.transferability.principle)) throw new ProfileBuilderError('Las reglas de transferibilidad del matching profile son inválidas.', 'INVALID_PROFILE_ARCHITECTURE', 502);
   if (matching.learnedPreferences.length !== 0) throw new ProfileBuilderError('learnedPreferences debe comenzar vacío.', 'INVALID_PROFILE_ARCHITECTURE', 502);
 }
@@ -209,4 +205,4 @@ async function generateProfiles(input, options = {}) {
   return { ...generated, metadata: { generatedAt: new Date().toISOString(), model: (body && body.model) || model } };
 }
 
-module.exports = { PROFILE_BUILDER_SCHEMA, DEFAULT_PROFILE_MODEL, ProfileBuilderError, buildProfileSystemPrompt, buildProfileUserPrompt, validateProfileDraft, validateUsefulContent, validateMatchingArchitecture, normalizeSemanticToken, generateProfiles, defaultTransport, matchesSchema, normalizeName };
+module.exports = { PROFILE_BUILDER_SCHEMA, DEFAULT_PROFILE_MODEL, ProfileBuilderError, buildProfileSystemPrompt, buildProfileUserPrompt, validateProfileDraft, validateUsefulContent, validateMatchingArchitecture, generateProfiles, defaultTransport, matchesSchema, normalizeName };
