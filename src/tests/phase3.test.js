@@ -8,6 +8,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { createLinkedinSessionService, STATES } = require('../session/linkedinSessionService');
 const { createHuntRunManager } = require('../run/huntRunManager');
+const {
+  getLocationInput,
+  getKeywordInput,
+  applyLocationFilter,
+  LOCATION_INPUT_SELECTORS,
+  KEYWORD_INPUT_SELECTORS,
+} = require('../linkedin/searchScope');
 const { startServer } = require('../ui/server');
 const { acquireLock: acquireFilesystemLock, releaseLock: releaseFilesystemLock } = require('../domain/huntLock');
 
@@ -533,6 +540,53 @@ async function run() {
   ok('29. polling usa ~2 segundos', /setInterval\([\s\S]*?,\s*2000\)/.test(frontend));
   ok('30. polling se detiene en COMPLETED y FAILED', frontend.includes("status === 'COMPLETED' || state.hunt.status === 'FAILED'") && frontend.includes('clearInterval(huntPollTimer)'));
   ok('31. setup incompleto ofrece /setup', html.includes('id="completeSetupLink"') && html.includes('href="/setup"'));
+
+  console.log('\n### LinkedIn search inputs');
+  function selectorPage(visibleSelector) {
+    const actions = [];
+    const page = {
+      actions,
+      locator: (selector) => {
+        const candidate = {
+          selector,
+          first: () => candidate,
+          filter: () => candidate,
+          waitFor: async () => {
+            if (!selector.includes(visibleSelector)) throw new Error('not visible');
+          },
+          isVisible: async () => selector === visibleSelector,
+          count: async () => 0,
+          innerText: async () => '',
+          click: async () => { actions.push(['click']); },
+          fill: async (value) => { actions.push(['fill', value]); },
+          type: async (value, options) => { actions.push(['type', value, options]); },
+          press: async (key) => { actions.push(['press', key]); },
+        };
+        return candidate;
+      },
+      waitForTimeout: async () => {},
+      waitForLoadState: async () => {},
+      url: () => 'https://www.linkedin.com/jobs/search/',
+    };
+    return page;
+  }
+  const preferredLocation = await getLocationInput(selectorPage(LOCATION_INPUT_SELECTORS[0]));
+  const semanticLocation = await getLocationInput(selectorPage(LOCATION_INPUT_SELECTORS[1]));
+  const englishLocation = await getLocationInput(selectorPage(LOCATION_INPUT_SELECTORS[2]));
+  const spanishLocation = await getLocationInput(selectorPage(LOCATION_INPUT_SELECTORS[3]));
+  const preferredKeyword = await getKeywordInput(selectorPage(KEYWORD_INPUT_SELECTORS[0]));
+  const spanishKeyword = await getKeywordInput(selectorPage(KEYWORD_INPUT_SELECTORS[3]));
+  ok('31a. location prefiere id estructural independiente del locale', preferredLocation.selector === LOCATION_INPUT_SELECTORS[0]);
+  ok('31b. location acepta atributo semántico independiente del locale', semanticLocation.selector === LOCATION_INPUT_SELECTORS[1]);
+  ok('31c. location conserva fallback de DOM inglés', englishLocation.selector === LOCATION_INPUT_SELECTORS[2]);
+  ok('31d. location acepta el DOM español observado', spanishLocation.selector === LOCATION_INPUT_SELECTORS[3]);
+  ok('31e. keyword prefiere id estructural y acepta fallback español', preferredKeyword.selector === KEYWORD_INPUT_SELECTORS[0] && spanishKeyword.selector === KEYWORD_INPUT_SELECTORS[3]);
+  const filterPage = selectorPage(LOCATION_INPUT_SELECTORS[3]);
+  await applyLocationFilter(filterPage, 'España', {});
+  ok('31f. filtro conserva limpieza, valor y Enter cuando no hay sugerencia', JSON.stringify(filterPage.actions) === JSON.stringify([['click'], ['fill', ''], ['type', 'España', { delay: 60 }], ['press', 'Enter']]));
+  let missingSelectorError;
+  try { await getLocationInput(selectorPage('not-present')); } catch (error) { missingSelectorError = error; }
+  ok('31g. input ausente produce error claro y estable', missingSelectorError && missingSelectorError.name === 'LinkedInSelectorError' && missingSelectorError.message === 'LinkedIn search location input was not found.');
 
   console.log('\n### Reutilización y aislamiento');
   const node = process.execPath;

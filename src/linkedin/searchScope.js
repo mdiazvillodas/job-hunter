@@ -32,6 +32,43 @@ function debugLog(options, event) {
   }
 }
 
+const LOCATION_INPUT_SELECTORS = [
+  'input[id^="jobs-search-box-location-id-"][role="combobox"]',
+  'input[autocomplete="address-level2"][role="combobox"]',
+  'input[role="combobox"][aria-label="City, state, or zip code"]',
+  'input[role="combobox"][aria-label="Ciudad, provincia/estado o código postal"]',
+];
+
+const KEYWORD_INPUT_SELECTORS = [
+  'input[id^="jobs-search-box-keyword-id-"][role="combobox"]',
+  'input[autocomplete="organization-title"][role="combobox"]',
+  'input[role="combobox"][aria-label="Search by title, skill, or company"]',
+  'input[role="combobox"][aria-label="Busca por cargo, aptitud o empresa"]',
+];
+
+async function resolveSearchInput(page, selectors, description) {
+  try {
+    await page.locator(selectors.join(', ')).first().waitFor({ state: 'visible', timeout: 15000 });
+    for (const selector of selectors) {
+      const candidate = page.locator(selector).first();
+      if (await candidate.isVisible().catch(() => false)) return candidate;
+    }
+  } catch (_) {
+    // Se reemplaza el timeout dependiente del selector por un error estable y accionable.
+  }
+  const error = new Error(`LinkedIn search ${description} input was not found.`);
+  error.name = 'LinkedInSelectorError';
+  throw error;
+}
+
+function getLocationInput(page) {
+  return resolveSearchInput(page, LOCATION_INPUT_SELECTORS, 'location');
+}
+
+function getKeywordInput(page) {
+  return resolveSearchInput(page, KEYWORD_INPUT_SELECTORS, 'keyword');
+}
+
 // Click robusto sobre un input de filtro: prefiere el <label for> visible, con fallback a check().
 async function clickFilterOption(page, inputId) {
   const labels = page.locator(`label[for="${inputId}"]`);
@@ -53,8 +90,7 @@ async function clickFilterOption(page, inputId) {
 
 // Aplica la localizacion usando el typeahead del buscador (no se asume geoId ni parametro de URL).
 async function applyLocationFilter(page, location, options) {
-  const input = page.locator('input[aria-label="City, state, or zip code"]').first();
-  await input.waitFor({ state: 'visible', timeout: 15000 });
+  const input = await getLocationInput(page);
   await input.click();
   await input.fill('');
   await input.type(location, { delay: 60 });
@@ -224,8 +260,7 @@ async function initializeSearchWithFilters(page, query, filters, options = {}) {
 // -location, employment type, date posted- se conservan; verificado contra la UI real).
 // Espera de forma robusta a que LinkedIn refleje el nuevo keyword antes de continuar.
 async function changeSearchQuery(page, query, options = {}) {
-  const kw = page.locator('input[aria-label="Search by title, skill, or company"]').first();
-  await kw.waitFor({ state: 'visible', timeout: 15000 });
+  const kw = await getKeywordInput(page);
 
   const prevFirstId = await getFirstCardId(page);
   await kw.click();
@@ -399,4 +434,9 @@ module.exports = {
   initializeSearchWithFilters,
   changeSearchQuery,
   collectCurrentSearch,
+  getLocationInput,
+  getKeywordInput,
+  applyLocationFilter,
+  LOCATION_INPUT_SELECTORS,
+  KEYWORD_INPUT_SELECTORS,
 };
