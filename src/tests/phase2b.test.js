@@ -147,9 +147,12 @@ async function run() {
   ok('decision mapping cruzado inválido', !architectureIsValid(matchingArchitecture({ professionalFitScore: 'can sell', interestFitScore: 'wants to do', cvFitScore: 'can do' })));
   const missingMapping = matchingArchitecture(); delete missingMapping.decisionPhilosophy.scoreMapping.cvFitScore;
   ok('decision mapping incompleto inválido', !architectureIsValid(missingMapping));
-  for (const field of ['canDo', 'wantsToDo', 'canSell']) { const emptyDescription = matchingArchitecture(); emptyDescription.decisionPhilosophy[field] = ' '; ok(`decision description ${field} vacía inválida`, !architectureIsValid(emptyDescription)); }
-  const emptyGuidance = matchingArchitecture(); emptyGuidance.decisionPhilosophy.overallGuidance = '';
-  ok('overallGuidance vacío inválido', !architectureIsValid(emptyGuidance));
+  const alternativePhilosophy = matchingArchitecture(); Object.assign(alternativePhilosophy.decisionPhilosophy, { canDo: 'Judge demonstrated capability and credible adjacency', wantsToDo: 'Respect only preferences the person actually stated', canSell: 'Consider whether the evidence can be presented credibly', overallGuidance: 'Resolve conflicting dimensions with evidence-aware judgment' });
+  ok('decision philosophy con prosa alternativa válida', architectureIsValid(alternativePhilosophy));
+  const spanishPhilosophy = matchingArchitecture(); Object.assign(spanishPhilosophy.decisionPhilosophy, { canDo: 'Evalúa capacidades demostradas y transferibles', wantsToDo: 'Respeta únicamente preferencias expresas', canSell: 'Evalúa si la evidencia puede presentarse de forma creíble', overallGuidance: 'Resuelve dimensiones en conflicto según la evidencia' });
+  ok('decision philosophy con prosa en español válida', architectureIsValid(spanishPhilosophy));
+  for (const field of ['canDo', 'wantsToDo', 'canSell', 'overallGuidance']) { const emptyDescription = matchingArchitecture(); emptyDescription.decisionPhilosophy[field] = ' '; ok(`decision philosophy ${field} vacía inválida`, !architectureIsValid(emptyDescription)); }
+  for (const field of ['canDo', 'wantsToDo', 'canSell', 'overallGuidance']) { const neutralWording = matchingArchitecture(); neutralWording.decisionPhilosophy[field] = 'Not evidenced'; ok(`decision philosophy ${field} no depende de wording literal`, architectureIsValid(neutralWording)); }
   ok('transferability con wording exacto en inglés válido', architectureIsValid(matchingArchitecture()));
   const equivalentTransferability = matchingArchitecture(); equivalentTransferability.transferability.principle = 'Missing keywords do not prove missing capability';
   ok('transferability equivalente sin frase literal válido', architectureIsValid(equivalentTransferability));
@@ -204,6 +207,10 @@ async function run() {
   ok('case/whitespace se normaliza y persiste nombre canónico', [nameVariant.careerContext.meta.person, nameVariant.profile.meta.person, nameVariant.matchingProfile.meta.person].every((name) => name === 'Taylor Example'));
   const extra = candidateOutput(); extra.profile.extra = true;
   ok('property extra se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(extra) }), 'INVALID_PROFILE_RESPONSE'));
+  const missingPhilosophyField = candidateOutput(); delete missingPhilosophyField.matchingProfile.decisionPhilosophy.overallGuidance;
+  ok('campo estructural obligatorio ausente se rechaza por schema', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(missingPhilosophyField) }), 'INVALID_PROFILE_RESPONSE'));
+  const inconsistentArtifacts = candidateOutput(); inconsistentArtifacts.matchingProfile.targetRoles.primary[0].roles = ['Invented Role'];
+  ok('consistencia cross-artifact sigue estricta', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(inconsistentArtifacts) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
   const emptyProfile = candidateOutput(); emptyProfile.profile.positioning.headline = ''; emptyProfile.profile.experience = []; emptyProfile.profile.capabilities = []; emptyProfile.profile.targetRoles.families = []; emptyProfile.summary.positioning = '';
   ok('profile vacío/inútil se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(emptyProfile) }), 'EMPTY_PROFILE'));
   const emptyMatching = candidateOutput(); emptyMatching.matchingProfile.positioning.headline = ''; emptyMatching.matchingProfile.experienceHighlights = []; Object.values(emptyMatching.matchingProfile.capabilities).forEach((domain) => { domain.capabilities = []; domain.evidence = []; }); emptyMatching.summary.positioning = emptyMatching.profile.positioning.headline; emptyMatching.summary.capabilities = [];

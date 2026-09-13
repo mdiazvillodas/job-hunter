@@ -95,6 +95,7 @@ function buildProfileUserPrompt(professionalText, preferencesText) {
 }
 
 function isObject(value) { return !!value && typeof value === 'object' && !Array.isArray(value); }
+function nonEmptyString(value) { return typeof value === 'string' && !!value.trim(); }
 function meaningful(value) { return typeof value === 'string' && !!value.trim() && !/^not evidenced$/i.test(value.trim()); }
 function normalizeName(value) { return typeof value === 'string' ? value.trim().normalize('NFC').toLowerCase() : ''; }
 function normalizeFact(value) { return typeof value === 'string' ? value.trim().normalize('NFC').toLowerCase() : ''; }
@@ -136,8 +137,8 @@ function validateMatchingArchitecture(matching) {
   const validMapping = normalizeSemanticToken(mapping.professionalFitScore).includes('cando')
     && normalizeSemanticToken(mapping.interestFitScore).includes('wantstodo')
     && normalizeSemanticToken(mapping.cvFitScore).includes('cansell');
-  if (!meaningful(philosophy.canDo) || !meaningful(philosophy.wantsToDo) || !meaningful(philosophy.canSell) || !validMapping || !meaningful(philosophy.overallGuidance)) throw new ProfileBuilderError('La filosofía de decisión del matching profile es inválida.', 'INVALID_PROFILE_ARCHITECTURE', 502);
-  if (matching.transferability.classificationLevels.length !== 4 || !meaningful(matching.transferability.principle)) throw new ProfileBuilderError('Las reglas de transferibilidad del matching profile son inválidas.', 'INVALID_PROFILE_ARCHITECTURE', 502);
+  if (!nonEmptyString(philosophy.canDo) || !nonEmptyString(philosophy.wantsToDo) || !nonEmptyString(philosophy.canSell) || !validMapping || !nonEmptyString(philosophy.overallGuidance)) throw new ProfileBuilderError('La filosofía de decisión del matching profile es inválida.', 'INVALID_PROFILE_ARCHITECTURE', 502);
+  if (matching.transferability.classificationLevels.length !== 4 || !nonEmptyString(matching.transferability.principle)) throw new ProfileBuilderError('Las reglas de transferibilidad del matching profile son inválidas.', 'INVALID_PROFILE_ARCHITECTURE', 502);
   if (matching.learnedPreferences.length !== 0) throw new ProfileBuilderError('learnedPreferences debe comenzar vacío.', 'INVALID_PROFILE_ARCHITECTURE', 502);
 }
 
