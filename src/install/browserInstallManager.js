@@ -1,14 +1,15 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const path = require('path');
 const { APP_DIR, PLAYWRIGHT_BROWSERS_DIR } = require('../runtime');
 
 function defaultInstaller(options = {}) {
   const appDir = options.appDir || APP_DIR;
   const browsersDir = options.browsersDir || PLAYWRIGHT_BROWSERS_DIR;
-  const resolveCli = options.resolveCli || ((name) => require.resolve(name, { paths: [appDir] }));
+  const resolvePackage = options.resolvePackage || ((name) => require.resolve(name, { paths: [appDir] }));
   const spawnChild = options.spawnChild || spawn;
-  const cli = resolveCli('playwright/cli');
+  const cli = path.join(path.dirname(resolvePackage('playwright/package.json')), 'cli.js');
   return spawnChild(options.nodeExecutable || process.execPath, [cli, 'install', 'chromium'], {
     cwd: appDir,
     env: { ...(options.env || process.env), PLAYWRIGHT_BROWSERS_PATH: browsersDir },
