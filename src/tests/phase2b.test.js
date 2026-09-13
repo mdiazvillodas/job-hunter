@@ -7,7 +7,8 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { createSetupService } = require('../setup/setupService');
-const { buildProfileSystemPrompt, generateProfiles, defaultTransport, ProfileBuilderError, validateMatchingArchitecture } = require('../ai/profileBuilder');
+const { buildProfileSystemPrompt, generateProfiles, defaultTransport, ProfileBuilderError, validateProfileDraft, validateMatchingArchitecture, MATCHING_TRANSFERABILITY, MATCHING_PURPOSE, MATCHING_DECISION_PHILOSOPHY } = require('../ai/profileBuilder');
+const { buildProfileFactRegistry, normalizeFact } = require('../ai/profileFactRegistry');
 const { analyzeJob } = require('../ai/jobAnalyzer');
 const { createLocalRepository } = require('../data/jobRepository');
 const { createJobService } = require('../services/jobService');
@@ -34,6 +35,7 @@ function candidateOutput(name = 'Taylor Example') {
       seniorityInterpretation: { level: 'Manager', evidence: ['Documented operational ownership'] },
       transferabilityRules: ['Classify adjacent capabilities only when evidence supports them'],
       decisionPhilosophy: ['Missing evidence is not evidence of absence'], careerPreferences: ['Hybrid work'],
+      careerPreferencesToAvoid: [],
       evaluationPriorities: ['Ownership', 'Demonstrated capability'], sourceHierarchy: ['User-supplied professional information'],
       unknowns: ['Budget ownership not evidenced', 'Team size not evidenced'],
     },
@@ -76,6 +78,48 @@ function candidateOutput(name = 'Taylor Example') {
 
 function mockBody(output = candidateOutput()) {
   return { model: 'mock-profile-model', choices: [{ message: { content: JSON.stringify(output) } }] };
+}
+
+function mockTransport(output = candidateOutput()) {
+  return async ({ stage }) => {
+    if (!output || typeof output !== 'object' || Array.isArray(output)) return mockBody(output);
+    if (stage === 'stage1') return mockBody({ careerContext: output.careerContext, profile: output.profile });
+    const registry = buildProfileFactRegistry(output.careerContext, output.profile);
+    const refFor = (text) => {
+      const entry = registry.entries.find((item) => normalizeFact(item.text) === normalizeFact(text));
+      return entry ? entry.id : 'UNKNOWN_REF';
+    };
+    const source = output.matchingProfile;
+    const matchingSynthesis = {
+      positioning: JSON.parse(JSON.stringify(source.positioning)),
+      capabilities: JSON.parse(JSON.stringify(source.capabilities)),
+      experienceHighlights: JSON.parse(JSON.stringify(source.experienceHighlights)),
+      preferenceClassification: {
+        avoidAsPrimaryDirectionRefs: source.careerPreferences.avoidAsPrimaryDirection.map(refFor),
+        acceptableWorkEnvironmentRefs: source.workEnvironmentFit.acceptable.map(refFor),
+        avoidWorkEnvironmentRefs: source.workEnvironmentFit.avoid.map(refFor),
+        roleTypesToAvoidRefs: source.roleTypesToAvoid.map(refFor),
+      },
+    };
+    for (const domain of Object.values(matchingSynthesis.capabilities)) {
+      domain.evidenceRefs = domain.evidence.map(refFor); delete domain.evidence;
+    }
+    for (const item of matchingSynthesis.experienceHighlights) {
+      item.evidenceRefs = item.evidence.map(refFor); delete item.evidence;
+    }
+    return mockBody({ matchingSynthesis });
+  };
+}
+
+function mutateStage2Transport(mutator, output = candidateOutput()) {
+  const base = mockTransport(output);
+  return async (input) => {
+    const body = await base(input);
+    if (input.stage !== 'stage2') return body;
+    const value = JSON.parse(body.choices[0].message.content);
+    mutator(value, input);
+    return mockBody(value);
+  };
 }
 
 function validUserInput() {
@@ -124,7 +168,9 @@ async function run() {
   const envPath = path.join(root, '.env');
   const profileDir = path.join(root, 'profile');
   let capturedTransport;
-  const transport = async (input) => { capturedTransport = input; return mockBody(); };
+  const baseTransport = mockTransport();
+  const transportCalls = [];
+  const transport = async (input) => { capturedTransport = input; transportCalls.push(input); return baseTransport(input); };
 
   const noConfig = createSetupService({ userConfigPath, envPath, profileDir, processEnv: { OPENAI_API_KEY: 'fake-key' }, profileTransport: transport });
   ok('generate requiere user config válida', await rejectsCode(() => noConfig.generateProfileDraft({ professionalText: professionalText() }), 'USER_CONFIG_REQUIRED'));
@@ -139,10 +185,12 @@ async function run() {
   const prompt = buildProfileSystemPrompt('Taylor Example').toLowerCase();
   const promptConcepts = ['only supplied user information', 'do not invent facts', 'evidence from interpretation', 'missing evidence does not mean absence', 'one particular vacancy', 'preserve unknowns', 'careercontext first', 'condensed representation'];
   ok('prompt contiene todos los principios obligatorios', promptConcepts.every((concept) => prompt.includes(concept)));
-  const verbatimDestinations = ['matchingprofile.targetroles', 'matchingprofile.capabilities', 'matchingprofile.experiencehighlights', 'matchingprofile capability evidence', 'summary.targetroles', 'summary.capabilities', 'summary.experience', 'summary.strengths', 'summary.preferences', 'summary.notevidenced', 'summary.rolestoavoid', 'summary.seniority', 'summary.positioning', 'canonical candidate name'];
+  const verbatimDestinations = ['matchingprofile.targetroles', 'matchingprofile experience highlight evidence', 'capability evidence', 'summary.targetroles', 'summary.capabilities', 'summary.experience', 'summary.strengths', 'summary.preferences', 'summary.notevidenced', 'summary.rolestoavoid', 'summary.seniority', 'summary.positioning', 'canonical candidate name'];
   ok('prompt cubre destinos cross-artifact con reuse literal', prompt.includes('cross-artifact verbatim reuse') && verbatimDestinations.every((field) => prompt.includes(field)));
   ok('prompt prohíbe rewording de facts canónicos', ['translate', 'paraphrase', 'expand', 'shorten', 'merge', 'reorder wording', 'add qualifiers'].every((rule) => prompt.includes(rule)));
-  ok('prompt aclara condensed como selección sin reescritura', prompt.includes('selecting fewer existing facts') && prompt.includes('never by rewriting canonical fact strings'));
+  ok('prompt aclara labels y highlights sintetizados con evidence literal', prompt.includes('capability labels and experience highlight statements may be concise synthesized descriptions') && prompt.includes('each must be grounded by its evidence'));
+  ok('prompt permite experience facts y excluye preferencias como evidencia profesional', prompt.includes('professional experience statements/evidence') && prompt.includes('preferences, desired future work, interests and aspirations are not evidence of capability or experience'));
+
 
   ok('scoreMapping con labels originales válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'CAN DO', interestFitScore: 'WANTS TO DO', cvFitScore: 'CAN SELL' })));
   ok('scoreMapping con prosa descriptiva sin tokens válido', architectureIsValid(matchingArchitecture({ professionalFitScore: 'Evaluates demonstrated ability to perform the responsibilities.', interestFitScore: "Measures alignment with the candidate's stated career preferences.", cvFitScore: 'Measures how convincingly the available evidence can be presented.' })));
@@ -165,72 +213,206 @@ async function run() {
   ok('transferability con tres niveles inválido', !architectureIsValid(threeTransferabilityLevels));
   const fiveTransferabilityLevels = matchingArchitecture(); fiveTransferabilityLevels.transferability.classificationLevels.push('EXTRA');
   ok('transferability con cinco niveles inválido', !architectureIsValid(fiveTransferabilityLevels));
+  const wrongTransferabilityLevels = matchingArchitecture(); wrongTransferabilityLevels.transferability.classificationLevels = ['A', 'B', 'C', 'D'];
+  ok('transferability exige los cuatro labels canónicos', !architectureIsValid(wrongTransferabilityLevels));
   const invalidLearnedPreferences = matchingArchitecture(); invalidLearnedPreferences.learnedPreferences.push('inferred preference');
   ok('learnedPreferences conserva validación', !architectureIsValid(invalidLearnedPreferences));
 
-  const oldProfiles = { careerContext: { old: 'career' }, profile: { old: 'profile' }, matchingProfile: { old: 'matching' } };
+  const oldProfiles = { careerContext: { old: 'career' }, profile: { old: 'profile' }, matchingProfile: { old: 'matching', learnedPreferences: [{ key: 'legacy-feedback-state' }] } };
   fs.mkdirSync(profileDir, { recursive: true });
   for (const [name, value] of Object.entries(oldProfiles)) fs.writeFileSync(path.join(profileDir, `${name}.json`), JSON.stringify(value), 'utf8');
 
   const original = professionalText();
   const draft = await service.generateProfileDraft({ professionalText: original, preferencesText: 'Hybrid work is preferred.' });
   ok('transport OpenAI es inyectable y mocked', capturedTransport && capturedTransport.model === 'profile-model');
-  ok('request al transport no incluye secretos innecesarios', Object.keys(capturedTransport).sort().join(',') === 'apiKey,messages,model,schema' && !JSON.stringify(capturedTransport.messages).includes('fake-key'));
+  ok('flujo two-stage llama Stage 1 antes de Stage 2', transportCalls.length === 2 && transportCalls[0].stage === 'stage1' && transportCalls[1].stage === 'stage2');
+  ok('Stage 1 exige preferencias negativas canónicas separadas', transportCalls[0].schema.properties.careerContext.required.includes('careerPreferencesToAvoid') && JSON.stringify(transportCalls[0].messages).includes('careerPreferencesToAvoid'));
+  const stage2Properties = transportCalls[1].schema.properties;
+  const synthesisProperties = stage2Properties.matchingSynthesis.properties;
+  ok('schema interno Stage 2 contiene sólo matchingSynthesis', Object.keys(stage2Properties).join(',') === 'matchingSynthesis');
+  ok('matchingSynthesis contiene sólo campos model-owned', Object.keys(synthesisProperties).sort().join(',') === 'capabilities,experienceHighlights,positioning,preferenceClassification');
+  ok('schema interno Stage 2 excluye campos application-owned', ['meta', 'targetRoles', 'seniority', 'careerPreferences', 'workEnvironmentFit', 'decisionPhilosophy', 'transferability', 'evaluationPrinciples', 'learnedPreferences', 'unknowns', 'summary'].every((field) => !(field in synthesisProperties) && !(field in stage2Properties)));
+  ok('Stage 2 prompt limita preferencias a refs de clasificación', JSON.stringify(transportCalls[1].messages).includes('Preference refs classify') && JSON.stringify(transportCalls[1].messages).includes('never professional evidence'));
+  ok('prompts internos no asignan learnedPreferences a OpenAI', transportCalls.every((call) => !JSON.stringify(call.messages).includes('learnedPreferences')));
+  ok('request al transport no incluye secretos innecesarios', transportCalls.every((call) => Object.keys(call).sort().join(',') === 'apiKey,messages,model,schema,schemaName,stage' && !JSON.stringify(call.messages).includes('fake-key')));
   ok('structured response válida produce draft completo', ['careerContext', 'profile', 'matchingProfile', 'summary', 'metadata'].every((key) => draft[key]));
   ok('profile conserva contrato de getProfileSummary', !!draft.profile.positioning.centralPositioning.statement && draft.profile.targetRoles.families.every((item) => item.family && item.relevance));
   ok('careerContext conserva invariantes de validateArchitecture', ['meta', 'professionalIdentity', 'careerNarrative', 'experienceContext', 'capabilityModel', 'targetRoles', 'roleFitCriteria', 'workEnvironment', 'seniorityInterpretation', 'transferabilityRules', 'decisionPhilosophy', 'careerPreferences', 'evaluationPriorities', 'sourceHierarchy'].every((key) => key in draft.careerContext));
   ok('matchingProfile conserva invariantes de validateArchitecture', ['decisionPhilosophy', 'transferability', 'workEnvironmentFit', 'careerPreferences'].every((key) => key in draft.matchingProfile) && draft.matchingProfile.transferability.classificationLevels.length === 4 && /absence of a keyword/i.test(draft.matchingProfile.transferability.principle) && draft.matchingProfile.decisionPhilosophy.canDo && draft.matchingProfile.decisionPhilosophy.wantsToDo && /not sales ability/i.test(draft.matchingProfile.decisionPhilosophy.canSell));
+  ok('two-stage inyecta transferability canónica exacta', JSON.stringify(draft.matchingProfile.transferability) === JSON.stringify(MATCHING_TRANSFERABILITY));
+  ok('two-stage inyecta learnedPreferences vacío', Array.isArray(draft.matchingProfile.learnedPreferences) && draft.matchingProfile.learnedPreferences.length === 0);
   ok('targetRoles mantiene primary y secondaryExploratory', Array.isArray(draft.matchingProfile.targetRoles.primary) && Array.isArray(draft.matchingProfile.targetRoles.secondaryExploratory));
   ok('capabilities mantiene dominios ricos incluido commercial', !Array.isArray(draft.matchingProfile.capabilities) && ['operations', 'delivery', 'strategy', 'productOperations', 'commercial'].every((key) => draft.matchingProfile.capabilities[key]));
   ok('matchingProfile válido no se rechaza por longitud JSON', JSON.stringify(draft.matchingProfile).length > JSON.stringify(draft.profile).length);
-  ok('search queries no se envían al Profile Builder', !JSON.stringify(capturedTransport.messages).includes('Operations Manager'));
+  ok('search queries no se envían como input al Profile Builder', !JSON.stringify(transportCalls[0].messages).includes('Operations Manager'));
   ok('preferencias no se convierten en experiencia', !JSON.stringify(draft.profile.experience).includes('Hybrid') && !JSON.stringify(draft.matchingProfile.experienceHighlights).includes('Hybrid'));
   const mockAnalysis = { requirementAssessments: [], coreCapabilityCoverage: [], decision: 'MAYBE', overallMatchScore: 50, professionalFitScore: 50, interestFitScore: 50, cvFitScore: 50, roleFamily: 'operations', summary: 's', whyItFits: [], transferableExperience: [], literalMatches: [], gaps: [], criticalRequirementsUnmet: [], redFlags: [], recommendedCV: 'current_cv', cvAdjustments: [], confidence: 50, reasoning: 'r' };
   const analyzed = await analyzeJob(draft.matchingProfile, { jobId: '1', title: 'Example' }, { candidateName: 'Taylor Example', transport: async () => ({ model: 'mock', choices: [{ message: { content: JSON.stringify(mockAnalysis) } }] }) });
   ok('analyzer acepta matchingProfile generado sin cambios', analyzed.analysis.decision === 'MAYBE');
   const draftText = fs.readFileSync(service.paths.draftPath, 'utf8');
+  ok('draft persistido contiene transferability canónica', JSON.stringify(JSON.parse(draftText).matchingProfile.transferability) === JSON.stringify(MATCHING_TRANSFERABILITY));
+  ok('draft persistido contiene learnedPreferences vacío', Array.isArray(JSON.parse(draftText).matchingProfile.learnedPreferences) && JSON.parse(draftText).matchingProfile.learnedPreferences.length === 0);
   ok('draft no contiene API key', !draftText.includes('fake-key'));
   ok('draft no contiene professionalText original completo', !draftText.includes(original));
   ok('draft no contiene preferencesText original completo', !draftText.includes('Hybrid work is preferred.'));
   ok('draft vive dentro del runtime esperado', path.dirname(service.paths.draftPath) === profileDir && fs.existsSync(service.paths.draftPath));
   ok('generate no modifica perfiles confirmados', Object.entries(oldProfiles).every(([name, value]) => fs.readFileSync(path.join(profileDir, `${name}.json`), 'utf8') === JSON.stringify(value)));
+  ok('regeneración no migra ni copia learnedPreferences confirmado', JSON.parse(fs.readFileSync(path.join(profileDir, 'matchingProfile.json'), 'utf8')).learnedPreferences[0].key === 'legacy-feedback-state' && draft.matchingProfile.learnedPreferences.length === 0);
   ok('status profileDraft funciona', service.getStatus().profileDraft === true && service.getStatus().profileDraftValid === true);
   ok('perfiles confirmados existentes siguen activos durante regeneración', service.getStatus().readyForHunt === true);
   const failedGenerateService = createSetupService({ userConfigPath, envPath, profileDir, processEnv: { OPENAI_API_KEY: 'fake-key' }, profileTransport: async () => { throw new Error('simulated generation failure'); } });
   await rejectsCode(() => failedGenerateService.generateProfileDraft({ professionalText: original }), 'OPENAI_REQUEST_FAILED');
   ok('generate fallido conserva draft válido anterior', fs.readFileSync(service.paths.draftPath, 'utf8') === draftText);
 
-  ok('root array se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody([]) }), 'INVALID_PROFILE_RESPONSE'));
-  ok('root null se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(null) }), 'INVALID_PROFILE_RESPONSE'));
-  ok('respuesta incompleta se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody({ careerContext: {} }) }), 'INCOMPLETE_PROFILE_RESPONSE'));
-  ok('candidate name inconsistente se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(candidateOutput('Another Person')) }), 'INCONSISTENT_CANDIDATE_NAME'));
-  const nameVariant = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(candidateOutput(' TAYLOR EXAMPLE ')) });
+  const registryA = buildProfileFactRegistry(candidateOutput().careerContext, candidateOutput().profile);
+  const registryB = buildProfileFactRegistry(candidateOutput().careerContext, candidateOutput().profile);
+  ok('registry genera IDs determinísticos y orden estable', JSON.stringify(registryA.entries) === JSON.stringify(registryB.entries) && registryA.entries[0].id === 'EXP_001');
+  ok('registry deduplica facts normalizados', registryA.entries.filter((item) => normalizeFact(item.text) === normalizeFact('Operations delivery')).length === 1);
+  ok('registry conserva namespaces tipados', registryA.entries.some((item) => /^EXP_/.test(item.id) && item.kinds.includes('experience')) && registryA.entries.some((item) => /^CAP_/.test(item.id) && item.kinds.includes('capability')) && registryA.entries.some((item) => /^PREF_/.test(item.id) && item.kinds.includes('preference')));
+  ok('preferencias no integran allowlist profesional', registryA.entries.filter((item) => item.kinds.includes('preference')).every((item) => !registryA.capabilityEvidenceIds.includes(item.id) && !registryA.experienceEvidenceIds.includes(item.id)));
+  const preferenceRegistryInput = candidateOutput(); preferenceRegistryInput.careerContext.careerPreferences = ['Hybrid work', ' hybrid work ']; preferenceRegistryInput.careerContext.careerPreferencesToAvoid = ['No sales', ' no sales ']; preferenceRegistryInput.careerContext.workEnvironment.preferences = ['Autonomous team', 'no sales']; preferenceRegistryInput.profile.preferences.push('Profile-only preference');
+  const preferenceRegistry = buildProfileFactRegistry(preferenceRegistryInput.careerContext, preferenceRegistryInput.profile);
+  ok('PREF IDs son determinísticos, estables y deduplicados por tipo', preferenceRegistry.preferenceIds.join('|') === 'PREF_001|PREF_002|PREF_003|PREF_004' && preferenceRegistry.preferenceIds.map((id) => preferenceRegistry.byId.get(id).text).join('|') === 'Hybrid work|No sales|Autonomous team|no sales');
+  ok('registry PREF usa sólo fuentes autoritativas Stage 1', !preferenceRegistry.entries.some((entry) => entry.text === 'Profile-only preference'));
+  ok('registry PREF conserva polaridad y origen', preferenceRegistry.positiveCareerPreferenceIds.join('|') === 'PREF_001' && preferenceRegistry.negativeCareerPreferenceIds.join('|') === 'PREF_002' && preferenceRegistry.workEnvironmentPreferenceIds.join('|') === 'PREF_003|PREF_004');
+  ok('hydration elimina refs y wrapper interno del draft final', !JSON.stringify(draft).includes('evidenceRefs') && !JSON.stringify(draft).includes('matchingSynthesis') && !/\b(?:EXP|CAP|PREF|UNK)_\d{3}\b/.test(JSON.stringify(draft)));
+  ok('hydration conserva evidencia canónica exacta', draft.matchingProfile.capabilities.operations.evidence[0] === 'Led documented operations work' && draft.matchingProfile.experienceHighlights[0].evidence[0] === 'Led documented cross-functional work');
+
+  let stage1FailureCalls = 0;
+  await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => { stage1FailureCalls += 1; throw new Error('stage 1 failed'); } }), 'OPENAI_REQUEST_FAILED');
+  ok('fallo Stage 1 impide Stage 2', stage1FailureCalls === 1);
+  let stage2FailureCalls = 0;
+  const successfulStage1 = mockTransport();
+  await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async (input) => { stage2FailureCalls += 1; if (input.stage === 'stage2') throw new Error('stage 2 failed'); return successfulStage1(input); } }), 'OPENAI_REQUEST_FAILED');
+  ok('fallo Stage 2 no devuelve draft', stage2FailureCalls === 2);
+  ok('Stage 2 no puede suministrar ni sobrescribir transferability', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.transferability = { classificationLevels: ['A'], principle: 'Override' }; }) }), 'INVALID_PROFILE_RESPONSE'));
+  ok('Stage 2 no puede suministrar ni sobrescribir learnedPreferences', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.learnedPreferences = ['model preference']; }) }), 'INVALID_PROFILE_RESPONSE'));
+  const forbiddenStage2Fields = ['meta', 'targetRoles', 'seniority', 'careerPreferences', 'workEnvironmentFit', 'decisionPhilosophy', 'evaluationPrinciples', 'unknowns', 'summary'];
+  ok('Stage 2 rechaza todos los campos application-owned', (await Promise.all(forbiddenStage2Fields.map((field) => rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis[field] = {}; }) }), 'INVALID_PROFILE_RESPONSE')))).every(Boolean));
+  const alternateRules = candidateOutput(); alternateRules.careerContext.transferabilityRules = ['Generated unrelated rule', 'Another Stage 1 rule'];
+  const alternateRulesDraft = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(alternateRules) });
+  ok('careerContext.transferabilityRules no controla matching taxonomy', JSON.stringify(alternateRulesDraft.matchingProfile.transferability) === JSON.stringify(MATCHING_TRANSFERABILITY));
+  ok('registry no contiene transferability', registryA.entries.every((entry) => !/transferab/i.test(entry.id) && !/transferab/i.test(entry.kind)));
+  ok('registry no contiene learnedPreferences', registryA.entries.every((entry) => !/learned/i.test(entry.id) && !/learned/i.test(entry.kind)));
+  ok('ref desconocida falla determinísticamente', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.capabilities.operations.evidenceRefs = ['EXP_999']; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  ok('ref vacía falla determinísticamente', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.capabilities.operations.evidenceRefs = ['']; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const preferenceRef = registryA.entries.find((item) => item.kinds.includes('preference')).id;
+  ok('ref de preferencia como capability evidence falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.capabilities.operations.evidenceRefs = [preferenceRef]; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const capabilityOnlyRef = registryA.entries.find((item) => item.kinds.includes('capability') && !item.kinds.includes('experience')).id;
+  ok('ref sólo capability como highlight evidence falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.experienceHighlights[0].evidenceRefs = [capabilityOnlyRef]; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const duplicateRefsDraft = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { const ref = value.matchingSynthesis.capabilities.operations.evidenceRefs[0]; value.matchingSynthesis.capabilities.operations.evidenceRefs = [ref, ref]; }) });
+  ok('refs duplicadas se deduplican preservando primera aparición', duplicateRefsDraft.matchingProfile.capabilities.operations.evidence.length === 1 && duplicateRefsDraft.matchingProfile.capabilities.operations.evidence[0] === 'Led documented operations work');
+  const referenceRegression = candidateOutput();
+  referenceRegression.careerContext.experienceContext[0] = { statement: 'Experience coordinating architects, engineering teams, contractors and suppliers.', evidence: ['Led documented cross-functional work'] };
+  referenceRegression.profile.experience[0] = JSON.parse(JSON.stringify(referenceRegression.careerContext.experienceContext[0]));
+  referenceRegression.matchingProfile.capabilities.operations.capabilities = ['Supplier coordination'];
+  referenceRegression.matchingProfile.capabilities.operations.evidence = ['Experience coordinating architects, engineering teams, contractors and suppliers.'];
+  referenceRegression.matchingProfile.experienceHighlights[0].evidence = ['Experience coordinating architects, engineering teams, contractors and suppliers.'];
+  referenceRegression.summary.capabilities = ['Supplier coordination', 'Delivery'];
+  referenceRegression.summary.experience = [referenceRegression.matchingProfile.experienceHighlights[0].statement];
+  const referenceRegressionDraft = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(referenceRegression) });
+  ok('regresión real usa ref e hidrata fact canónico completo', referenceRegressionDraft.matchingProfile.capabilities.operations.evidence[0] === referenceRegression.careerContext.experienceContext[0].statement);
+  const invalidRefDir = path.join(root, 'invalid-ref-profile');
+  const invalidRefService = createSetupService({ userConfigPath, envPath, profileDir: invalidRefDir, processEnv: { OPENAI_API_KEY: 'fake-key' }, profileTransport: mutateStage2Transport((value) => { value.matchingSynthesis.capabilities.operations.evidenceRefs = ['EXP_999']; }) });
+  ok('invalid ref no persiste draft parcial', await rejectsCode(() => invalidRefService.generateProfileDraft({ professionalText: original }), 'INCONSISTENT_PROFILE_ARTIFACTS') && !fs.existsSync(invalidRefService.paths.draftPath));
+
+  ok('root array se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport([]) }), 'INVALID_PROFILE_RESPONSE'));
+  ok('root null se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(null) }), 'INVALID_PROFILE_RESPONSE'));
+  ok('respuesta incompleta se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport({ careerContext: {} }) }), 'INVALID_PROFILE_RESPONSE'));
+  ok('candidate name inconsistente se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(candidateOutput('Another Person')) }), 'INCONSISTENT_CANDIDATE_NAME'));
+  const nameVariant = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(candidateOutput(' TAYLOR EXAMPLE ')) });
   ok('case/whitespace se normaliza y persiste nombre canónico', [nameVariant.careerContext.meta.person, nameVariant.profile.meta.person, nameVariant.matchingProfile.meta.person].every((name) => name === 'Taylor Example'));
   const extra = candidateOutput(); extra.profile.extra = true;
-  ok('property extra se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(extra) }), 'INVALID_PROFILE_RESPONSE'));
-  const missingPhilosophyField = candidateOutput(); delete missingPhilosophyField.matchingProfile.decisionPhilosophy.overallGuidance;
-  ok('campo estructural obligatorio ausente se rechaza por schema', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(missingPhilosophyField) }), 'INVALID_PROFILE_RESPONSE'));
-  const missingScoreMappingField = candidateOutput(); delete missingScoreMappingField.matchingProfile.decisionPhilosophy.scoreMapping.cvFitScore;
-  ok('campo scoreMapping obligatorio ausente se rechaza por schema', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(missingScoreMappingField) }), 'INVALID_PROFILE_RESPONSE'));
-  const inconsistentArtifacts = candidateOutput(); inconsistentArtifacts.matchingProfile.targetRoles.primary[0].roles = ['Invented Role'];
-  ok('consistencia cross-artifact sigue estricta', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(inconsistentArtifacts) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
-  const literalCapability = candidateOutput();
-  ok('matching capability literal pasa', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(literalCapability) }).then(() => true, () => false));
-  for (const [label, value] of [['parafraseada', 'Operational leadership'], ['traducida', 'Operaciones'], ['inventada', 'Financial forecasting']]) { const output = candidateOutput(); output.matchingProfile.capabilities.operations.capabilities = [value]; ok(`matching capability ${label} falla`, await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(output) }), 'INCONSISTENT_PROFILE_ARTIFACTS')); }
-  const literalTargetRole = candidateOutput();
-  ok('matching target role literal pasa', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(literalTargetRole) }).then(() => true, () => false));
-  for (const [label, value] of [['parafraseado', 'Operations Lead'], ['traducido', 'Gerente de Operaciones']]) { const output = candidateOutput(); output.matchingProfile.targetRoles.primary[0].roles = [value]; ok(`matching target role ${label} falla`, await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(output) }), 'INCONSISTENT_PROFILE_ARTIFACTS')); }
-  const paraphrasedSummary = candidateOutput(); paraphrasedSummary.summary.capabilities = ['Operational expertise'];
-  ok('summary parafraseado falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(paraphrasedSummary) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
-  const wrongSeniority = candidateOutput(); wrongSeniority.summary.seniority = 'Management level';
-  ok('summary seniority no literal falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(wrongSeniority) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
-  const wrongPositioning = candidateOutput(); wrongPositioning.summary.positioning = 'Operational Leader';
-  ok('summary positioning no literal falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(wrongPositioning) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
-  for (const [label, mutate] of [['experience highlight', (output) => { output.matchingProfile.experienceHighlights[0].statement = 'Led operational delivery'; }], ['capability evidence', (output) => { output.matchingProfile.capabilities.operations.evidence = ['Demonstrated operational leadership']; }], ['preference', (output) => { output.matchingProfile.careerPreferences.explicit = ['Flexible workplace']; }], ['unknown', (output) => { output.matchingProfile.unknowns = ['Revenue ownership']; }]]) { const output = candidateOutput(); mutate(output); ok(`matching ${label} sin fuente falla`, await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(output) }), 'INCONSISTENT_PROFILE_ARTIFACTS')); }
+  ok('property extra se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(extra) }), 'INVALID_PROFILE_RESPONSE'));
+  ok('campo model-owned obligatorio ausente se rechaza por schema', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { delete value.matchingSynthesis.positioning; }) }), 'INVALID_PROFILE_RESPONSE'));
+  const corruptedExternal = JSON.parse(JSON.stringify(draft)); delete corruptedExternal.matchingProfile.decisionPhilosophy.scoreMapping.cvFitScore;
+  ok('schema externo conserva scoreMapping obligatorio', await rejectsCode(() => Promise.resolve().then(() => validateProfileDraft(corruptedExternal, 'Taylor Example')), 'INVALID_PROFILE_RESPONSE'));
+  ok('modelo no puede inyectar matchingProfile externo', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingProfile = candidateOutput().matchingProfile; }) }), 'INVALID_PROFILE_RESPONSE'));
+  const synthesizedCapability = candidateOutput(); synthesizedCapability.matchingProfile.capabilities.operations.capabilities = ['Cost control and construction follow-up']; synthesizedCapability.summary.capabilities = ['Cost control and construction follow-up', 'Delivery'];
+  ok('matching capability evidence desde capability evidence pasa', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(synthesizedCapability) }).then(() => true, () => false));
+  const multipleSynthesizedCapabilities = candidateOutput(); multipleSynthesizedCapabilities.matchingProfile.capabilities.operations.capabilities = ['Operational coordination', 'Process delivery']; multipleSynthesizedCapabilities.summary.capabilities = ['Operational coordination', 'Process delivery', 'Delivery'];
+  ok('múltiples capabilities sintetizadas con evidence upstream pasan', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(multipleSynthesizedCapabilities) }).then(() => true, () => false));
+  const emptyCapabilityLabel = candidateOutput(); emptyCapabilityLabel.matchingProfile.capabilities.operations.capabilities = ['']; emptyCapabilityLabel.summary.capabilities = ['Delivery'];
+  ok('matching capability label vacío falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(emptyCapabilityLabel) }), 'INVALID_PROFILE_ARCHITECTURE'));
+  const ungroundedCapability = candidateOutput(); ungroundedCapability.matchingProfile.capabilities.operations.capabilities = ['Synthesized capability']; ungroundedCapability.matchingProfile.capabilities.operations.evidence = [];
+  ok('matching capability sin evidence falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(ungroundedCapability) }), 'INVALID_PROFILE_ARCHITECTURE'));
+  const foreignCapabilityEvidence = candidateOutput(); foreignCapabilityEvidence.matchingProfile.capabilities.operations.capabilities = ['Synthesized capability']; foreignCapabilityEvidence.matchingProfile.capabilities.operations.evidence = ['Foreign evidence'];
+  ok('matching capability con evidence inventada sigue fallando', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(foreignCapabilityEvidence) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const experienceGroundedCapability = candidateOutput(); experienceGroundedCapability.matchingProfile.capabilities.operations.capabilities = ['Project delivery coordination']; experienceGroundedCapability.matchingProfile.capabilities.operations.evidence = ['Operations delivery']; experienceGroundedCapability.summary.capabilities = ['Project delivery coordination', 'Delivery'];
+  ok('matching capability evidence desde experience statement pasa', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(experienceGroundedCapability) }).then(() => true, () => false));
+  const experienceEvidenceGroundedCapability = candidateOutput(); experienceEvidenceGroundedCapability.matchingProfile.capabilities.operations.capabilities = ['Cross-functional execution']; experienceEvidenceGroundedCapability.matchingProfile.capabilities.operations.evidence = ['Led documented cross-functional work']; experienceEvidenceGroundedCapability.summary.capabilities = ['Cross-functional execution', 'Delivery'];
+  ok('matching capability evidence desde experience evidence pasa', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(experienceEvidenceGroundedCapability) }).then(() => true, () => false));
+  const preferenceAsCapabilityEvidence = candidateOutput(); preferenceAsCapabilityEvidence.matchingProfile.capabilities.operations.capabilities = ['Work environment flexibility']; preferenceAsCapabilityEvidence.matchingProfile.capabilities.operations.evidence = ['Hybrid work'];
+  ok('career preference sigue excluida de capability evidence', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(preferenceAsCapabilityEvidence) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const synthesizedHighlight = candidateOutput(); synthesizedHighlight.matchingProfile.experienceHighlights[0].statement = 'Managed concurrent projects and coordinated a team'; synthesizedHighlight.summary.experience = ['Managed concurrent projects and coordinated a team'];
+  ok('experience highlight sintetizado con evidence literal pasa', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(synthesizedHighlight) }).then(() => true, () => false));
+  const multipleSynthesizedHighlights = candidateOutput(); multipleSynthesizedHighlights.matchingProfile.experienceHighlights = [{ statement: 'Coordinated complex delivery', evidence: ['Led documented cross-functional work'] }, { statement: 'Owned operational outcomes', evidence: ['Operations delivery'] }]; multipleSynthesizedHighlights.summary.experience = ['Coordinated complex delivery', 'Owned operational outcomes'];
+  ok('múltiples experience highlights sintetizados con grounding pasan', await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(multipleSynthesizedHighlights) }).then(() => true, () => false));
+  const emptyHighlight = candidateOutput(); emptyHighlight.matchingProfile.experienceHighlights[0].statement = ' ';
+  ok('experience highlight statement vacío falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(emptyHighlight) }), 'INVALID_PROFILE_ARCHITECTURE'));
+  const inventedHighlightEvidence = candidateOutput(); inventedHighlightEvidence.matchingProfile.experienceHighlights[0].statement = 'Concise grounded presentation'; inventedHighlightEvidence.matchingProfile.experienceHighlights[0].evidence = ['Invented professional evidence'];
+  ok('experience highlight evidence inventada falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(inventedHighlightEvidence) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const preferenceAsHighlightEvidence = candidateOutput(); preferenceAsHighlightEvidence.matchingProfile.experienceHighlights[0].statement = 'Preferred work environment'; preferenceAsHighlightEvidence.matchingProfile.experienceHighlights[0].evidence = ['Hybrid work'];
+  ok('career preference sigue excluida de highlight evidence', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(preferenceAsHighlightEvidence) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const canonicalOwnership = candidateOutput();
+  canonicalOwnership.careerContext.targetRoles.primary.push({ roleFamily: ' operations ', roles: ['Operations Manager', 'Chief of Operations'], relevance: 'Ignored duplicate relevance', evidence: ['Ignored duplicate evidence'] });
+  canonicalOwnership.careerContext.targetRoles.aspirational.push({ roleFamily: 'Strategy', roles: ['Strategy Manager', ' strategy manager '], relevance: 'Exploratory', evidence: ['Career aspiration'] });
+  canonicalOwnership.careerContext.careerPreferences = ['Hybrid work', ' hybrid work '];
+  canonicalOwnership.careerContext.careerPreferencesToAvoid = ['No pure sales', ' no pure sales '];
+  canonicalOwnership.careerContext.workEnvironment.preferences = ['Hybrid', 'Autonomous teams', ' hybrid '];
+  canonicalOwnership.careerContext.workEnvironment.evidence = ['User stated hybrid preference', 'Direct preference statement', ' user stated hybrid preference '];
+  canonicalOwnership.careerContext.unknowns = ['Budget ownership not evidenced', 'Team size not evidenced'];
+  canonicalOwnership.profile.unknowns = ['Budget ownership not evidenced', 'Exact team size'];
+  canonicalOwnership.matchingProfile.careerPreferences.avoidAsPrimaryDirection = ['No pure sales'];
+  canonicalOwnership.matchingProfile.workEnvironmentFit.acceptable = ['Hybrid'];
+  canonicalOwnership.matchingProfile.workEnvironmentFit.avoid = [];
+  canonicalOwnership.matchingProfile.roleTypesToAvoid = ['No pure sales'];
+  const ownedDraft = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(canonicalOwnership) });
+  ok('target roles se proyectan con orden, buckets y dedupe estables', ownedDraft.matchingProfile.targetRoles.primary.length === 1 && ownedDraft.matchingProfile.targetRoles.primary[0].roleFamily === 'Operations' && ownedDraft.matchingProfile.targetRoles.primary[0].roles.join('|') === 'Operations Manager|Chief of Operations' && ownedDraft.matchingProfile.targetRoles.secondaryExploratory[0].roleFamily === 'Strategy' && ownedDraft.matchingProfile.targetRoles.secondaryExploratory[0].roles.length === 1);
+  ok('seniority se proyecta como copia fresca exacta', JSON.stringify(ownedDraft.matchingProfile.seniority) === JSON.stringify(canonicalOwnership.profile.seniority) && ownedDraft.matchingProfile.seniority !== canonicalOwnership.profile.seniority);
+  ok('preferencias explícitas positivas se proyectan sin mezclar negativas', ownedDraft.matchingProfile.careerPreferences.explicit.join('|') === 'Hybrid work');
+  ok('work environment preferred/evidence se proyecta con dedupe estable', ownedDraft.matchingProfile.workEnvironmentFit.preferred.join('|') === 'Hybrid|Autonomous teams' && ownedDraft.matchingProfile.workEnvironmentFit.evidence.join('|') === 'User stated hybrid preference|Direct preference statement');
+  ok('clasificación de preferencias se hidrata por tipo PREF', ownedDraft.matchingProfile.careerPreferences.avoidAsPrimaryDirection[0] === 'No pure sales' && ownedDraft.matchingProfile.workEnvironmentFit.acceptable[0] === 'Hybrid' && ownedDraft.matchingProfile.workEnvironmentFit.avoid.length === 0 && ownedDraft.matchingProfile.roleTypesToAvoid[0] === 'No pure sales');
+  ok('unknowns se unen sin omisión y con dedupe estable', ownedDraft.matchingProfile.unknowns.join('|') === 'Budget ownership not evidenced|Team size not evidenced|Exact team size');
+  ok('meta y filosofía son configuración determinística', ownedDraft.matchingProfile.meta.person === 'Taylor Example' && ownedDraft.matchingProfile.meta.purpose === MATCHING_PURPOSE && JSON.stringify(ownedDraft.matchingProfile.decisionPhilosophy) === JSON.stringify(MATCHING_DECISION_PHILOSOPHY));
+  ok('evaluationPrinciples se proyecta desde profile', JSON.stringify(ownedDraft.matchingProfile.evaluationPrinciples) === JSON.stringify(canonicalOwnership.profile.evaluationPrinciples));
+  ok('summary completo se construye determinísticamente', ownedDraft.summary.positioning === canonicalOwnership.profile.positioning.headline && ownedDraft.summary.seniority === canonicalOwnership.profile.seniority.assessedLevel && ownedDraft.summary.experience[0] === canonicalOwnership.matchingProfile.experienceHighlights[0].statement && ownedDraft.summary.strengths.join('|') === 'Operations|Delivery' && ownedDraft.summary.notEvidenced.join('|') === ownedDraft.matchingProfile.unknowns.join('|') && ownedDraft.summary.rolesToAvoid[0] === 'No pure sales');
+  ok('summary targetRoles deriva del matching final', ownedDraft.summary.targetRoles.join('|') === 'Operations|Operations Manager|Chief of Operations|Strategy|Strategy Manager');
+  ok('summary capabilities deriva de labels sintetizados', ownedDraft.summary.capabilities.join('|') === 'Operations|Delivery');
+  ok('summary experience deriva de highlight statements', ownedDraft.summary.experience.join('|') === 'Operations delivery');
+  ok('summary strengths deriva de profile capabilities', ownedDraft.summary.strengths.join('|') === 'Operations|Delivery');
+  ok('summary notEvidenced deriva de unknowns finales', ownedDraft.summary.notEvidenced.join('|') === 'Budget ownership not evidenced|Team size not evidenced|Exact team size');
+  ok('summary rolesToAvoid deriva de clasificación hidratada', ownedDraft.summary.rolesToAvoid.join('|') === 'No pure sales');
+  ok('summary preferences conserva orden contractual', ownedDraft.summary.preferences.join('|') === 'Hybrid work|No pure sales|Hybrid|Autonomous teams');
+  ok('paráfrasis model-owned de campos application-owned no sobrevive', ownedDraft.matchingProfile.targetRoles.primary[0].roles[0] === 'Operations Manager' && ownedDraft.matchingProfile.careerPreferences.explicit[0] === 'Hybrid work' && ownedDraft.summary.positioning === 'Operations Leader');
+  const realNegativeCase = candidateOutput();
+  realNegativeCase.careerContext.careerPreferences = ['Posiciones senior en arquitectura retail y gestión técnica de proyectos'];
+  realNegativeCase.careerContext.careerPreferencesToAvoid = ['No busco posiciones exclusivamente de delineación', 'No busco puestos centrados únicamente en operaciones generales'];
+  realNegativeCase.matchingProfile.careerPreferences.avoidAsPrimaryDirection = ['No busco puestos centrados únicamente en operaciones generales'];
+  realNegativeCase.matchingProfile.roleTypesToAvoid = ['No busco posiciones exclusivamente de delineación'];
+  const realNegativeDraft = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(realNegativeCase) });
+  ok('regresión real preserva delineación como role type evitado', realNegativeDraft.matchingProfile.roleTypesToAvoid[0] === 'No busco posiciones exclusivamente de delineación');
+  ok('regresión real preserva operaciones generales como dirección evitada', realNegativeDraft.matchingProfile.careerPreferences.avoidAsPrimaryDirection[0] === 'No busco puestos centrados únicamente en operaciones generales');
+  ok('preferencias negativas no se convierten en evidencia profesional', !JSON.stringify(realNegativeDraft.matchingProfile.capabilities).includes('exclusivamente de delineación') && !JSON.stringify(realNegativeDraft.matchingProfile.experienceHighlights).includes('operaciones generales'));
+  ok('preferencia negativa explícita no puede omitirse de ambos buckets', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.preferenceClassification.avoidAsPrimaryDirectionRefs = []; value.matchingSynthesis.preferenceClassification.roleTypesToAvoidRefs = []; }, realNegativeCase) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const noNegativeCase = candidateOutput();
+  const noNegativeDraft = await generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(noNegativeCase) });
+  ok('sin fuente negativa no se inventan evitaciones', noNegativeDraft.matchingProfile.careerPreferences.avoidAsPrimaryDirection.length === 0 && noNegativeDraft.matchingProfile.roleTypesToAvoid.length === 0);
+  const wrongPreferenceRef = registryA.capabilityEvidenceIds[0];
+  ok('ref profesional como clasificación de preferencia falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.preferenceClassification.avoidAsPrimaryDirectionRefs = [wrongPreferenceRef]; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const positivePreferenceRef = registryA.positiveCareerPreferenceIds[0];
+  const workPreferenceRef = registryA.workEnvironmentPreferenceIds[0];
+  ok('preferencia positiva no puede usarse como dirección negativa', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.preferenceClassification.avoidAsPrimaryDirectionRefs = [positivePreferenceRef]; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  ok('preferencia de entorno no puede usarse como role type evitado', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.preferenceClassification.roleTypesToAvoidRefs = [workPreferenceRef]; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  ok('ref de preferencia desconocida falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mutateStage2Transport((value) => { value.matchingSynthesis.preferenceClassification.avoidAsPrimaryDirectionRefs = ['PREF_999']; }) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
+  const invalidPreferenceService = createSetupService({ userConfigPath, envPath, profileDir, processEnv: { OPENAI_API_KEY: 'fake-key' }, profileTransport: mutateStage2Transport((value) => { value.matchingSynthesis.preferenceClassification.avoidAsPrimaryDirectionRefs = ['PREF_999']; }) });
+  ok('preference ref inválida conserva el draft anterior', await rejectsCode(() => invalidPreferenceService.generateProfileDraft({ professionalText: original }), 'INCONSISTENT_PROFILE_ARTIFACTS') && fs.readFileSync(service.paths.draftPath, 'utf8') === draftText);
+  const foreignCapability = candidateOutput(); foreignCapability.matchingProfile.capabilities.operations.evidence = ['Demonstrated operational leadership'];
+  ok('matching capability evidence sin fuente falla', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(foreignCapability) }), 'INCONSISTENT_PROFILE_ARTIFACTS'));
   const emptyProfile = candidateOutput(); emptyProfile.profile.positioning.headline = ''; emptyProfile.profile.experience = []; emptyProfile.profile.capabilities = []; emptyProfile.profile.targetRoles.families = []; emptyProfile.summary.positioning = '';
-  ok('profile vacío/inútil se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(emptyProfile) }), 'EMPTY_PROFILE'));
+  ok('profile vacío/inútil se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(emptyProfile) }), 'EMPTY_PROFILE'));
   const emptyMatching = candidateOutput(); emptyMatching.matchingProfile.positioning.headline = ''; emptyMatching.matchingProfile.experienceHighlights = []; Object.values(emptyMatching.matchingProfile.capabilities).forEach((domain) => { domain.capabilities = []; domain.evidence = []; }); emptyMatching.summary.positioning = emptyMatching.profile.positioning.headline; emptyMatching.summary.capabilities = [];
-  ok('matchingProfile vacío/inútil se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: async () => mockBody(emptyMatching) }), 'EMPTY_MATCHING_PROFILE'));
+  ok('matchingProfile vacío/inútil se rechaza', await rejectsCode(() => generateProfiles({ professionalText: original }, { candidateName: 'Taylor Example', apiKey: 'x', transport: mockTransport(emptyMatching) }), 'EMPTY_MATCHING_PROFILE'));
 
   const noDraftDir = path.join(root, 'no-draft-profile');
   const noDraft = createSetupService({ userConfigPath, envPath, profileDir: noDraftDir, processEnv: { OPENAI_API_KEY: 'fake-key' } });
