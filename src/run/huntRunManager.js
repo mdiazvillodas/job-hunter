@@ -44,6 +44,27 @@ function safeError(error) {
   return { code: 'HUNT_FAILED', message: 'La búsqueda no pudo completarse.' };
 }
 
+function sanitizeDiagnosticText(value, limit) {
+  if (typeof value !== 'string') return '';
+  const sanitized = value
+    .replace(/https?:\/\/[^\s)'"\]]+/gi, '[REDACTED_URL]')
+    .replace(/\b(prompt|professionalText|preferencesText|profileSource|request\s*body)\b\s*[:=][\s\S]*/gi, '$1=[REDACTED]')
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, '[REDACTED_API_KEY]')
+    .replace(/\b(authorization|cookie|li_at|api[_-]?key|access[_-]?token|password|credential)\b\s*[:=]\s*([^\s,;]+)/gi, '$1=[REDACTED]');
+  return sanitized.length > limit ? `${sanitized.slice(0, limit)}...[TRUNCATED]` : sanitized;
+}
+
+function safeDiagnostic(error, stage) {
+  const rawName = error && typeof error.name === 'string' ? error.name : 'Error';
+  return {
+    stage: typeof stage === 'string' && stage ? stage : 'unknown',
+    name: sanitizeDiagnosticText(rawName, 100) || 'Error',
+    message: sanitizeDiagnosticText(error && error.message ? error.message : String(error), 1000),
+    stack: sanitizeDiagnosticText(error && error.stack ? error.stack : '', 5000) || null,
+  };
+}
+
 function createHuntRunManager(options = {}) {
   const huntRunner = options.huntRunner || ((huntOptions) => require('../hunt').runHunt(huntOptions));
   const setupService = options.setupService;
@@ -59,13 +80,21 @@ function createHuntRunManager(options = {}) {
   const snapshot = () => JSON.parse(JSON.stringify(current));
 
   async function start(huntOptions = {}) {
+    let stage = 'persisted_session_verification';
     if (!accepting) throw operationalError('APP_SHUTTING_DOWN', 'Job Hunter se está cerrando.', 503);
     if (ACTIVE.has(current.status)) throw operationalError('HUNT_ALREADY_RUNNING', 'Ya hay una búsqueda en curso.');
     if (sessionService.isOpen()) throw operationalError('SESSION_WINDOW_OPEN', 'Cerrá la ventana manual de LinkedIn antes de buscar.');
     if (!setupService.getStatus().readyForHunt) throw operationalError('SETUP_REQUIRED', 'Completá la configuración antes de buscar.');
-    const linkedIn = sessionService.verifyPersistedSession
-      ? await sessionService.verifyPersistedSession()
-      : await sessionService.getStatus();
+    let linkedIn;
+    try {
+      linkedIn = sessionService.verifyPersistedSession
+        ? await sessionService.verifyPersistedSession()
+        : await sessionService.getStatus();
+    } catch (error) {
+      const diagnostic = safeDiagnostic(error, stage);
+      console.error(`[hunt-run] preflight-failure diagnostic=${JSON.stringify(diagnostic)}`);
+      throw error;
+    }
     if (linkedIn.state !== STATES.AUTHENTICATED) {
       const code = linkedIn.state === STATES.CHECKPOINT_REQUIRED ? 'CHECKPOINT_REQUIRED' : 'LOGIN_REQUIRED';
       throw operationalError(code, code === 'CHECKPOINT_REQUIRED' ? 'LinkedIn requiere una verificación manual.' : 'Necesitás iniciar sesión en LinkedIn.');
@@ -80,12 +109,16 @@ function createHuntRunManager(options = {}) {
       current.status = 'RUNNING';
       console.log(`[hunt-run] started runId=${current.runId}`);
       try {
-        current.summary = safeSummary(await huntRunner(huntOptions));
+        const reportStage = (nextStage) => { if (typeof nextStage === 'string' && nextStage) stage = nextStage; };
+        stage = 'collector_launch';
+        current.summary = safeSummary(await huntRunner({ ...huntOptions, reportStage }));
         current.status = 'COMPLETED';
         console.log(`[hunt-run] completed runId=${current.runId}`);
       } catch (error) {
         current.error = safeError(error);
         current.status = 'FAILED';
+        const diagnostic = safeDiagnostic(error, error && error.huntStage ? error.huntStage : stage);
+        console.error(`[hunt-run] failure runId=${current.runId} diagnostic=${JSON.stringify(diagnostic)}`);
       } finally {
         current.finishedAt = now().toISOString();
         try { unlock(); } catch (_) { console.error('[hunt-run] no se pudo liberar el lock limpiamente.'); }
@@ -105,4 +138,4 @@ function createHuntRunManager(options = {}) {
   return { start, getStatus: snapshot, stopAccepting, waitForIdle, waitForRun };
 }
 
-module.exports = { createHuntRunManager, safeSummary, safeError };
+module.exports = { createHuntRunManager, safeSummary, safeError, safeDiagnostic };

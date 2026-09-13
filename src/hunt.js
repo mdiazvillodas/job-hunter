@@ -131,6 +131,9 @@ function getExecutionConfig() {
 }
 
 async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
+  const reportStage = typeof options.reportStage === 'function' ? options.reportStage : () => {};
+  let currentStage = 'collector_launch';
+  const stage = (name) => { currentStage = name; reportStage(name); };
   const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
   const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, CANDIDATE_NAME, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH, activeQueries } = executionConfig;
   const repository = createLocalRepository();
@@ -150,13 +153,17 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
     console.error('       pero el analisis de OpenAI queda pendiente (jobs en analysisStatus=pending).');
   }
 
+  stage('collector_launch');
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   let searchResultsUrl = null;
+  let failedStage = null;
   try {
     const page = await getInitialPage(context);
+    stage('auth_assertion');
     await assertAuthenticatedSession(context, page);
 
     const discover = async () => {
+      stage('discovery');
       const scope = await collectMultipleSearches(page, activeQueries, LINKEDIN_FILTERS, {
         debug: options.debug,
         maxResultsPerSearch: MAX_RESULTS_PER_SEARCH,
@@ -174,21 +181,43 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
     };
 
     const fetchDetails = async (job) => {
+      stage('detail_collection');
       const r = await collectJobDetails(page, [job], { limit: 1, searchResultsUrl, debug: options.debug });
       if (!r.details.length) throw new Error('no detail extracted');
       return r.details[0];
     };
 
+    const analyzeWithStage = analyze && (async (job) => {
+      stage('analysis');
+      return analyze(job);
+    });
+    const persistenceMethods = new Set([
+      'ingestDiscovery', 'updateDiscovery', 'applyAnalysisProcessing',
+      'applyAnalysisResult', 'applyAnalysisFailure',
+    ]);
+    const stagedJobService = new Proxy(jobService, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (!persistenceMethods.has(property) || typeof value !== 'function') return value;
+        return (...args) => { stage('persistence'); return value.apply(target, args); };
+      },
+    });
+
     return await runPipeline({
-      jobService,
+      jobService: stagedJobService,
       discover,
       fetchDetails,
-      analyze,
+      analyze: analyzeWithStage,
       analyzeLimit: ANALYZE_LIMIT,
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
     });
+  } catch (error) {
+    failedStage = currentStage;
+    throw error;
   } finally {
+    stage('cleanup');
     await context.close().catch(() => {});
+    if (failedStage) reportStage(failedStage);
   }
 }
 

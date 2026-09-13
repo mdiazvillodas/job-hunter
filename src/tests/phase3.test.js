@@ -455,10 +455,32 @@ async function run() {
   ok('22h. probe exitoso libera lock y permite collector', successfulProbeLocks === 0 && successfulProbeRunnerCalls === 1);
 
   const failedManager = createHuntRunManager({ setupService: setupReady, sessionService: sessionReady, huntRunner: async () => { const e = new Error('private stack and URL'); e.secret = 'token'; throw e; }, acquireLock: () => {}, releaseLock: () => {}, makeRunId: () => 'run_failed' });
+  const previousDiagnosticError = console.error;
+  let diagnosticOutput = '';
+  console.error = (message) => { diagnosticOutput += String(message); };
   await failedManager.start(); await tick(); await tick();
+  console.error = previousDiagnosticError;
   const failedRun = failedManager.getStatus();
   ok('23. transición a FAILED', failedRun.status === 'FAILED');
   ok('24. error sanitizado', failedRun.error.code === 'HUNT_FAILED' && !JSON.stringify(failedRun).includes('private stack'));
+  ok('24a. diagnóstico conserva etapa y excepción sólo en el log local', diagnosticOutput.includes('collector_launch') && diagnosticOutput.includes('Error') && diagnosticOutput.includes('private stack and URL') && !JSON.stringify(failedRun).includes('diagnostic'));
+
+  let redactedOutput = '';
+  console.error = (message) => { redactedOutput += String(message); };
+  const redactedManager = createHuntRunManager({
+    setupService: setupReady, sessionService: sessionReady,
+    huntRunner: async ({ reportStage }) => {
+      reportStage('discovery');
+      throw new Error('GET https://www.linkedin.com/jobs/search/?keywords=secret li_at=session-secret Authorization: Bearer bearer-secret OPENAI_API_KEY=sk-private123 prompt=private candidate source');
+    },
+    acquireLock: () => {}, releaseLock: () => {}, makeRunId: () => 'run_redacted',
+  });
+  await redactedManager.start(); await redactedManager.waitForIdle();
+  console.error = previousDiagnosticError;
+  const redactedRun = redactedManager.getStatus();
+  ok('24b. diagnóstico registra la etapa reportada', redactedOutput.includes('"stage":"discovery"'));
+  ok('24c. diagnóstico redacta URL, query, prompt y secretos', redactedOutput.includes('[REDACTED_URL]') && redactedOutput.includes('[REDACTED]') && redactedOutput.includes('[REDACTED_API_KEY]') && !/keywords=secret|session-secret|bearer-secret|sk-private123|private candidate source/.test(redactedOutput));
+  ok('24d. error visible sigue siendo HUNT_FAILED genérico', redactedRun.error.code === 'HUNT_FAILED' && !JSON.stringify(redactedRun).includes('linkedin.com'));
 
   async function verifyRunnerFailure(name, runner) {
     let held = 0;
@@ -471,8 +493,8 @@ async function run() {
     ok(`${name} queda FAILED y finalizado`, result.status === 'FAILED' && !!result.finishedAt);
     ok(`${name} libera lock y sanitiza`, held === 0 && result.error.code === 'HUNT_FAILED');
   }
-  await verifyRunnerFailure('24a. sync throw', () => { throw new Error('sync secret'); });
-  await verifyRunnerFailure('24b. async rejection', () => Promise.reject(new Error('async secret')));
+  await verifyRunnerFailure('24e. sync throw', () => { throw new Error('sync secret'); });
+  await verifyRunnerFailure('24f. async rejection', () => Promise.reject(new Error('async secret')));
 
   let sequence = 0;
   const restartAfterComplete = createHuntRunManager({ setupService: setupReady, sessionService: sessionReady, huntRunner: async () => ({ runId: `engine_${++sequence}` }), acquireLock: () => {}, releaseLock: () => {}, makeRunId: () => `run_${sequence + 1}` });
