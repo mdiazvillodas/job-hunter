@@ -80,8 +80,13 @@ function buildProfileSystemPrompt(candidateName) {
     'Missing evidence does not mean absence. Never create evidence merely to satisfy a required schema field; use empty arrays or neutral "Not evidenced" wording where allowed.',
     'Do not optimize for one particular vacancy; represent the person independently of any job posting.',
     'Preserve the exact semantic contracts of careerContext, profile, and matchingProfile expressed by the schema.',
-    'Build careerContext first as the rich source of truth. Derive profile from it, then derive matchingProfile as the condensed representation required by the job analyzer.',
+    'Build careerContext first as the rich source of truth. Derive profile from it, then derive matchingProfile as the condensed representation required by the job analyzer. Condense only by selecting fewer existing facts and organizing them in the matching schema, never by rewriting canonical fact strings.',
     'matchingProfile must contain no facts absent from careerContext/profile. Target roles and preferences must never be converted into past experience.',
+    'CROSS-ARTIFACT VERBATIM REUSE: whenever a downstream artifact reuses a fact, copy the complete allowed upstream string verbatim. Do not translate, paraphrase, summarize, expand, shorten, merge, reorder wording inside the string, or add qualifiers. Selection and omission are allowed; rewording is not.',
+    'matchingProfile.targetRoles roleFamily/roles must select verbatim from careerContext.targetRoles primary/aspirational roleFamily/roles or profile.targetRoles.families.family. matchingProfile.capabilities capability strings must select verbatim from careerContext.capabilityModel.capabilities.statement or profile.capabilities.statement.',
+    'matchingProfile.experienceHighlights statements/evidence must select verbatim from careerContext.experienceContext or profile.experience statements/evidence. matchingProfile capability evidence must select verbatim from careerContext.capabilityModel.capabilities.evidence or profile.capabilities.evidence. matchingProfile careerPreferences.explicit and workEnvironmentFit preferred/acceptable values must select verbatim from careerContext.careerPreferences, careerContext.workEnvironment.preferences, or profile.preferences. matchingProfile.unknowns must select verbatim from careerContext.unknowns or profile.unknowns.',
+    'summary.targetRoles must select verbatim from matchingProfile target roleFamily/roles; summary.capabilities from matchingProfile capability strings; summary.experience from careerContext/profile/matchingProfile experience statements/evidence; summary.strengths from careerContext/profile capability statements or matchingProfile capability evidence; summary.preferences from allowed careerContext/profile/matchingProfile preference values; summary.notEvidenced from careerContext/profile/matchingProfile unknowns; and summary.rolesToAvoid from matchingProfile.roleTypesToAvoid.',
+    'summary.seniority must copy profile.seniority.assessedLevel exactly. summary.positioning must copy profile.positioning.headline exactly. Continue to use the configured canonical candidate name exactly in all three artifacts.',
     'In matchingProfile, transferability.classificationLevels must contain four evidence levels and its principle must state that absence of a keyword is not absence of capability.',
     'decisionPhilosophy must distinguish canDo, wantsToDo and canSell (canSell is evidence presentation, not sales ability), and map them to professionalFitScore, interestFitScore and cvFitScore. learnedPreferences must be empty because only later user feedback may populate it.',
     'Do not create preferences that the user did not state. Classifications and synthesis must remain grounded in explicit evidence.',
@@ -113,6 +118,7 @@ function matchesSchema(value, schema) {
 
 function roleFacts(groups) { return groups.flatMap((item) => [item.roleFamily, ...item.roles]).map(normalizeFact).filter(Boolean); }
 function capabilityFacts(capabilities) { return Object.values(capabilities).flatMap((domain) => domain.capabilities).map(normalizeFact).filter(Boolean); }
+function evidenceFacts(items) { return items.flatMap((item) => [item.statement, ...item.evidence]); }
 function assertSubset(values, allowed, label) {
   const allowedSet = new Set(allowed.map(normalizeFact));
   if (values.map(normalizeFact).filter(Boolean).some((value) => !allowedSet.has(value))) throw new ProfileBuilderError(`${label} introduce información ajena a los perfiles fuente.`, 'INCONSISTENT_PROFILE_ARTIFACTS', 502);
@@ -155,10 +161,18 @@ function validateProfileDraft(value, candidateName, originalText) {
   const sourceCapabilities = [...career.capabilityModel.capabilities.map((item) => item.statement), ...profile.capabilities.map((item) => item.statement)];
   const matchingCapabilities = capabilityFacts(matching.capabilities);
   assertSubset(matchingCapabilities, sourceCapabilities, 'matchingProfile.capabilities');
+  const sourceExperienceFacts = evidenceFacts([...career.experienceContext, ...profile.experience]);
+  assertSubset(evidenceFacts(matching.experienceHighlights), sourceExperienceFacts, 'matchingProfile.experienceHighlights');
+  const sourceCapabilityEvidence = [...career.capabilityModel.capabilities, ...profile.capabilities].flatMap((item) => item.evidence);
+  const matchingCapabilityEvidence = Object.values(matching.capabilities).flatMap((domain) => domain.evidence);
+  assertSubset(matchingCapabilityEvidence, sourceCapabilityEvidence, 'matchingProfile.capabilities.evidence');
+  const upstreamPreferences = [...career.careerPreferences, ...career.workEnvironment.preferences, ...profile.preferences];
+  assertSubset([...matching.careerPreferences.explicit, ...matching.workEnvironmentFit.preferred, ...matching.workEnvironmentFit.acceptable], upstreamPreferences, 'matchingProfile.preferences');
+  assertSubset(matching.unknowns, [...career.unknowns, ...profile.unknowns], 'matchingProfile.unknowns');
   assertSubset(summary.targetRoles, matchingRoles, 'summary.targetRoles');
   assertSubset(summary.capabilities, matchingCapabilities, 'summary.capabilities');
-  const sourceExperience = [...career.experienceContext, ...profile.experience, ...matching.experienceHighlights].flatMap((item) => [item.statement, ...item.evidence]);
-  const sourceStrengths = [...sourceCapabilities, ...Object.values(matching.capabilities).flatMap((domain) => domain.evidence)];
+  const sourceExperience = evidenceFacts([...career.experienceContext, ...profile.experience, ...matching.experienceHighlights]);
+  const sourceStrengths = [...sourceCapabilities, ...matchingCapabilityEvidence];
   const sourcePreferences = [...career.careerPreferences, ...career.workEnvironment.preferences, ...profile.preferences, ...matching.careerPreferences.explicit, ...matching.workEnvironmentFit.preferred, ...matching.workEnvironmentFit.acceptable];
   const sourceUnknowns = [...career.unknowns, ...profile.unknowns, ...matching.unknowns];
   assertSubset(summary.experience, sourceExperience, 'summary.experience');
