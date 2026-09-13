@@ -9,6 +9,7 @@ const { spawnSync } = require('child_process');
 const { createLinkedinSessionService, STATES } = require('../session/linkedinSessionService');
 const { createHuntRunManager } = require('../run/huntRunManager');
 const { startServer } = require('../ui/server');
+const { acquireLock: acquireFilesystemLock, releaseLock: releaseFilesystemLock } = require('../domain/huntLock');
 
 let passed = 0;
 let failed = 0;
@@ -39,6 +40,7 @@ function fakeBrowser(fixture = {}) {
     cookies: async () => fixture.cookies || [],
     once: (event, fn) => { listeners[event] = fn; },
     close: async () => {
+      if (fixture.closePromise) await fixture.closePromise;
       context.closed = true;
       if (fixture.closeError) throw fixture.closeError;
       if (listeners.close) listeners.close();
@@ -59,6 +61,24 @@ function makeSession(fixture, profileDir = 'X:/safe/browser-profile', dependenci
     releaseLock: dependencies.releaseLock || (() => {}),
   });
   return { service, fake, calls };
+}
+
+function makeSequencedSession(fixtures, profileDir = 'X:/safe/browser-profile', dependencies = {}) {
+  const fakes = [];
+  const calls = [];
+  const service = createLinkedinSessionService({
+    browserProfileDir: profileDir,
+    launchBrowser: async (...args) => {
+      const fake = fakeBrowser(fixtures[fakes.length] || {});
+      fakes.push(fake);
+      calls.push(args);
+      return fake.context;
+    },
+    getInitialPage: async (context) => fakes.find((fake) => fake.context === context).page,
+    acquireLock: dependencies.acquireLock || (() => {}),
+    releaseLock: dependencies.releaseLock || (() => {}),
+  });
+  return { service, fakes, calls };
 }
 
 function request(server, method, pathname) {
@@ -110,6 +130,36 @@ async function run() {
   ok('10. close cierra el context', closeFixture.fake.context.closed === true && closed.windowOpen === false);
   ok('11. close no borra browser-profile', fs.existsSync(marker));
   ok('11b. close invalida estado autenticado', closed.state === STATES.NOT_INITIALIZED);
+  const closedAgain = await closeFixture.service.close();
+  ok('11b2. close sin sesión es idempotente', closedAgain.windowOpen === false && closedAgain.state === STATES.NOT_INITIALIZED);
+
+  let resolvePendingClose;
+  const pendingCloseGate = new Promise((resolve) => { resolvePendingClose = resolve; });
+  let pendingCloseLocks = 0;
+  const pendingManualClose = makeSequencedSession(
+    [
+      { url: 'https://www.linkedin.com/feed/', authenticatedUi: true, closePromise: pendingCloseGate },
+      { url: 'https://www.linkedin.com/feed/', authenticatedUi: true },
+    ],
+    'X:/pending-manual-close',
+    { acquireLock: () => { pendingCloseLocks += 1; }, releaseLock: () => { pendingCloseLocks -= 1; } }
+  );
+  await pendingManualClose.service.open();
+  const pendingClose = pendingManualClose.service.close();
+  await tick();
+  ok('11b3. close pendiente mantiene context y lock', pendingManualClose.service.isOpen() && pendingCloseLocks === 1);
+  let verifyDuringCloseCode;
+  try { await pendingManualClose.service.verifyPersistedSession(); } catch (error) { verifyDuringCloseCode = error.code; }
+  ok('11b4. close pendiente bloquea verificación concurrente', verifyDuringCloseCode === 'SESSION_WINDOW_OPEN' && pendingManualClose.calls.length === 1);
+  const huntDuringClose = createHuntRunManager({ setupService: { getStatus: () => ({ readyForHunt: true }) }, sessionService: pendingManualClose.service, huntRunner: async () => {}, acquireLock: () => {} });
+  let huntDuringCloseCode;
+  try { await huntDuringClose.start(); } catch (error) { huntDuringCloseCode = error.code; }
+  ok('11b5. close pendiente bloquea hunt', huntDuringCloseCode === 'SESSION_WINDOW_OPEN');
+  resolvePendingClose();
+  const afterPendingClose = await pendingClose;
+  ok('11b6. close exitoso limpia context y libera lock al final', !pendingManualClose.service.isOpen() && pendingCloseLocks === 0 && afterPendingClose.state === STATES.NOT_INITIALIZED);
+  const afterCloseProbe = await pendingManualClose.service.verifyPersistedSession();
+  ok('11b7. verificación puede proceder después del close', afterCloseProbe.state === STATES.AUTHENTICATED && pendingManualClose.calls.length === 2);
 
   let manualLocks = 0;
   const manuallyClosed = makeSession(
@@ -166,10 +216,22 @@ async function run() {
     { acquireLock: () => { closeFailureLocks += 1; }, releaseLock: () => { closeFailureLocks -= 1; } }
   );
   await closeFailure.service.open();
-  const closeFailureStatus = await closeFailure.service.close();
-  const secondCloseStatus = await closeFailure.service.close();
-  ok('12e. close error libera lock e invalida estado', closeFailureLocks === 0 && closeFailureStatus.state === STATES.NOT_INITIALIZED);
-  ok('12f. close sin sesión es idempotente', secondCloseStatus.windowOpen === false && secondCloseStatus.state === STATES.NOT_INITIALIZED);
+  let manualCloseError;
+  try { await closeFailure.service.close(); } catch (error) { manualCloseError = error; }
+  const closeFailureStatus = await closeFailure.service.getStatus();
+  ok('12e. close manual fallido rechaza con error controlado', manualCloseError && manualCloseError.code === 'LINKEDIN_BROWSER_ERROR');
+  ok('12f. close manual fallido conserva context, estado seguro y lock', closeFailureLocks === 1 && closeFailureStatus.windowOpen === true && closeFailureStatus.state === STATES.ERROR);
+  let verifyAfterFailedCloseCode;
+  try { await closeFailure.service.verifyPersistedSession(); } catch (error) { verifyAfterFailedCloseCode = error.code; }
+  ok('12f2. close manual fallido no habilita otro context', verifyAfterFailedCloseCode === 'SESSION_WINDOW_OPEN');
+  let failedManualCloseRunnerCalls = 0;
+  const huntAfterFailedManualClose = createHuntRunManager({
+    setupService: { getStatus: () => ({ readyForHunt: true }) }, sessionService: closeFailure.service,
+    huntRunner: async () => { failedManualCloseRunnerCalls += 1; }, acquireLock: () => {},
+  });
+  let huntAfterFailedCloseCode;
+  try { await huntAfterFailedManualClose.start(); } catch (error) { huntAfterFailedCloseCode = error.code; }
+  ok('12f3. close manual fallido impide hunt', huntAfterFailedCloseCode === 'SESSION_WINDOW_OPEN' && failedManualCloseRunnerCalls === 0);
 
   let sharedHeld = false;
   const sharedAcquire = () => { if (sharedHeld) { const error = new Error('busy'); error.code = 'LOCK_HELD'; throw error; } sharedHeld = true; };
@@ -188,6 +250,70 @@ async function run() {
   let externalLockCode;
   try { await externallyLocked.open(); } catch (error) { externalLockCode = error.code; }
   ok('12b. ventana manual respeta lock de otro hunt', externalLockCode === 'HUNT_ALREADY_RUNNING');
+
+  const persistedLogin = makeSequencedSession([{ url: 'https://www.linkedin.com/login' }, { url: 'https://www.linkedin.com/login' }]);
+  const persistedLoginStatus = await persistedLogin.service.verifyPersistedSession();
+  ok('12i. perfil sin login persistido -> LOGIN_REQUIRED', persistedLoginStatus.state === STATES.LOGIN_REQUIRED);
+  ok('12j. probe sin login siempre cierra su context', persistedLogin.fakes[0].context.closed === true);
+
+  const persistedCheckpoint = makeSequencedSession([{ url: 'https://www.linkedin.com/checkpoint/challenge/' }, { url: 'https://www.linkedin.com/checkpoint/challenge/' }]);
+  const persistedCheckpointStatus = await persistedCheckpoint.service.verifyPersistedSession();
+  ok('12k. checkpoint persistido -> CHECKPOINT_REQUIRED', persistedCheckpointStatus.state === STATES.CHECKPOINT_REQUIRED);
+  ok('12l. probe de checkpoint siempre cierra su context', persistedCheckpoint.fakes[0].context.closed === true);
+
+  let probeCloseLockHeld = false;
+  let probeCloseReleases = 0;
+  const acquireProbeCloseLock = () => {
+    if (probeCloseLockHeld) { const error = new Error('busy'); error.code = 'LOCK_HELD'; throw error; }
+    probeCloseLockHeld = true;
+  };
+  const releaseProbeCloseLock = () => { probeCloseLockHeld = false; probeCloseReleases += 1; };
+  const probeCloseFailure = makeSequencedSession(
+    [{ url: 'https://www.linkedin.com/feed/', authenticatedUi: true, closeError: new Error('private close failure') }],
+    'X:/probe-close-failure',
+    { acquireLock: acquireProbeCloseLock, releaseLock: releaseProbeCloseLock }
+  );
+  let probeCloseError;
+  try { await probeCloseFailure.service.verifyPersistedSession(); } catch (error) { probeCloseError = error; }
+  ok('12m. close fallido del probe rechaza verificación autenticada', probeCloseError && probeCloseError.code === 'LINKEDIN_BROWSER_ERROR');
+  ok('12n. close fallido del probe retiene lock compartido', probeCloseLockHeld && probeCloseReleases === 0);
+  ok('12o. close fallido no conserva AUTHENTICATED', (await probeCloseFailure.service.getStatus()).state === STATES.ERROR);
+  let secondProbeCode;
+  try { await probeCloseFailure.service.verifyPersistedSession(); } catch (error) { secondProbeCode = error.code; }
+  let openAfterProbeFailureCode;
+  try { await probeCloseFailure.service.open(); } catch (error) { openAfterProbeFailureCode = error.code; }
+  ok('12p. probe fallido bloquea verificaciones posteriores sin abrir context', secondProbeCode === 'LINKEDIN_BROWSER_ERROR' && probeCloseFailure.calls.length === 1);
+  ok('12q. probe fallido bloquea apertura manual sin abrir context', openAfterProbeFailureCode === 'LINKEDIN_BROWSER_ERROR' && probeCloseFailure.calls.length === 1);
+
+  const independentAfterProbeFailure = makeSequencedSession(
+    [{ url: 'https://www.linkedin.com/feed/', authenticatedUi: true }],
+    'X:/probe-close-failure',
+    { acquireLock: acquireProbeCloseLock, releaseLock: releaseProbeCloseLock }
+  );
+  let independentProbeCode;
+  try { await independentAfterProbeFailure.service.verifyPersistedSession(); } catch (error) { independentProbeCode = error.code; }
+  ok('12r. otra instancia no puede adquirir el perfil inseguro', independentProbeCode === 'HUNT_ALREADY_RUNNING' && independentAfterProbeFailure.calls.length === 0);
+
+  const staleLockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jh-phase3-stale-lock-'));
+  const staleLockPath = path.join(staleLockDir, 'hunt.lock');
+  fs.writeFileSync(staleLockPath, JSON.stringify({ pid: 999999998, startedAt: new Date(0).toISOString(), hostname: 'stale-test' }));
+  let staleRecovered = false;
+  try { acquireFilesystemLock(staleLockPath); staleRecovered = true; } finally { releaseFilesystemLock(staleLockPath); }
+  ok('12s. restart recupera lock retenido cuando el PID murió', staleRecovered && !fs.existsSync(staleLockPath));
+
+  let combinedFailureAcquires = 0;
+  let combinedFailureReleases = 0;
+  const combinedProbeFailure = makeSequencedSession(
+    [{ gotoError: new Error('private navigation failure'), closeError: new Error('private close failure') }],
+    'X:/combined-probe-failure',
+    { acquireLock: () => { combinedFailureAcquires += 1; }, releaseLock: () => { combinedFailureReleases += 1; } }
+  );
+  let combinedPrimaryCode;
+  try { await combinedProbeFailure.service.verifyPersistedSession(); } catch (error) { combinedPrimaryCode = error.code; }
+  let combinedRetryCode;
+  try { await combinedProbeFailure.service.open(); } catch (error) { combinedRetryCode = error.code; }
+  ok('12t. error primario se conserva si también falla cleanup', combinedPrimaryCode === 'LINKEDIN_BROWSER_ERROR');
+  ok('12u. cleanup fallido combinado marca unsafe y retiene lock', combinedRetryCode === 'LINKEDIN_BROWSER_ERROR' && combinedFailureAcquires === 1 && combinedFailureReleases === 0 && combinedProbeFailure.calls.length === 1);
 
   console.log('\n### Hunt run manager');
   const setupReady = { getStatus: () => ({ readyForHunt: true }) };
@@ -254,6 +380,80 @@ async function run() {
   try { await noLogin.start(); } catch (error) { loginCode = error.code; }
   ok('22. hunt requiere sesión autenticada', loginCode === 'LOGIN_REQUIRED');
 
+  const persistedAuth = makeSequencedSession([
+    { url: 'https://www.linkedin.com/feed/', authenticatedUi: true },
+    { url: 'https://www.linkedin.com/feed/', authenticatedUi: true },
+  ], 'X:/persisted-auth');
+  await persistedAuth.service.open();
+  await persistedAuth.service.close();
+  let runnerSawClosedProbe = false;
+  const persistedManager = createHuntRunManager({
+    setupService: setupReady,
+    sessionService: persistedAuth.service,
+    huntRunner: async () => { runnerSawClosedProbe = persistedAuth.fakes[1].context.closed === true; return {}; },
+    acquireLock: () => {}, releaseLock: () => {}, makeRunId: () => 'run_persisted',
+  });
+  const persistedStart = await persistedManager.start();
+  await tick(); await tick();
+  ok('22a. manual autenticada -> close -> verificación persistida permite hunt', persistedStart.runId === 'run_persisted');
+  ok('22b. context de verificación cierra antes del collector', runnerSawClosedProbe);
+
+  const rejectedLoginManager = createHuntRunManager({
+    setupService: setupReady, sessionService: persistedLogin.service,
+    huntRunner: async () => {}, acquireLock: () => {}, releaseLock: () => {},
+  });
+  let persistedLoginCode;
+  try { await rejectedLoginManager.start(); } catch (error) { persistedLoginCode = error.code; }
+  ok('22c. perfil persistido sin login rechaza hunt', persistedLoginCode === 'LOGIN_REQUIRED');
+
+  const rejectedCheckpointManager = createHuntRunManager({
+    setupService: setupReady, sessionService: persistedCheckpoint.service,
+    huntRunner: async () => {}, acquireLock: () => {}, releaseLock: () => {},
+  });
+  let persistedCheckpointCode;
+  try { await rejectedCheckpointManager.start(); } catch (error) { persistedCheckpointCode = error.code; }
+  ok('22d. checkpoint persistido se propaga al hunt', persistedCheckpointCode === 'CHECKPOINT_REQUIRED');
+
+  let closeFailureRunnerCalls = 0;
+  let huntProbeLocks = 0;
+  const huntProbeCloseFailure = makeSequencedSession(
+    [{ url: 'https://www.linkedin.com/feed/', authenticatedUi: true, closeError: new Error('private close failure') }],
+    'X:/hunt-probe-close-failure',
+    { acquireLock: () => { huntProbeLocks += 1; }, releaseLock: () => { huntProbeLocks -= 1; } }
+  );
+  const closeFailureManager = createHuntRunManager({
+    setupService: setupReady, sessionService: huntProbeCloseFailure.service,
+    huntRunner: async () => { closeFailureRunnerCalls += 1; }, acquireLock: () => {}, releaseLock: () => {},
+  });
+  let huntProbeCloseCode;
+  try { await closeFailureManager.start(); } catch (error) { huntProbeCloseCode = error.code; }
+  ok('22e. close fallido del probe impide iniciar hunt', huntProbeCloseCode === 'LINKEDIN_BROWSER_ERROR' && closeFailureRunnerCalls === 0);
+  ok('22f. close fallido previo al hunt retiene lock de sesión', huntProbeLocks === 1);
+  let poisonedRunnerCalls = 0;
+  const poisonedManager = createHuntRunManager({
+    setupService: setupReady, sessionService: huntProbeCloseFailure.service,
+    huntRunner: async () => { poisonedRunnerCalls += 1; }, acquireLock: () => {}, releaseLock: () => {},
+  });
+  let poisonedHuntCode;
+  try { await poisonedManager.start(); } catch (error) { poisonedHuntCode = error.code; }
+  ok('22g. estado inseguro persistente bloquea hunts posteriores', poisonedHuntCode === 'LINKEDIN_BROWSER_ERROR' && poisonedRunnerCalls === 0 && huntProbeCloseFailure.calls.length === 1);
+
+  let successfulProbeLocks = 0;
+  const successfulProbe = makeSequencedSession(
+    [{ url: 'https://www.linkedin.com/feed/', authenticatedUi: true }],
+    'X:/successful-probe',
+    { acquireLock: () => { successfulProbeLocks += 1; }, releaseLock: () => { successfulProbeLocks -= 1; } }
+  );
+  let successfulProbeRunnerCalls = 0;
+  const successfulProbeManager = createHuntRunManager({
+    setupService: setupReady, sessionService: successfulProbe.service,
+    huntRunner: async () => { successfulProbeRunnerCalls += 1; return {}; },
+    acquireLock: () => {}, releaseLock: () => {}, makeRunId: () => 'run_successful_probe',
+  });
+  await successfulProbeManager.start();
+  await tick(); await tick();
+  ok('22h. probe exitoso libera lock y permite collector', successfulProbeLocks === 0 && successfulProbeRunnerCalls === 1);
+
   const failedManager = createHuntRunManager({ setupService: setupReady, sessionService: sessionReady, huntRunner: async () => { const e = new Error('private stack and URL'); e.secret = 'token'; throw e; }, acquireLock: () => {}, releaseLock: () => {}, makeRunId: () => 'run_failed' });
   await failedManager.start(); await tick(); await tick();
   const failedRun = failedManager.getStatus();
@@ -288,12 +488,14 @@ async function run() {
   ok('24e. segundo hunt inicia después de FAILED', !!afterFailureStart.runId && restartAfterFailure.getStatus().status === 'COMPLETED');
 
   console.log('\n### HTTP y frontend');
-  const endpointSession = { open: async () => ({ state: 'LOGIN_REQUIRED', message: 'manual', windowOpen: true }), getStatus: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }), close: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }) };
+  const endpointSession = { open: async () => ({ state: 'LOGIN_REQUIRED', message: 'manual', windowOpen: true }), getStatus: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }), verifyPersistedSession: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }), close: async () => ({ state: 'NOT_INITIALIZED', message: 'closed', windowOpen: false }) };
   const endpointRuns = { start: async () => ({ runId: 'run_http', status: 'STARTING' }), waitForRun: async () => ({ runId: 'run_http', status: 'COMPLETED' }), getStatus: () => ({ runId: 'run_http', status: 'RUNNING', error: null }) };
   const server = startServer({ port: 0, jobService: {}, setupService: {}, linkedinSessionService: endpointSession, huntRunManager: endpointRuns });
   if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
   const openResponse = await request(server, 'POST', '/api/linkedin/session/open');
   const statusResponse = await request(server, 'GET', '/api/linkedin/session/status');
+  const verifyResponse = await request(server, 'POST', '/api/linkedin/session/verify-persisted');
+  const closeResponse = await request(server, 'POST', '/api/linkedin/session/close');
   const huntResponse = await request(server, 'POST', '/api/hunt');
   const huntStatus = await request(server, 'GET', '/api/hunt/status');
   await new Promise((resolve) => server.close(resolve));
@@ -301,6 +503,8 @@ async function run() {
   ok('26. session status sólo expone estado operativo', statusResponse.status === 200 && Object.keys(statusResponse.json).every((key) => ['state', 'message', 'windowOpen'].includes(key)));
   ok('27. POST hunt responde 202 con runId', huntResponse.status === 202 && huntResponse.json.runId === 'run_http');
   ok('28. status hunt es asíncrono y seguro', huntStatus.status === 200 && huntStatus.json.status === 'RUNNING');
+  ok('28a. endpoint verify-persisted devuelve estado verificado', verifyResponse.status === 200 && verifyResponse.json.state === 'AUTHENTICATED');
+  ok('28b. endpoint close verifica el perfil después de cerrar', closeResponse.status === 200 && closeResponse.json.state === 'AUTHENTICATED' && closeResponse.json.windowOpen === false);
 
   const frontend = fs.readFileSync(path.join(__dirname, '../ui/public/app.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../ui/public/index.html'), 'utf8');

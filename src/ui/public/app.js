@@ -165,7 +165,10 @@ function renderOperations() {
 }
 
 async function refreshSession() {
-  state.linkedinSession = await api('/api/linkedin/session/status');
+  const current = await api('/api/linkedin/session/status');
+  state.linkedinSession = current.windowOpen
+    ? current
+    : await api('/api/linkedin/session/verify-persisted', 'POST');
   renderOperations();
 }
 

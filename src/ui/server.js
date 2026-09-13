@@ -113,8 +113,12 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
   if (method === 'GET' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'status') {
     return sendJson(res, 200, await linkedinSessionService.getStatus());
   }
+  if (method === 'POST' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'verify-persisted') {
+    return sendJson(res, 200, await linkedinSessionService.verifyPersistedSession());
+  }
   if (method === 'POST' && parts[1] === 'linkedin' && parts[2] === 'session' && parts[3] === 'close') {
-    return sendJson(res, 200, await linkedinSessionService.close());
+    await linkedinSessionService.close();
+    return sendJson(res, 200, await linkedinSessionService.verifyPersistedSession());
   }
   if (method === 'POST' && parts.length === 2 && parts[1] === 'hunt') {
     if (operations.lifecycle && operations.lifecycle.shuttingDown) {

@@ -64,6 +64,9 @@ function createLinkedinSessionService(options = {}) {
   let page = null;
   let state = STATES.NOT_INITIALIZED;
   let lockHeld = false;
+  let closingContext = null;
+  let closePromise = null;
+  let unsafeProfile = false;
 
   function releaseSessionLock() {
     if (lockHeld) unlock();
@@ -75,6 +78,10 @@ function createLinkedinSessionService(options = {}) {
     page = null;
     state = STATES.NOT_INITIALIZED;
     releaseSessionLock();
+  }
+
+  function handleContextClosed() {
+    if (!closingContext) clearClosedContext();
   }
 
   function publicStatus() {
@@ -94,12 +101,13 @@ function createLinkedinSessionService(options = {}) {
 
   async function open() {
     if (context) throw operationalError('SESSION_WINDOW_OPEN', 'La ventana manual de LinkedIn ya está abierta.');
+    if (unsafeProfile) throw operationalError('LINKEDIN_BROWSER_ERROR', 'El perfil de LinkedIn quedó en un estado incierto. Reiniciá Job Hunter.', 503);
     try {
       lock();
       lockHeld = true;
       context = await launch(profileDir);
       page = await initialPage(context);
-      if (context.once) context.once('close', clearClosedContext);
+      if (context.once) context.once('close', handleContextClosed);
       await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15000 });
       return inspect();
     } catch (_) {
@@ -113,14 +121,69 @@ function createLinkedinSessionService(options = {}) {
     }
   }
 
-  async function close() {
-    const closing = context;
-    clearClosedContext();
-    if (closing) await closing.close().catch(() => {});
-    return publicStatus();
+  async function verifyPersistedSession() {
+    if (context) throw operationalError('SESSION_WINDOW_OPEN', 'La ventana manual de LinkedIn ya está abierta.');
+    if (unsafeProfile) throw operationalError('LINKEDIN_BROWSER_ERROR', 'El perfil de LinkedIn quedó en un estado incierto. Reiniciá Job Hunter.', 503);
+    let probeContext = null;
+    let probeLockHeld = false;
+    let result = null;
+    let verificationError = null;
+    let cleanupError = null;
+    try {
+      lock();
+      probeLockHeld = true;
+      probeContext = await launch(profileDir);
+      const probePage = await initialPage(probeContext);
+      await probePage.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      state = await detectState(probeContext, probePage);
+      console.log(`[linkedin-session] persisted-state=${state}`);
+      result = publicStatus();
+    } catch (error) {
+      verificationError = error;
+    } finally {
+      if (probeContext) {
+        try { await probeContext.close(); } catch (error) { cleanupError = error; }
+      }
+      if (probeLockHeld && !cleanupError) unlock();
+    }
+    if (cleanupError) {
+      unsafeProfile = true;
+      state = STATES.ERROR;
+    }
+    if (verificationError) {
+      state = STATES.ERROR;
+      if (verificationError.code === 'LOCK_HELD') throw operationalError('HUNT_ALREADY_RUNNING', 'Ya hay una búsqueda en curso.');
+      throw operationalError('LINKEDIN_BROWSER_ERROR', 'No se pudo verificar la sesión persistida de LinkedIn.', 503);
+    }
+    if (cleanupError) {
+      throw operationalError('LINKEDIN_BROWSER_ERROR', 'No se pudo cerrar la verificación de LinkedIn limpiamente.', 503);
+    }
+    return result;
   }
 
-  return { open, close, getStatus: inspect, isOpen: () => !!context, getBrowserProfileDir: () => profileDir };
+  function close() {
+    if (closePromise) return closePromise;
+    if (!context) return Promise.resolve(publicStatus());
+    const closing = context;
+    closingContext = closing;
+    closePromise = (async () => {
+      try {
+        await closing.close();
+        if (context === closing) clearClosedContext();
+        return publicStatus();
+      } catch (_) {
+        page = null;
+        state = STATES.ERROR;
+        throw operationalError('LINKEDIN_BROWSER_ERROR', 'No se pudo cerrar la sesión manual de LinkedIn limpiamente.', 503);
+      } finally {
+        closingContext = null;
+        closePromise = null;
+      }
+    })();
+    return closePromise;
+  }
+
+  return { open, close, verifyPersistedSession, getStatus: inspect, isOpen: () => !!context, getBrowserProfileDir: () => profileDir };
 }
 
 module.exports = { createLinkedinSessionService, detectState, STATES, operationalError };

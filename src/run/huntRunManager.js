@@ -63,7 +63,9 @@ function createHuntRunManager(options = {}) {
     if (ACTIVE.has(current.status)) throw operationalError('HUNT_ALREADY_RUNNING', 'Ya hay una búsqueda en curso.');
     if (sessionService.isOpen()) throw operationalError('SESSION_WINDOW_OPEN', 'Cerrá la ventana manual de LinkedIn antes de buscar.');
     if (!setupService.getStatus().readyForHunt) throw operationalError('SETUP_REQUIRED', 'Completá la configuración antes de buscar.');
-    const linkedIn = await sessionService.getStatus();
+    const linkedIn = sessionService.verifyPersistedSession
+      ? await sessionService.verifyPersistedSession()
+      : await sessionService.getStatus();
     if (linkedIn.state !== STATES.AUTHENTICATED) {
       const code = linkedIn.state === STATES.CHECKPOINT_REQUIRED ? 'CHECKPOINT_REQUIRED' : 'LOGIN_REQUIRED';
       throw operationalError(code, code === 'CHECKPOINT_REQUIRED' ? 'LinkedIn requiere una verificación manual.' : 'Necesitás iniciar sesión en LinkedIn.');
