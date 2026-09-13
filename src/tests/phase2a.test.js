@@ -133,6 +133,10 @@ async function run() {
     ok('actualizar API key preserva variables y comentarios', /# keep this comment/.test(envAfterReplace) && /OTHER_VALUE=preserved/.test(envAfterReplace));
     await request(server, 'PUT', '/api/setup/openai-key', { openAiKey: '' });
     ok('campo vacío conserva API key existente', fs.readFileSync(envPath, 'utf8') === envAfterReplace);
+    await request(server, 'PUT', '/api/setup/user-config', validInput({ name: 'Updated Example', queries: ['Program Manager'] }));
+    await request(server, 'PUT', '/api/setup/openai-key', { openAiKey: '' });
+    const statusAfterEmptyKey = await request(server, 'GET', '/api/setup/status');
+    ok('guardar setup con key vacía conserva key y readiness', fs.readFileSync(envPath, 'utf8') === envAfterReplace && statusAfterEmptyKey.json.openAiKey === true && statusAfterEmptyKey.json.readyForProfileSetup === true);
 
     const wrongContentType = await requestRaw(server, 'PUT', '/api/setup/openai-key', JSON.stringify({ openAiKey: 'not-saved' }), 'text/plain');
     ok('PUT setup rechaza Content-Type incorrecto con 415', wrongContentType.status === 415 && wrongContentType.json.error && !fs.readFileSync(envPath, 'utf8').includes('not-saved'));

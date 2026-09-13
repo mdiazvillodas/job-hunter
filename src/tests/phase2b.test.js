@@ -150,8 +150,17 @@ async function run() {
   for (const field of ['canDo', 'wantsToDo', 'canSell']) { const emptyDescription = matchingArchitecture(); emptyDescription.decisionPhilosophy[field] = ' '; ok(`decision description ${field} vacía inválida`, !architectureIsValid(emptyDescription)); }
   const emptyGuidance = matchingArchitecture(); emptyGuidance.decisionPhilosophy.overallGuidance = '';
   ok('overallGuidance vacío inválido', !architectureIsValid(emptyGuidance));
-  const invalidTransferability = matchingArchitecture(); invalidTransferability.transferability.classificationLevels.pop();
-  ok('transferability conserva validación', !architectureIsValid(invalidTransferability));
+  ok('transferability con wording exacto en inglés válido', architectureIsValid(matchingArchitecture()));
+  const equivalentTransferability = matchingArchitecture(); equivalentTransferability.transferability.principle = 'Missing keywords do not prove missing capability';
+  ok('transferability equivalente sin frase literal válido', architectureIsValid(equivalentTransferability));
+  const spanishTransferability = matchingArchitecture(); spanishTransferability.transferability.principle = 'Que no aparezca una palabra clave no implica que falte la capacidad';
+  ok('transferability equivalente en español válido', architectureIsValid(spanishTransferability));
+  const emptyTransferability = matchingArchitecture(); emptyTransferability.transferability.principle = ' ';
+  ok('transferability principle vacío inválido', !architectureIsValid(emptyTransferability));
+  const threeTransferabilityLevels = matchingArchitecture(); threeTransferabilityLevels.transferability.classificationLevels.pop();
+  ok('transferability con tres niveles inválido', !architectureIsValid(threeTransferabilityLevels));
+  const fiveTransferabilityLevels = matchingArchitecture(); fiveTransferabilityLevels.transferability.classificationLevels.push('EXTRA');
+  ok('transferability con cinco niveles inválido', !architectureIsValid(fiveTransferabilityLevels));
   const invalidLearnedPreferences = matchingArchitecture(); invalidLearnedPreferences.learnedPreferences.push('inferred preference');
   ok('learnedPreferences conserva validación', !architectureIsValid(invalidLearnedPreferences));
 

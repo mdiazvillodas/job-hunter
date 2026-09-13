@@ -137,7 +137,7 @@ function validateMatchingArchitecture(matching) {
     && normalizeSemanticToken(mapping.interestFitScore).includes('wantstodo')
     && normalizeSemanticToken(mapping.cvFitScore).includes('cansell');
   if (!meaningful(philosophy.canDo) || !meaningful(philosophy.wantsToDo) || !meaningful(philosophy.canSell) || !validMapping || !meaningful(philosophy.overallGuidance)) throw new ProfileBuilderError('La filosofía de decisión del matching profile es inválida.', 'INVALID_PROFILE_ARCHITECTURE', 502);
-  if (matching.transferability.classificationLevels.length !== 4 || !/absence of (a )?keyword/i.test(matching.transferability.principle)) throw new ProfileBuilderError('Las reglas de transferibilidad del matching profile son inválidas.', 'INVALID_PROFILE_ARCHITECTURE', 502);
+  if (matching.transferability.classificationLevels.length !== 4 || !meaningful(matching.transferability.principle)) throw new ProfileBuilderError('Las reglas de transferibilidad del matching profile son inválidas.', 'INVALID_PROFILE_ARCHITECTURE', 502);
   if (matching.learnedPreferences.length !== 0) throw new ProfileBuilderError('learnedPreferences debe comenzar vacío.', 'INVALID_PROFILE_ARCHITECTURE', 502);
 }
 
