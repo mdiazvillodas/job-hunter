@@ -1,4 +1,5 @@
 const { detectSecurityChallenge } = require('./session');
+const { firstVisible, getSearchInput } = require('./searchControls');
 const {
   openJobsSearch,
   waitForJobResults,
@@ -53,8 +54,7 @@ async function clickFilterOption(page, inputId) {
 
 // Aplica la localizacion usando el typeahead del buscador (no se asume geoId ni parametro de URL).
 async function applyLocationFilter(page, location, options) {
-  const input = page.locator('input[aria-label="City, state, or zip code"]').first();
-  await input.waitFor({ state: 'visible', timeout: 15000 });
+  const input = await getSearchInput(page, 'City, state, or zip code');
   await input.click();
   await input.fill('');
   await input.type(location, { delay: 60 });
@@ -63,6 +63,7 @@ async function applyLocationFilter(page, location, options) {
   const suggestion = page
     .locator('.basic-typeahead__selectable, [role="option"]')
     .filter({ hasText: new RegExp(location, 'i') })
+    .filter({ visible: true })
     .first();
 
   let picked = false;
@@ -84,14 +85,12 @@ async function applyModalFilters(page, filters, options) {
   const datePostedId = DATE_POSTED_IDS[String(filters.datePosted || '').toLowerCase()];
   const jobTypeId = JOB_TYPE_IDS[String(filters.employmentType || '').toLowerCase()];
 
-  const allFiltersButton = page
-    .locator(
-      'button[aria-label="Show all filters. Clicking this button displays all available filter options."], button:has-text("All filters")'
-    )
-    .first();
+  const allFiltersButton = firstVisible(page,
+    'button[aria-label="Show all filters. Clicking this button displays all available filter options."], button:has-text("All filters")'
+  );
   await allFiltersButton.click();
 
-  const modal = page.locator('.artdeco-modal, [role="dialog"]').first();
+  const modal = firstVisible(page, '.artdeco-modal, [role="dialog"]');
   await modal.waitFor({ state: 'visible', timeout: 15000 });
   await page.waitForTimeout(800);
 
@@ -105,9 +104,8 @@ async function applyModalFilters(page, filters, options) {
     employmentSelected = await clickFilterOption(page, jobTypeId);
   }
 
-  const showResults = page
-    .locator('button[aria-label="Apply current filters to show results"], button:has-text("Show results")')
-    .first();
+  const showResults = firstVisible(modal,
+    'button[aria-label="Apply current filters to show results"], button:has-text("Show results")');
   await showResults.click();
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
@@ -224,8 +222,7 @@ async function initializeSearchWithFilters(page, query, filters, options = {}) {
 // -location, employment type, date posted- se conservan; verificado contra la UI real).
 // Espera de forma robusta a que LinkedIn refleje el nuevo keyword antes de continuar.
 async function changeSearchQuery(page, query, options = {}) {
-  const kw = page.locator('input[aria-label="Search by title, skill, or company"]').first();
-  await kw.waitFor({ state: 'visible', timeout: 15000 });
+  const kw = await getSearchInput(page, 'Search by title, skill, or company');
 
   const prevFirstId = await getFirstCardId(page);
   await kw.click();

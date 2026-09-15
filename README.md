@@ -6,7 +6,7 @@ Aplicacion local para automatizar, por etapas, la busqueda laboral. Implementado
 
 El collector:
 
-- abre Chromium visible con el perfil persistente `./browser-profile`;
+- abre Chromium visible por defecto con el perfil persistente `./browser-profile`;
 - verifica que exista una sesion autenticada de LinkedIn;
 - entra a LinkedIn Jobs;
 - ejecuta la busqueda configurada en `src/config.js`;
@@ -17,6 +17,36 @@ El collector:
 - deja el navegador abierto para inspeccion manual.
 
 No automatiza login, no usa el Chrome personal y no intenta resolver CAPTCHAs, checkpoints ni verificaciones (si aparece un challenge, se detiene y registra el motivo).
+
+### Chromium headless
+
+Chromium corre **headless por defecto**: una variable ausente o con un valor
+inesperado ejecuta sin interfaz grafica. Solo `HEADLESS=false` explicito abre el
+navegador visible. Se aceptan mayusculas y espacios alrededor de `true`/`false`.
+Se lee al iniciar el proceso.
+Ambos modos usan el mismo `./browser-profile` y su sesion existente.
+
+Para probar manualmente un hunt real desde PowerShell, ejecutar una alternativa:
+
+```powershell
+$env:HEADLESS = 'true'
+npm run hunt
+```
+
+```powershell
+$env:HEADLESS = 'false'
+npm run hunt
+```
+
+Para volver al valor por defecto (headless): `Remove-Item Env:HEADLESS -ErrorAction SilentlyContinue`.
+El trigger hereda esta variable al lanzar `src/hunt.js` mediante `env: process.env`;
+definirla antes de iniciar el trigger y reiniciarlo si cambia. Definirla solamente
+en n8n no la transmite por HTTP al trigger.
+
+El collector independiente conserva su espera de cierre manual: en headless no hay
+ventana para cerrarlo y puede quedar esperando. Para ejecuciones headless usar el
+flujo `hunt`, que ya cierra el contexto. Si LinkedIn exige login o un checkpoint,
+sera necesario volver al modo visible para inspeccionar la sesion.
 
 ## Milestone actual: Multiple searches + global deduplication
 
@@ -296,7 +326,7 @@ para Barcelona, seteá la timezone del workflow en *Workflow → Settings → Ti
 al **iniciar sesión** en la sesión interactiva (necesario para Chromium visible).
 *Alternativa Task Scheduler* (requiere **admin**, no se creó):
 ```
-schtasks /Create /TN JobHunterTrigger /SC ONLOGON /IT /RL LIMITED /TR "C:\Users\maria\job-hunter\scripts\start-trigger.cmd"
+schtasks /Create /TN JobHunterTrigger /SC ONLOGON /IT /RL LIMITED /TR "<ruta-del-proyecto>\scripts\start-trigger.cmd"
 ```
 
 **Recovery / reinicio del trigger:** el lock (`src/data/hunt.lock`) y los `runs/<runId>.json` sobreviven;

@@ -6,19 +6,45 @@
 //   - userState   = decisiones/acciones de Mariano (new/read/interested/discarded/applied/priority).
 //   - feedback    = ultimo resumen de descarte (reasons + comment).
 //   - feedbackEvents = historial completo de eventos (nunca se sobreescribe silenciosamente).
+//   - availability = DISPONIBILIDAD DE LA OFERTA (eje independiente del userState). Que una
+//     oferta ya no acepte postulaciones es un hecho del mercado, NO una decision de Mariano:
+//     no escribe userState, ni feedback, ni feedbackEvents, por lo que no llega a learning
+//     (learnedPreferences filtra ev.type === 'discarded') ni a calibration (lee userState).
 
 const { JOB_STATES, isValidReason } = require('./feedbackConfig');
+const { isDescriptionUsable, DESCRIPTION_INSUFFICIENT } = require('./descriptionQuality');
 
 // Estado del ANALISIS (independiente del userState). Idempotencia del pipeline.
 const ANALYSIS_STATUS = Object.freeze({
   PENDING: 'pending',
   PROCESSING: 'processing',
   COMPLETED: 'completed',
+  STALE: 'stale',
   FAILED: 'failed',
+});
+
+// Disponibilidad de la OFERTA (independiente de la decision del usuario).
+const AVAILABILITY = Object.freeze({
+  OPEN: 'open',
+  CLOSED: 'closed',
+});
+
+const AVAILABILITY_REASON = Object.freeze({
+  APPLICATIONS_CLOSED: 'applications_closed',
 });
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+// Los registros anteriores a este campo no lo tienen: ausente equivale a 'open'.
+// Evita migrar el repositorio completo.
+function availabilityOf(job) {
+  return job && job.availability === AVAILABILITY.CLOSED ? AVAILABILITY.CLOSED : AVAILABILITY.OPEN;
+}
+
+function isApplicationsClosed(job) {
+  return availabilityOf(job) === AVAILABILITY.CLOSED;
 }
 
 // Crea el registro persistible a partir de datos del collector + analyzer.
@@ -70,6 +96,15 @@ function createJobRecord(input = {}, options = {}) {
     },
 
     feedbackEvents: [],
+
+    // Disponibilidad de la oferta. Eje separado: NO es una decision del usuario.
+    availability: AVAILABILITY.OPEN,
+    availabilityReason: null,
+    availabilityUpdatedAt: null,
+
+    // Side effect informativo (push ntfy). No es feedback ni decision del usuario.
+    // Se setea SOLO tras confirmar el envio; null = todavia notificable.
+    highMatchNotifiedAt: null,
   };
 }
 
@@ -135,6 +170,24 @@ function applyDiscarded(job, options = {}) {
   return job;
 }
 
+// Marca que la oferta ya no acepta postulaciones. NO es un descarte:
+// deja userState, feedback, feedbackEvents, aiAnalysis y analysisStatus intactos.
+function applyApplicationsClosed(job, options = {}) {
+  const now = (options.clock || nowIso)();
+  job.availability = AVAILABILITY.CLOSED;
+  job.availabilityReason = AVAILABILITY_REASON.APPLICATIONS_CLOSED;
+  job.availabilityUpdatedAt = now;
+  return job;
+}
+
+// Deja constancia de que ya se envio la push de high match para este jobId.
+// La marca es por jobId, no por ejecucion de analisis: un reanalisis posterior
+// no vuelve a notificar. No toca userState, feedback ni availability.
+function applyHighMatchNotified(job, options = {}) {
+  job.highMatchNotifiedAt = (options.clock || nowIso)();
+  return job;
+}
+
 // --- Idempotencia / discovery (el collector vuelve a encontrar una oferta) ---
 
 const DISCOVERY_FIELDS = ['title', 'company', 'location', 'url', 'employmentType', 'workplaceType', 'seniority', 'easyApply', 'description', 'descriptionLength'];
@@ -147,12 +200,26 @@ function unionInto(target, values) {
   return added;
 }
 
-// Actualiza SOLO informacion de discovery + lastSeenAt. NO toca userState/feedback/feedbackEvents/
-// aiAnalysis/analysisStatus/firstSeenAt. Rellena campos faltantes (no pisa datos ya conocidos).
+// Actualiza SOLO informacion de discovery + lastSeenAt. NO toca highMatchNotifiedAt/availability/userState/feedback/feedbackEvents/
+// aiAnalysis/analysisStatus/firstSeenAt. Rellena campos faltantes; permite mejorar
+// una descripcion insuficiente solo cuando el job todavia no tiene analisis.
 // Devuelve { changed } (cambios significativos: matchedQueries/families o campos rellenados).
 function mergeDiscovery(job, incoming = {}, options = {}) {
   const now = (options.clock || nowIso)();
   let changed = false;
+
+  if (incoming.detailExtraction) {
+    job.detailExtraction = incoming.detailExtraction;
+    changed = true;
+  }
+
+  // Un pendiente con texto corto debe poder recuperar una descripcion valida.
+  // No reemplazar evidencia de jobs ya analizados ni una descripcion utilizable.
+  if (shouldAnalyzeJob(job) && !isDescriptionUsable(job.description) && isDescriptionUsable(incoming.description)) {
+    job.description = incoming.description;
+    job.descriptionLength = incoming.description.length;
+    changed = true;
+  }
 
   changed = unionInto(job.matchedQueries, incoming.matchedQueries) || changed;
   changed = unionInto(job.matchedFamilies, incoming.matchedFamilies) || changed;
@@ -172,17 +239,47 @@ function mergeDiscovery(job, incoming = {}, options = {}) {
 
 // Decision central: ¿este job debe enviarse a OpenAI? (evita re-analizar y re-cobrar).
 function shouldAnalyzeJob(job) {
-  return !!job && (job.aiAnalysis === null || job.aiAnalysis === undefined);
+  return !!job && (job.analysisStatus === ANALYSIS_STATUS.STALE || job.aiAnalysis === null || job.aiAnalysis === undefined);
+}
+
+function markAnalysisStale(job, options = {}) {
+  if (!job.aiAnalysis) return job;
+  if (job.analysisStatus === ANALYSIS_STATUS.STALE && job.analysisStaleReason === 'description_repaired') return job;
+  job.analysisStatus = ANALYSIS_STATUS.STALE;
+  job.analysisStaleReason = 'description_repaired';
+  job.analysisStaleAt = (options.clock || nowIso)();
+  return job;
 }
 
 function markAnalysisProcessing(job, options = {}) {
-  job.analysisStatus = ANALYSIS_STATUS.PROCESSING;
+  // El analisis viejo sigue siendo stale mientras se intenta reemplazarlo.
+  if (job.analysisStatus !== ANALYSIS_STATUS.STALE) job.analysisStatus = ANALYSIS_STATUS.PROCESSING;
   job.analysisAttemptedAt = (options.clock || nowIso)();
+  return job;
+}
+
+function markDescriptionInsufficient(job) {
+  if (job.analysisStatus === ANALYSIS_STATUS.STALE) {
+    job.analysisError = DESCRIPTION_INSUFFICIENT;
+    return job;
+  }
+  job.aiAnalysis = null;
+  job.analysisStatus = ANALYSIS_STATUS.PENDING;
+  job.analysisError = DESCRIPTION_INSUFFICIENT;
+  job.analysisCompletedAt = null;
   return job;
 }
 
 function setAnalysisResult(job, analysis, options = {}) {
   const now = (options.clock || nowIso)();
+  if (job.analysisStaleReason) {
+    job.analysisReanalysisHistory = [...(job.analysisReanalysisHistory || []), {
+      reason: job.analysisStaleReason, staleAt: job.analysisStaleAt,
+      previousAnalysisCompletedAt: job.analysisCompletedAt, completedAt: now,
+    }];
+    job.analysisStaleReason = null;
+    job.analysisStaleResolvedAt = now;
+  }
   job.aiAnalysis = analysis;
   job.analysisStatus = ANALYSIS_STATUS.COMPLETED;
   job.analysisCompletedAt = now;
@@ -191,8 +288,10 @@ function setAnalysisResult(job, analysis, options = {}) {
 }
 
 function setAnalysisFailed(job, errorMessage, options = {}) {
-  job.aiAnalysis = null;
-  job.analysisStatus = ANALYSIS_STATUS.FAILED;
+  if (job.analysisStatus !== ANALYSIS_STATUS.STALE) {
+    job.aiAnalysis = null;
+    job.analysisStatus = ANALYSIS_STATUS.FAILED;
+  }
   job.analysisAttemptedAt = (options.clock || nowIso)();
   job.analysisError = errorMessage ? String(errorMessage).slice(0, 500) : 'unknown';
   return job;
@@ -205,11 +304,19 @@ module.exports = {
   applyPriority,
   applyApplied,
   applyDiscarded,
+  applyApplicationsClosed,
+  applyHighMatchNotified,
+  availabilityOf,
+  isApplicationsClosed,
   mergeDiscovery,
   shouldAnalyzeJob,
   markAnalysisProcessing,
+  markAnalysisStale,
+  markDescriptionInsufficient,
   setAnalysisResult,
   setAnalysisFailed,
   ANALYSIS_STATUS,
+  AVAILABILITY,
+  AVAILABILITY_REASON,
   nowIso,
 };

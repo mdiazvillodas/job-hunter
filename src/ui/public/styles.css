@@ -203,3 +203,6 @@ body {
   .reason-grid, .diag-cols { grid-template-columns: 1fr; }
   .mariano-linkedin .ml-link { display: none; }
 }
+
+/* Disponibilidad de la oferta (eje independiente de la decision del usuario). */
+.status-chip.availability-badge { background: #fff4e5; color: #9a5b00; border-color: #ffd9a8; }

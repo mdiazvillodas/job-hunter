@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "hunt": "node src/hunt.js",
+    "repair:descriptions": "node src/repair-descriptions.js",
+    "reanalyze:repaired": "node src/reanalyze-repaired.js",
     "trigger": "node src/trigger/server.js",
     "collect:linkedin": "node src/collect-linkedin-jobs.js",
     "analyze:linkedin": "node src/analyze-linkedin-jobs.js",
@@ -14,7 +16,17 @@
     "test:ui": "node src/tests/ui.test.js",
     "test:pipeline": "node src/tests/pipeline.test.js",
     "test:trigger": "node src/tests/trigger.test.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test:analyzer-p0": "node src/tests/analyzer-p0.test.js",
+    "test:headless": "node --test src/tests/headless.test.js",
+    "test:search-controls": "node --test src/tests/search-controls.test.js",
+    "test:description-quality": "node --test src/tests/description-quality.test.js",
+    "test:detail-extractor": "node --test src/tests/detail-extractor.test.js",
+    "test:description-repair": "node --test src/tests/description-repair.test.js",
+    "test:repaired-analysis": "node --test src/tests/repaired-analysis.test.js",
+    "test": "npm run test:feedback && npm run test:ui && npm run test:pipeline && npm run test:trigger && npm run test:analyzer-p0 && npm run test:headless && npm run test:search-controls && npm run test:description-quality && npm run test:detail-extractor && npm run test:description-repair && npm run test:repaired-analysis && npm run test:availability && npm run test:notifications",
+    "test:availability": "node --test src/tests/availability.test.js",
+    "test:notification": "node src/notify-test.js",
+    "test:notifications": "node --test src/tests/notifications.test.js"
   },
   "keywords": [],
   "author": "",

@@ -26,6 +26,7 @@ const { getMarianoMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob } = require('./ai/jobAnalyzer');
 const { runPipeline } = require('./pipeline/pipeline');
 const { acquireLock, releaseLock } = require('./domain/huntLock');
+const { createHighMatchNotifier } = require('./notifications/ntfy');
 
 function parseArgs(argv) {
   return { debug: argv.includes('--debug'), dryRun: argv.includes('--dry-run') };
@@ -69,6 +70,11 @@ function printDebugReport(s) {
   L(`  failed:             ${s.analysis.failed}`);
   L(`  skipped:            ${s.analysis.skipped}`);
   L(`  analysis enabled:   ${s.analysis.analysisEnabled}`);
+  L('\nNotifications:');
+  L(`  eligible:         ${s.notifications.eligible}`);
+  L(`  sent:             ${s.notifications.sent}`);
+  L(`  already notified: ${s.notifications.alreadyNotified}`);
+  L(`  failed:           ${s.notifications.failed}`);
   L('\nPersistence:');
   L(`  created:   ${s.persistence.created}`);
   L(`  updated:   ${s.persistence.updated}`);
@@ -136,6 +142,16 @@ async function runHunt(options) {
     console.error('       pero el analisis de OpenAI queda pendiente (jobs en analysisStatus=pending).');
   }
 
+  // Notificador push. Si NTFY_ENABLED no es 'true' devuelve {status:'disabled'} por job
+  // y el hunt sigue normal. Nunca rechaza.
+  const notifier = createHighMatchNotifier({
+    markNotified: (jobId) => jobService.markHighMatchNotified(jobId),
+    log: (m) => console.error('[notify] ' + m),
+  });
+  if (notifier.config.enabled && notifier.config.configError) {
+    console.error('[notify] ntfy habilitado pero mal configurado: ' + notifier.config.configError);
+  }
+
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   let summary;
   let searchResultsUrl = null;
@@ -172,6 +188,7 @@ async function runHunt(options) {
       fetchDetails,
       analyze,
       analyzeLimit: ANALYZE_LIMIT,
+      notify: (job) => notifier.notifyHighMatch(job),
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
     });
   } catch (err) {

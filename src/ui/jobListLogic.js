@@ -8,7 +8,7 @@
   'use strict';
 
   function ai(job) {
-    return job && job.aiAnalysis ? job.aiAnalysis : null;
+    return job && job.analysisStatus !== 'stale' && job.aiAnalysis ? job.aiAnalysis : null;
   }
   function overall(job) {
     const a = ai(job);
@@ -21,6 +21,15 @@
   function status(job) {
     return job && job.userState ? job.userState.status : 'new';
   }
+  // Disponibilidad de la OFERTA, eje independiente del userState. Ausente = 'open'
+  // (los registros anteriores al campo no se migran).
+  function availability(job) {
+    return job && job.availability === 'closed' ? 'closed' : 'open';
+  }
+  function isClosed(job) {
+    return availability(job) === 'closed';
+  }
+
   // Estados que representan una DECISION definitiva del usuario: sacan la oferta del Inbox.
   const DECIDED_STATUSES = ['interested', 'applied', 'discarded'];
   // Una oferta esta "pending" (en el Inbox) mientras el usuario no haya tomado una decision.
@@ -39,7 +48,10 @@
       company: job.company || null,
       location: job.location || null,
       overall: overall(job),
+      availability: availability(job),
+      availabilityReason: job.availabilityReason || null,
       aiDecision: decision(job),
+      analysisStale: job.analysisStatus === 'stale',
       status: status(job),
       easyApply: job.easyApply === true,
       firstSeenAt: job.userState ? job.userState.firstSeenAt : null,
@@ -61,7 +73,14 @@
   function filterJobs(jobs, filters) {
     const f = filters || {};
     return jobs.filter((job) => {
-      if (f.status && f.status !== 'all') {
+      // Las cerradas viven en su propia vista: no aparecen en ninguna otra,
+      // y en particular NO se mezclan con las descartadas.
+      if (f.status === 'closed') {
+        if (!isClosed(job)) return false;
+      } else if (isClosed(job)) {
+        return false;
+      }
+      if (f.status && f.status !== 'all' && f.status !== 'closed') {
         // 'inbox' = bandeja de pendientes (excluye interested/applied/discarded).
         if (f.status === 'inbox') {
           if (!isPending(job)) return false;
@@ -115,8 +134,11 @@
   }
 
   function countByStatus(jobs) {
-    const counts = { all: jobs.length, inbox: 0, new: 0, read: 0, interested: 0, discarded: 0, applied: 0, priority: 0 };
+    const counts = { all: 0, inbox: 0, new: 0, read: 0, interested: 0, discarded: 0, applied: 0, priority: 0, closed: 0 };
     for (const j of jobs) {
+      // Una oferta cerrada solo suma en 'closed': no infla activos ni descartes.
+      if (isClosed(j)) { counts.closed += 1; continue; }
+      counts.all += 1;
       const s = status(j);
       if (counts[s] != null) counts[s] += 1;
       if (isPending(j)) counts.inbox += 1;
@@ -146,6 +168,8 @@
     deriveFamilies,
     deriveQueries,
     isPending,
-    helpers: { overall, decision, status, isPending },
+    isClosed,
+    availability,
+    helpers: { overall, decision, status, isPending, ai, availability, isClosed },
   };
 });

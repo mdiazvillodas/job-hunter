@@ -2,6 +2,13 @@ const path = require('path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
+function readBooleanEnv(name, fallback) {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return fallback;
+}
+
 function readPositiveIntegerEnv(name, fallback) {
   const value = Number.parseInt(process.env[name], 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -123,5 +130,16 @@ module.exports = {
   // (Distinto de MAX_*_PER_SEARCH, donde 0 = sin limite: aqui 0 = ninguno, por seguridad de gasto.)
   ANALYZE_LIMIT: readNonNegativeIntegerEnv('ANALYZE_LIMIT', 50),
 
+  // --- Notificaciones push (ntfy) ---
+  // Side effect informativo. Si NTFY_ENABLED no es 'true' el hunt corre igual,
+  // simplemente sin enviar nada. El umbral de high match NO es configurable por
+  // entorno: es una constante de dominio en src/notifications/ntfy.js.
+  NTFY_ENABLED: readBooleanEnv('NTFY_ENABLED', false),
+  NTFY_BASE_URL: process.env.NTFY_BASE_URL || 'https://ntfy.sh',
+  NTFY_TOPIC: process.env.NTFY_TOPIC || null,
+
+  // Headless por defecto: solo HEADLESS="false" explicito abre el navegador visible.
+  // Ausente o valor inesperado => headless (true).
+  HEADLESS: readBooleanEnv('HEADLESS', true),
   BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile'),
 };

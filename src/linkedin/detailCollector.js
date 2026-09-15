@@ -1,4 +1,5 @@
 const { detectSecurityChallenge } = require('./session');
+const { readJobDescription } = require('./descriptionExtractor');
 
 function canonicalJobUrl(url, jobId) {
   if (jobId) return `https://www.linkedin.com/jobs/view/${jobId}/`;
@@ -7,71 +8,13 @@ function canonicalJobUrl(url, jobId) {
   return id ? `https://www.linkedin.com/jobs/view/${id}/` : url;
 }
 
-async function waitForJobDetail(page, jobId) {
-  await page.waitForLoadState('domcontentloaded');
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await detectSecurityChallenge(page);
-
-  const detailRoot = page.locator(
-    [
-      `#JobDetails_AboutTheJob_${jobId}`,
-      '[data-sdui-component*="aboutTheJob"]',
-      '[data-testid="expandable-text-box"]',
-      'main',
-    ].join(', ')
-  );
-
-  await detailRoot.first().waitFor({ state: 'visible', timeout: 30000 });
-}
-
-async function expandDescriptionIfNeeded(page) {
-  const result = await page.evaluate(() => {
-    const normalizeText = (value) => (value || '').replace(/\s+/g, ' ').trim();
-    const expansionPattern = /^(see more|show more|ver m[aá]s|mostrar m[aá]s|\u2026\s*more|\.\.\.\s*more)$/i;
-    const aboutRoot =
-      document.querySelector('[id^="JobDetails_AboutTheJob_"]') ||
-      document.querySelector('[data-sdui-component*="aboutTheJob"]');
-
-    const candidates = Array.from((aboutRoot || document).querySelectorAll('button, a')).filter((element) => {
-      const label = normalizeText(element.innerText || element.textContent || element.getAttribute('aria-label'));
-      return expansionPattern.test(label);
-    });
-
-    const button = candidates[0] || null;
-    if (!button) {
-      return { found: false, clicked: false, text: null };
-    }
-
-    button.scrollIntoView({ block: 'center' });
-    button.click();
-    return {
-      found: true,
-      clicked: true,
-      text: normalizeText(button.innerText || button.textContent || button.getAttribute('aria-label')),
-    };
-  });
-
-  if (result.clicked) {
-    await page.waitForTimeout(1000);
-    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-  }
-
-  return result;
-}
-
-async function extractJobDetail(page, listingJob, expandInfo) {
+async function extractJobDetail(page, listingJob, descriptionResult) {
   return page.evaluate(
-    ({ listingJob, expandInfo }) => {
+    ({ listingJob, descriptionResult }) => {
       const normalizeText = (value) => {
         if (!value) return null;
         const normalized = value.replace(/\s+/g, ' ').trim();
         return normalized || null;
-      };
-
-      const removeHeading = (text) => {
-        const normalized = normalizeText(text);
-        if (!normalized) return null;
-        return normalized.replace(/^About the job\s*/i, '').replace(/^Acerca del empleo\s*/i, '').replace(/^Sobre el empleo\s*/i, '').trim();
       };
 
       const firstText = (selectors) => {
@@ -124,12 +67,7 @@ async function extractJobDetail(page, listingJob, expandInfo) {
         .find((text) => /seniority level|nivel de antig/i.test(text));
       const seniority = criteriaText ? normalizeText(criteriaText.replace(/seniority level|nivel de antig[uü]edad/gi, '')) : (mainText.match(seniorityPattern) || [])[1] || null;
 
-      const aboutRoot =
-        document.querySelector(`[id="JobDetails_AboutTheJob_${jobId}"]`) ||
-        document.querySelector('[id^="JobDetails_AboutTheJob_"]') ||
-        document.querySelector('[data-sdui-component*="aboutTheJob"]');
-      const descriptionBox = aboutRoot && (aboutRoot.querySelector('[data-testid="expandable-text-box"]') || aboutRoot);
-      const description = removeHeading(descriptionBox && (descriptionBox.innerText || descriptionBox.textContent));
+      const description = descriptionResult.description;
 
       const easyApply = /Easy Apply|Solicitud sencilla|Candidatura sencilla/i.test(topTokens || mainText);
       const missingFields = ['title', 'company', 'location', 'description'].filter((field) => {
@@ -152,53 +90,42 @@ async function extractJobDetail(page, listingJob, expandInfo) {
           description,
           descriptionLength: description ? description.length : 0,
           listing: listingJob,
+          detailExtraction: descriptionResult.diagnostics,
         },
-        diagnostics: {
-          jobId,
-          url: listingJob.url || location.href,
-          expansionButtonFound: Boolean(expandInfo && expandInfo.found),
-          expansionClicked: Boolean(expandInfo && expandInfo.clicked),
-          expansionButtonText: expandInfo ? expandInfo.text : null,
-          descriptionLength: description ? description.length : 0,
-          missingFields,
-          errors: description ? [] : ['description_not_found'],
-        },
+        diagnostics: { ...descriptionResult.diagnostics, missingFields },
       };
     },
-    { listingJob, expandInfo }
+    { listingJob, descriptionResult }
   );
 }
 
 async function collectJobDetail(page, listingJob, options = {}) {
-  const url = canonicalJobUrl(listingJob.url, listingJob.jobId);
-  const debugEvents = [];
-
-  if (options.debug) {
-    debugEvents.push({
-      event: 'opening_job_detail',
-      jobId: listingJob.jobId,
-      url,
-    });
+  const url = options.directUrl ? listingJob.url : canonicalJobUrl(listingJob.url, listingJob.jobId);
+  try {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (error) {
+      if (error.name === 'TimeoutError') {
+        error.detailDiagnostics = { status: 'detail_load_timeout', jobId: listingJob.jobId, url, fetchedAt: new Date().toISOString(), error: error.message };
+      }
+      // No extraer contenido potencialmente viejo tras una navegacion fallida.
+      throw error;
+    }
+    const descriptionResult = await readJobDescription(page, listingJob.jobId, options);
+    const extracted = await extractJobDetail(page, listingJob, descriptionResult);
+    return {
+      detail: extracted.detail,
+      diagnostics: [{ event: 'extracted_job_detail', ...extracted.diagnostics }],
+    };
+  } catch (error) {
+    if (!error.detailDiagnostics) {
+      error.detailDiagnostics = {
+        status: ['AuthenticationError', 'SecurityChallengeError'].includes(error.name) ? 'auth_or_challenge' : 'detail_fetch_error',
+        jobId: listingJob.jobId, url, fetchedAt: new Date().toISOString(), error: error.message,
+      };
+    }
+    throw error;
   }
-
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await waitForJobDetail(page, listingJob.jobId);
-
-  const expandInfo = await expandDescriptionIfNeeded(page);
-  await detectSecurityChallenge(page);
-  const extracted = await extractJobDetail(page, listingJob, expandInfo);
-
-  if (options.debug) {
-    debugEvents.push({
-      event: 'extracted_job_detail',
-      ...extracted.diagnostics,
-    });
-  }
-
-  return {
-    detail: extracted.detail,
-    diagnostics: debugEvents,
-  };
 }
 
 async function collectJobDetails(page, listingJobs, options = {}) {
@@ -236,4 +163,5 @@ async function collectJobDetails(page, listingJobs, options = {}) {
 
 module.exports = {
   collectJobDetails,
+  collectJobDetail,
 };

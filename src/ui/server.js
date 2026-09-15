@@ -114,6 +114,10 @@ async function handleApi(req, res, url) {
       case 'discard':
         job = svc.markAsDiscarded(jobId, { reasons: body.reasons || [], comment: body.comment });
         break;
+      // Disponibilidad de la oferta, NO una decision del usuario: sin reasons ni comment.
+      case 'applications-closed':
+        job = svc.markApplicationsClosed(jobId);
+        break;
       default:
         return sendJson(res, 400, { error: 'Accion desconocida' });
     }

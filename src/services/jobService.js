@@ -10,9 +10,12 @@ const {
   applyPriority,
   applyApplied,
   applyDiscarded,
+  applyApplicationsClosed,
+  applyHighMatchNotified,
   mergeDiscovery,
   shouldAnalyzeJob,
   markAnalysisProcessing,
+  markDescriptionInsufficient,
   setAnalysisResult,
   setAnalysisFailed,
 } = require('../domain/jobRecord');
@@ -81,10 +84,15 @@ function createJobService(repository, options = {}) {
   }
 
   const markAsRead = (jobId) => transition(jobId, applyRead);
+  const deferAnalysisForDescription = (jobId) => transition(jobId, markDescriptionInsufficient);
   const markAsInterested = (jobId, opts) => transition(jobId, applyInterested, opts);
   const markAsPriority = (jobId, opts) => transition(jobId, applyPriority, opts);
   const markAsApplied = (jobId, opts) => transition(jobId, applyApplied, opts);
   const markAsDiscarded = (jobId, feedback) => transition(jobId, applyDiscarded, feedback);
+  // Disponibilidad de la oferta: NO es una decision del usuario ni genera feedback.
+  const markApplicationsClosed = (jobId) => transition(jobId, applyApplicationsClosed);
+  // Marca de notificacion push. Side effect informativo: no toca userState ni feedback.
+  const markHighMatchNotified = (jobId) => transition(jobId, applyHighMatchNotified);
 
   function getCalibration(jobId) {
     return computeCalibrationSignal(requireJob(jobId));
@@ -142,10 +150,13 @@ function createJobService(repository, options = {}) {
     markAsPriority,
     markAsApplied,
     markAsDiscarded,
+    markApplicationsClosed,
+    markHighMatchNotified,
     getCalibration,
     ingestDiscovery,
     updateDiscovery,
     applyAnalysisProcessing,
+    deferAnalysisForDescription,
     applyAnalysisResult,
     applyAnalysisFailure,
     shouldAnalyzeJob,

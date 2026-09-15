@@ -25,7 +25,7 @@ function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 const STATUS_LABELS = { all: 'Todas', new: 'Nueva', read: 'Leída', interested: 'Interesada', discarded: 'Descartada', applied: 'Aplicada', priority: 'Prioridad' };
 // Etiquetas de los filtros de navegación (en plural / forma de vista). Separadas de STATUS_LABELS,
 // que rotula el estado de UNA oferta (chip "Usuario: Interesada").
-const FILTER_LABELS = { inbox: 'Bandeja', all: 'Todas', new: 'Nuevas', read: 'Leídas', interested: 'Me interesan', applied: 'Aplicadas', discarded: 'Descartadas', priority: 'Prioridad' };
+const FILTER_LABELS = { inbox: 'Bandeja', all: 'Todas', new: 'Nuevas', read: 'Leídas', interested: 'Me interesan', applied: 'Aplicadas', discarded: 'Descartadas', priority: 'Prioridad', closed: 'Cerradas' };
 const DECISION_LABELS = { YES: 'SÍ', MAYBE: 'QUIZÁS', NO: 'NO' };
 const CLASSIFICATION_LABELS = { DIRECT_MATCH: 'COINCIDENCIA DIRECTA', TRANSFERABLE_MATCH: 'EXPERIENCIA TRANSFERIBLE', SCALE_STRETCH: 'DESAFÍO DE ESCALA', NOT_EVIDENCED: 'NO EVIDENCIADO', CLEAR_GAP: 'BRECHA CLARA', CRITICAL_GAP: 'BRECHA CRÍTICA' };
 const RATING_LABELS = { STRONG: 'FUERTE', MODERATE: 'MODERADA', TRANSFERABLE: 'TRANSFERIBLE', NOT_EVIDENCED: 'NO EVIDENCIADA', ABSENT: 'AUSENTE' };
@@ -123,7 +123,7 @@ function currentView() {
 /* ---------- filters render ---------- */
 // Orden de navegación: Bandeja (pendientes, por defecto) primero; luego las vistas de consulta.
 // Priority se conserva al final (no es una decisión que saque del Inbox, pero sigue siendo consultable).
-const STATUSES = ['inbox', 'all', 'new', 'read', 'interested', 'applied', 'discarded', 'priority'];
+const STATUSES = ['inbox', 'all', 'new', 'read', 'interested', 'applied', 'discarded', 'priority', 'closed'];
 function renderFilters() {
   const counts = L.countByStatus(state.jobs);
   el('statusFilter').innerHTML = STATUSES.map((s) => {
@@ -166,6 +166,7 @@ function jobItemHtml(job) {
       <div class="job-title">${esc(v.title || 'Sin título')}</div>
       <div class="job-sub">${esc(sub)}</div>
       <div class="job-tags">
+        ${v.analysisStale ? '<span class="badge">IA pendiente de actualización</span>' : ''}
         <span class="badge ai-${ai}">${v.aiDecision ? esc(lbl(DECISION_LABELS, v.aiDecision, v.aiDecision)) : 'IA —'}</span>
         <span class="status-chip st-${v.status}">${esc(lbl(STATUS_LABELS, v.status, titleCase(v.status)))}</span>
         ${v.easyApply ? '<span class="badge easy">Easy Apply</span>' : ''}
@@ -221,7 +222,7 @@ function scoreCard(label, val) {
 }
 
 function disagreementHtml(job, cal) {
-  const ai = job.aiAnalysis && job.aiAnalysis.decision;
+  const ai = L.helpers.decision(job);
   const st = job.userState.status;
   const positive = ['interested', 'applied', 'priority'];
   let msg = null;
@@ -266,10 +267,14 @@ function renderDetail(job, cal) {
   el('detailEmpty').hidden = true;
   const c = el('detailContent');
   c.hidden = false;
-  const a = job.aiAnalysis || {};
+  const stale = job.analysisStatus === 'stale';
+  const a = L.helpers.ai(job) || {};
   const meta = [job.employmentType, job.workplaceType, job.seniority].filter(Boolean).map((m) => `<span class="dot">${esc(m)}</span>`).join('');
   const easy = job.easyApply ? '<span class="badge easy">Easy Apply</span>' : '';
   const aiBadge = `<span class="badge ai-${a.decision || 'none'}">IA: ${a.decision ? esc(lbl(DECISION_LABELS, a.decision, a.decision)) : '—'}</span>`;
+  const closedBadge = job.availability === 'closed'
+    ? '<span class="status-chip availability-badge" title="Disponibilidad de la oferta, independiente de tu decisión">🚫 Ya no acepta postulaciones</span>'
+    : '';
   const stBadge = `<span class="status-chip st-${job.userState.status}">Usuario: ${esc(lbl(STATUS_LABELS, job.userState.status, titleCase(job.userState.status)))}</span>`;
 
   const found = (job.matchedQueries || []).length ? `<div class="section"><h2>ENCONTRADA A TRAVÉS DE</h2><div class="tag-list">${job.matchedQueries.map((q) => `<span class="chip muted">${esc(q)}</span>`).join('')}</div></div>` : '';
@@ -280,7 +285,7 @@ function renderDetail(job, cal) {
       <h1>${esc(job.title || 'Sin título')}</h1>
       <div class="detail-company">${esc(job.company || 'Empresa no informada')}</div>
       <div class="meta-line">${job.location ? `<span>${esc(job.location)}</span>` : ''}${meta}</div>
-      <div class="head-badges">${aiBadge}${stBadge}${easy}
+      <div class="head-badges">${aiBadge}${stBadge}${closedBadge}${easy}
         ${job.url ? `<a class="btn small" href="${esc(job.url)}" target="_blank" rel="noopener">Abrir en LinkedIn ↗</a>` : ''}
       </div>
     </div>
@@ -291,9 +296,10 @@ function renderDetail(job, cal) {
       <button class="btn" data-act="read">👁 Marcar leída</button>
       <button class="btn" data-act="applied">📩 Apliqué</button>
       <button class="btn" data-act="priority">⭐ Prioridad</button>
+      <button class="btn" data-act="applications-closed" title="La oferta ya no admite candidaturas. No es un descarte: no genera feedback ni afecta el análisis.">🚫 Ya no acepta postulaciones</button>
     </div>
 
-    ${disagreementHtml(job, cal)}
+    ${stale ? '<div class="section"><h2>ANÁLISIS PENDIENTE DE ACTUALIZACIÓN</h2><p>Análisis pendiente de actualización tras recuperar la descripción. El análisis anterior se conserva para auditoría y no se presenta como vigente.</p></div>' : disagreementHtml(job, cal)}
 
     <div class="scores">
       ${scoreCard('General', a.overallMatchScore)}
@@ -331,7 +337,9 @@ async function onAction(jobId, act) {
     upsertLocal(job);
     renderDetail(job, calibration);
     renderList(); renderFilters();
-    toast('Estado actualizado: ' + lbl(STATUS_LABELS, job.userState.status, titleCase(job.userState.status)));
+    toast(act === 'applications-closed'
+      ? 'Marcada como cerrada: ya no acepta postulaciones.'
+      : 'Estado actualizado: ' + lbl(STATUS_LABELS, job.userState.status, titleCase(job.userState.status)));
   } catch (e) {
     toast('No se pudo actualizar: ' + e.message, true);
   }
@@ -371,7 +379,9 @@ async function openDiagnostics() {
     el('learnedPrefs').innerHTML = prefs.length
       ? prefs.map((p) => `<div class="pref tier-${esc(p.tier)}"><div class="pref-key">${esc(reasonLabel(p.key))}</div><div class="pref-meta">${esc(lbl(DIRECTION_LABELS, p.direction, p.direction))} · ${p.count} señales · ${esc(lbl(DIMENSION_LABELS, p.dimension, p.dimension))} · nivel ${esc(lbl(TIER_LABELS, p.tier, p.tier))} · confianza ${esc(lbl(CONFIDENCE_LABELS, p.confidence, p.confidence))}</div></div>`).join('')
       : '<p class="muted small">Sin preferencias aprendidas todavía.</p>';
-    const cals = cal.calibrations || [];
+    // Solo presentacion: no mostrar decisiones obsoletas como calibracion vigente.
+    const staleIds = new Set(state.jobs.filter(j => j.analysisStatus === 'stale').map(j => j.jobId));
+    const cals = (cal.calibrations || []).filter(c => !staleIds.has(c.jobId));
     el('calibration').innerHTML = cals.length
       ? cals.map((c) => `<div class="pref"><div class="pref-key">${esc(c.jobId)}</div><div class="pref-meta">IA ${esc(lbl(DECISION_LABELS, c.aiDecision, c.aiDecision))} vs usuario ${esc(lbl(STATUS_LABELS, c.userStatus, c.userStatus))} → <strong>${esc(lbl(SIGNAL_LABELS, c.calibrationSignal, c.calibrationSignal))}</strong>${c.reasons && c.reasons.length ? ' · ' + esc(c.reasons.map(reasonLabel).join(', ')) : ''}</div></div>`).join('')
       : '<p class="muted small">Sin señales de calibración todavía.</p>';

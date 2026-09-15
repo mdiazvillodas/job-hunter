@@ -20,6 +20,7 @@ src/data/hunt.lock
 src/ai/marianoProfile.json
 src/ai/marianoMatchingProfile.json
 src/ai/marianoCareerContext.json
+/Mariano_Diaz_Villodas_CV*.pdf
 
 # --- secretos / entorno ---
 .env

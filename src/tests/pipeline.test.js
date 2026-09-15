@@ -28,7 +28,10 @@ function analysisOf(id) {
     roleFamily: 'operations', summary: 's', whyItFits: ['a'], transferableExperience: ['b'], literalMatches: ['c'],
     gaps: ['d'], criticalRequirementsUnmet: [], redFlags: [], recommendedCV: 'current_cv', cvAdjustments: ['e'], confidence: 60, reasoning: 'r' };
 }
-const okDetail = (job) => Promise.resolve({ ...job, description: 'Full description for ' + job.jobId + ' (See more expanded).', descriptionLength: 42, employmentType: 'Full-time', workplaceType: 'Hybrid', seniority: 'Director' });
+const okDetail = (job) => {
+  const description = ('Full description for ' + job.jobId + ' (See more expanded). ').repeat(10);
+  return Promise.resolve({ ...job, description, descriptionLength: description.length, employmentType: 'Full-time', workplaceType: 'Hybrid', seniority: 'Director' });
+};
 
 function makeAnalyze(calls, opts = {}) {
   return (job) => {

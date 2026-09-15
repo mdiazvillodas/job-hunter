@@ -5,12 +5,15 @@
 //   discover()        -> { jobs: uniqueJob[], discovery: {queriesExecuted,rawResults,uniqueResults,duplicatesRemoved} }
 //   fetchDetails(job) -> detailedJob (con description...)   | throw (challenge/error)
 //   analyze(job)      -> { analysis, usage, model, durationMs } | throw
+//   notify(job)       -> { status } (opcional). Side effect informativo: SIEMPRE resuelve,
+//                        nunca rechaza, y no puede afectar el resultado del analisis.
 // analyze puede ser null: en ese caso NO se analiza nada (los candidatos quedan 'skipped', pending).
 
 const { shouldAnalyzeJob } = require('../domain/jobRecord');
+const { isDescriptionUsable } = require('../domain/descriptionQuality');
 
 function isChallenge(err) {
-  return !!err && err.name === 'SecurityChallengeError';
+  return !!err && ['SecurityChallengeError', 'AuthenticationError'].includes(err.name);
 }
 
 function newRunId() {
@@ -35,7 +38,7 @@ function compactJob(job) {
 }
 
 async function runPipeline(deps) {
-  const { jobService, discover, fetchDetails, analyze, analyzeLimit, log } = deps;
+  const { jobService, discover, fetchDetails, analyze, analyzeLimit, log, notify } = deps;
   const say = typeof log === 'function' ? log : () => {};
   const startMs = Date.now();
   const runId = newRunId();
@@ -81,18 +84,35 @@ async function runPipeline(deps) {
   let analyzed = 0;
   let failed = 0;
   let detailsFetched = 0;
+  // Intentos incluye excepciones/challenges. With/Without clasifican solo retornos
+  // de fetch de ESTE run; no cuentan descripciones ya persistidas sin refetch.
+  let detailFetchAttempts = 0;
+  let detailsWithUsableDescription = 0;
+  let detailsWithoutUsableDescription = 0;
+  let skippedDueToMissingDescription = 0;
   let stoppedByChallenge = false;
+  const notifications = { eligible: 0, sent: 0, alreadyNotified: 0, failed: 0 };
+  const detailDiagnostics = [];
 
   for (const cand of candidates) {
-    // 1) detalle (LinkedIn) — solo si aun no tenemos description (idempotente / evita refetch).
-    if (!cand.description) {
+    // 1) Reintentar detalle ausente/corto; conservar evidencia ya utilizable.
+    if (!isDescriptionUsable(cand.description)) {
       try {
         const t = Date.now();
+        detailFetchAttempts += 1;
         const detailed = await fetchDetails(cand);
+        if (detailed && detailed.detailExtraction) detailDiagnostics.push(detailed.detailExtraction);
         durations.detailsMs += Date.now() - t;
+        // Compatibilidad: retornos sin excepcion, NO descripciones validas.
         detailsFetched += 1;
+        if (isDescriptionUsable(detailed && detailed.description)) detailsWithUsableDescription += 1;
+        else detailsWithoutUsableDescription += 1;
         jobService.updateDiscovery(cand.jobId, detailed || {});
       } catch (err) {
+        if (err.detailDiagnostics) {
+          detailDiagnostics.push(err.detailDiagnostics);
+          jobService.updateDiscovery(cand.jobId, { detailExtraction: err.detailDiagnostics });
+        }
         if (isChallenge(err)) { stoppedByChallenge = true; say('challenge:stop'); break; }
         jobService.applyAnalysisFailure(cand.jobId, 'detail: ' + (err.message || err));
         failed += 1;
@@ -101,9 +121,18 @@ async function runPipeline(deps) {
       }
     }
 
+    // Gate sobre el dato persistido que recibira el analyzer, antes de processing/OpenAI.
+    if (!isDescriptionUsable(jobService.getJob(cand.jobId).description)) {
+      jobService.deferAnalysisForDescription(cand.jobId);
+      skippedDueToMissingDescription += 1;
+      say(`analysis:deferred ${cand.jobId} description_missing_or_insufficient`);
+      continue;
+    }
+
     // 2) analisis (OpenAI) — si no hay analyzer, el job queda 'pending' (skipped).
     if (!analyze) continue;
     jobService.applyAnalysisProcessing(cand.jobId);
+    let analysisJustSucceeded = false;
     try {
       const t = Date.now();
       const res = await analyze(jobService.getJob(cand.jobId));
@@ -118,11 +147,31 @@ async function runPipeline(deps) {
         const cached = res.usage.prompt_tokens_details && res.usage.prompt_tokens_details.cached_tokens;
         usage.cachedTokens += cached || 0;
       }
+      analysisJustSucceeded = true;
       say(`analyzed ${cand.jobId} -> ${res.analysis.decision}`);
     } catch (err) {
       jobService.applyAnalysisFailure(cand.jobId, err.message || String(err));
       failed += 1;
       say(`analysis:failed ${cand.jobId}`);
+    }
+
+    // 3) Notificacion push de high match. DELIBERADAMENTE fuera del try/catch del
+    // analisis: si fallara ahi dentro, el catch marcaria como fallido un analisis
+    // que en realidad fue exitoso. Solo entran analisis recién persistidos en ESTE
+    // run, nunca un scan del repositorio. Un fallo aqui no afecta al hunt.
+    if (analysisJustSucceeded && typeof notify === 'function') {
+      try {
+        const outcome = await notify(jobService.getJob(cand.jobId));
+        const status = outcome && outcome.status;
+        if (status && status !== 'below_threshold') notifications.eligible += 1;
+        if (status === 'sent') notifications.sent += 1;
+        else if (status === 'already_notified') notifications.alreadyNotified += 1;
+        else if (status === 'failed') notifications.failed += 1;
+      } catch (err) {
+        // Blindaje extra: un notifier que incumpla el contrato tampoco rompe el hunt.
+        notifications.failed += 1;
+        say(`notify:threw ${cand.jobId} ${err && err.message ? err.message : err}`);
+      }
     }
   }
 
@@ -151,11 +200,21 @@ async function runPipeline(deps) {
       failed,
       skipped,
       detailsFetched,
+      detailFetchAttempts,
+      detailsWithUsableDescription,
+      detailsWithoutUsableDescription,
+      skippedDueToMissingDescription,
+      detailExtractionCounts: detailDiagnostics.reduce((counts, d) => {
+        counts[d.status] = (counts[d.status] || 0) + 1;
+        return counts;
+      }, {}),
       analysisEnabled: !!analyze,
     },
     persistence: { created, updated, unchanged },
+    notifications,
     usageTotals: { ...usage, model },
     durations,
+    detailDiagnostics,
     jobs: uniqueJobs.map((uj) => compactJob(jobService.getJob(uj.jobId))),
   };
 }
