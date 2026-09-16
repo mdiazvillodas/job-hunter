@@ -579,6 +579,17 @@ function init() {
   const copyBtn = el('copyLinkedinBtn');
   if (copyBtn) copyBtn.addEventListener('click', () => copyUserLinkedinLink(copyBtn));
 
+  // Tema: la preferencia explicita gana y se guarda en localStorage.
+  const themeBtn = el('themeToggle');
+  if (themeBtn && window.UiPrefs) {
+    themeBtn.addEventListener('click', () => {
+      const P = window.UiPrefs;
+      const next = P.nextTheme(P.currentTheme(document.documentElement));
+      P.applyTheme(document.documentElement, next);
+      P.storeTheme(window.localStorage, next);
+    });
+  }
+
   el('diagBtn').addEventListener('click', openDiagnostics);
   el('diagClose').addEventListener('click', () => { el('diagPanel').hidden = true; });
   el('diagPanel').addEventListener('click', (e) => { if (e.target.id === 'diagPanel') el('diagPanel').hidden = true; });

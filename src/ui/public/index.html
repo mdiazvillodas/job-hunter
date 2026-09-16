@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Job Hunter</title>
+    <!-- Tema ANTES de la hoja de estilos: evita el flash de tema incorrecto. -->
+    <script src="/uiPrefs.js"></script>
+    <script>window.UiPrefs && window.UiPrefs.applyStoredTheme();</script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -26,6 +29,16 @@
         <button id="copyLinkedinBtn" class="btn ghost small" type="button" hidden>Copiar enlace</button>
       </div>
       <button id="diagBtn" class="btn ghost" type="button">Diagnóstico</button>
+      <button id="themeToggle" class="btn icon ghost" type="button" title="Cambiar tema" aria-label="Cambiar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+          <path d="M12 2.4v2.4M12 19.2v2.4M2.4 12h2.4M19.2 12h2.4M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"
+                fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+        </svg>
+      </button>
     </header>
 
     <section class="operations" aria-label="Operaciones">
