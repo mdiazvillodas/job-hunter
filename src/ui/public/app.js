@@ -153,16 +153,116 @@ const HUNT_LABELS = { IDLE: 'Sin ejecutar', STARTING: 'Iniciando', RUNNING: 'Bus
 let huntPollTimer = null;
 let browserInstallPollTimer = null;
 
+// Durante la convergencia conviven la tarjeta de Operaciones y los controles
+// compactos. Estos helpers ignoran los elementos que ya no existan.
+function setText(id, text) { const e = el(id); if (e) e.textContent = text; }
+function setHidden(id, hidden) { const e = el(id); if (e) e.hidden = !!hidden; }
+function setDisabled(id, disabled) { const e = el(id); if (e) e.disabled = !!disabled; }
+
+// Control de busqueda: un solo componente que cambia de forma segun el estado.
+// Nunca crece verticalmente.
+function renderHuntControl() {
+  const hunt = state.hunt || { status: 'IDLE' };
+  const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
+  const p = hunt.progress || {};
+  const active = hunt.status === 'STARTING' || hunt.status === 'RUNNING';
+  const starting = hunt.status === 'STARTING' || p.phase === 'discovery' || p.phase === 'starting';
+  const cancelling = active && p.cancellationRequested === true;
+
+  setHidden('huntStartBtn', active);
+  setDisabled('huntStartBtn', !state.setupReady || session.state !== 'AUTHENTICATED' || session.windowOpen);
+  const startBtn = el('huntStartBtn');
+  if (startBtn) {
+    startBtn.title = !state.setupReady ? 'Completá la configuración para buscar'
+      : session.state !== 'AUTHENTICATED' ? 'Conectá LinkedIn para buscar'
+      : session.windowOpen ? 'Cerrá la ventana de LinkedIn para buscar' : '';
+  }
+
+  setHidden('huntLive', !active);
+  setHidden('huntCancelBtn', !active);
+  setDisabled('huntCancelBtn', cancelling);
+  if (active) {
+    const target = p.analysisTarget || 0;
+    setText('huntProgressText', cancelling ? 'Deteniendo…'
+      : starting && !p.analysisCompleted ? 'Buscando ofertas…'
+      : 'Analizando ' + (p.analysisCompleted || 0) + '/' + target);
+  }
+
+  // Barra de progreso en el borde de la topbar.
+  const bar = el('huntBar');
+  const fill = el('huntBarFill');
+  if (bar && fill) {
+    bar.hidden = !active;
+    const indeterminate = active && (starting || !p.analysisTarget);
+    bar.classList.toggle('indeterminate', indeterminate);
+    fill.style.width = indeterminate ? '' : active
+      ? Math.min(100, Math.round(((p.analysisCompleted || 0) / (p.analysisTarget || 1)) * 100)) + '%'
+      : '0%';
+  }
+
+  // Resultado: exito y cancelacion son efimeros; el fallo persiste hasta descartarlo.
+  const result = el('huntResultBtn');
+  if (result) {
+    result.classList.remove('is-cancelled', 'is-failed');
+    if (active || state.huntResultDismissed === hunt.runId) { result.hidden = true; }
+    else if (hunt.status === 'COMPLETED') {
+      const s = hunt.summary || {};
+      const created = s.discovery ? s.discovery.newJobs : null;
+      const analyzed = s.analysis ? s.analysis.analyzed : null;
+      result.textContent = '✓ ' + (created != null ? created + ' nuevas' : 'Completado')
+        + (analyzed != null ? ' · ' + analyzed + ' analizadas' : '');
+      result.hidden = false;
+    } else if (hunt.status === 'CANCELLED') {
+      result.textContent = '⊘ Detenida';
+      result.classList.add('is-cancelled');
+      result.hidden = false;
+    } else if (hunt.status === 'FAILED') {
+      result.textContent = '⚠ Falló';
+      result.classList.add('is-failed');
+      result.hidden = false;
+    } else { result.hidden = true; }
+  }
+  if (active && huntResultTimer) { clearTimeout(huntResultTimer); huntResultTimer = null; }
+  scheduleHuntResultDismiss(hunt);
+}
+
+// Exito y cancelacion son informativos: se retiran solos. El fallo persiste
+// hasta que el usuario lo descarta, para que no pase desapercibido.
+const HUNT_RESULT_MS = 8000;
+let huntResultTimer = null;
+function scheduleHuntResultDismiss(hunt) {
+  const ephemeral = hunt.status === 'COMPLETED' || hunt.status === 'CANCELLED';
+  if (!ephemeral || state.huntResultDismissed === hunt.runId || huntResultTimer) return;
+  huntResultTimer = setTimeout(() => {
+    huntResultTimer = null;
+    state.huntResultDismissed = hunt.runId;
+    renderHuntControl();
+  }, HUNT_RESULT_MS);
+}
+
+function openHuntPopover() {
+  const hunt = state.hunt || {};
+  const err = hunt.error || {};
+  setText('huntPopoverBody', err.message || 'La búsqueda no pudo completarse.');
+  // Sin setup no se puede reintentar: se ofrece el camino correcto.
+  setHidden('completeSetupLink', state.setupReady !== false);
+  const pop = el('huntPopover');
+  const anchor = el('huntResultBtn').getBoundingClientRect();
+  pop.hidden = false;
+  pop.style.top = Math.round(anchor.bottom + 8) + 'px';
+  pop.style.left = Math.round(Math.max(12, anchor.left)) + 'px';
+}
+function closeHuntPopover() { setHidden('huntPopover', true); }
+
 function renderOperations() {
   const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
   const hunt = state.hunt || { status: 'IDLE' };
-  el('linkedinSessionStatus').textContent = SESSION_LABELS[session.state] || 'Estado desconocido';
-  el('linkedinOpenBtn').disabled = !!session.windowOpen;
-  el('linkedinCloseBtn').disabled = !session.windowOpen;
-  el('huntStatus').textContent = HUNT_LABELS[hunt.status] || hunt.status;
+  setText('linkedinSessionStatus', SESSION_LABELS[session.state] || 'Estado desconocido');
+  setDisabled('linkedinOpenBtn', !!session.windowOpen);
+  setDisabled('linkedinCloseBtn', !session.windowOpen);
+  setText('huntStatus', HUNT_LABELS[hunt.status] || hunt.status);
   const active = hunt.status === 'STARTING' || hunt.status === 'RUNNING';
-  el('huntStartBtn').disabled = !state.setupReady || session.state !== 'AUTHENTICATED' || session.windowOpen || active;
-  el('huntCancelBtn').hidden = !active;
+  renderHuntControl();
   el('huntCancelBtn').disabled = !active || !!(hunt.progress && hunt.progress.cancellationRequested);
   el('completeSetupLink').hidden = state.setupReady;
   const summary = hunt.summary;
@@ -292,6 +392,8 @@ async function closeLinkedinSession() {
 
 async function startHunt() {
   try {
+    closeHuntPopover();
+    state.huntResultDismissed = null;
     state.hunt = await api('/api/hunt', 'POST');
     renderOperations();
     startHuntPolling();
@@ -671,6 +773,16 @@ function init() {
   el('linkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
   el('linkedinCloseBtn').addEventListener('click', closeLinkedinSession);
   el('huntStartBtn').addEventListener('click', startHunt);
+  el('huntResultBtn').addEventListener('click', () => {
+    if (state.hunt && state.hunt.status === 'FAILED') openHuntPopover();
+    else { state.huntResultDismissed = state.hunt && state.hunt.runId; renderHuntControl(); }
+  });
+  el('huntRetryBtn').addEventListener('click', () => { closeHuntPopover(); startHunt(); });
+  el('huntDismissBtn').addEventListener('click', () => {
+    closeHuntPopover();
+    state.huntResultDismissed = state.hunt && state.hunt.runId;
+    renderHuntControl();
+  });
   el('huntCancelBtn').addEventListener('click', cancelHunt);
   el('installBrowserBtn').addEventListener('click', installBrowser);
   el('saveScheduleBtn').addEventListener('click', saveSchedule);

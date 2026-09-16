@@ -13,6 +13,18 @@
     <div id="setupNotice" class="setup-notice" hidden>Job Hunter todavía no está configurado. <a href="/setup">Configurar</a></div>
     <header class="topbar">
       <div class="brand">Job&nbsp;Hunter</div>
+
+      <div class="hunt-control" id="huntControl">
+        <button id="huntStartBtn" class="btn primary hunt-start" type="button" disabled>Iniciar búsqueda</button>
+        <span class="hunt-live" id="huntLive" hidden>
+          <span class="hunt-dot" aria-hidden="true"></span>
+          <span id="huntProgressText">Iniciando…</span>
+        </span>
+        <button id="huntCancelBtn" class="btn danger small" type="button" hidden>Detener</button>
+        <button id="huntResultBtn" class="hunt-result" type="button" hidden></button>
+      </div>
+
+      <div class="topbar-spacer"></div>
       <label class="sort">
         Orden
         <select id="sortSelect">
@@ -38,7 +50,19 @@
           <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
         </svg>
       </button>
+      <div class="hunt-bar" id="huntBar" hidden><span id="huntBarFill"></span></div>
     </header>
+
+    <!-- Detalle del fallo: efimero y bajo demanda, no un panel permanente. -->
+    <div class="popover hunt-popover" id="huntPopover" hidden role="dialog" aria-label="Detalle del fallo">
+      <div class="popover-title" id="huntPopoverTitle">La búsqueda no pudo completarse</div>
+      <p class="popover-body" id="huntPopoverBody"></p>
+      <div class="popover-actions">
+        <a id="completeSetupLink" class="btn ghost small" href="/setup" hidden>Completar configuración</a>
+        <button id="huntRetryBtn" class="btn small" type="button">Reintentar</button>
+        <button id="huntDismissBtn" class="btn ghost small" type="button">Descartar</button>
+      </div>
+    </div>
 
     <section class="operations" aria-label="Operaciones">
       <div class="operation-card">
@@ -57,11 +81,6 @@
           <h2>Búsqueda</h2>
           <p id="huntStatus" class="operation-status">Sin ejecutar</p>
           <p id="huntSummary" class="operation-summary" hidden></p>
-        </div>
-        <div class="operation-actions">
-          <button id="huntStartBtn" class="btn primary" type="button" disabled>Buscar oportunidades ahora</button>
-          <button id="huntCancelBtn" class="btn danger" type="button" hidden>Detener búsqueda</button>
-          <a id="completeSetupLink" class="btn ghost" href="/setup" hidden>Completar configuración</a>
         </div>
       </div>
       <div class="operation-card">
