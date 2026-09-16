@@ -97,8 +97,16 @@
     <main class="layout" id="mainLayout">
       <!-- SIDEBAR -->
       <aside class="sidebar" id="sidebar">
+        <div class="status-tabs-wrap">
+          <nav class="status-tabs" id="statusFilter" aria-label="Vistas por estado"></nav>
+        </div>
+
+        <div class="list-meta">
+          <span class="list-count"><b id="listCount">0</b> ofertas</span>
+          <div class="active-chips" id="activeChips"></div>
+        </div>
+
         <section class="filters">
-          <div class="filter-group status-filter" id="statusFilter"></div>
 
           <div class="filter-row">
             <label>Decisión IA
@@ -144,7 +152,6 @@
           </div>
         </section>
 
-        <div class="list-meta"><span id="listCount">0</span> ofertas</div>
         <ul class="job-list" id="jobList"></ul>
       </aside>
 

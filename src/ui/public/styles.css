@@ -174,17 +174,42 @@ body {
 .filter-row label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); flex: 1; }
 .filter-row label.grow { flex: 1; }
 .filter-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-.status-filter { display: flex; flex-wrap: wrap; gap: 6px; }
-.status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); cursor: pointer; font-size: 12px; }
-.status-pill .count { color: var(--muted); font-variant-numeric: tabular-nums; }
-.status-pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+/* Fila unica scrollable. El degradado de la derecha indica que hay mas vistas. */
+.status-tabs-wrap { position: relative; flex: none; }
+.status-tabs-wrap::after {
+  content: ''; position: absolute; right: 0; top: 0; bottom: 1px; width: 26px; pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--surface));
+}
+.status-tabs {
+  display: flex; gap: 4px; flex: none;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.status-tabs::-webkit-scrollbar { display: none; }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  padding: 4px 9px; border: 1px solid transparent; border-radius: 999px;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 500; white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.status-pill:hover { background: var(--surface-2); color: var(--text); }
+.status-pill .count { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.status-pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .status-pill.active .count { color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 4px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px; }
 .chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .chip.muted { color: var(--muted); cursor: default; }
 
-.list-meta { padding: 8px 14px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
+.list-meta {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 4px 11px; min-height: 24px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted); font-size: 11.5px;
+}
+.list-count b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.active-chips { display: flex; gap: 4px; align-items: center; margin-left: auto; overflow: hidden; }
 
 /* Job list */
 .job-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
