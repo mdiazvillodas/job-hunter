@@ -452,9 +452,9 @@ function listSection(title, arr, opts) {
   return `<div class="section${cls}"><h2>${esc(title)}</h2><ul>${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
 }
 
-function scoreCard(label, val) {
+function scoreCard(label, val, primary) {
   const has = typeof val === 'number';
-  return `<div class="score-card"><div class="val">${has ? val : '—'}</div><div class="lbl">${label}</div><div class="meter"><span style="width:${has ? val : 0}%"></span></div></div>`;
+  return `<div class="score-card${primary ? ' primary' : ''}"><div class="val">${has ? val : '—'}</div><div class="lbl">${label}</div><div class="meter"><span style="width:${has ? val : 0}%"></span></div></div>`;
 }
 
 function disagreementHtml(job, cal) {
@@ -524,16 +524,17 @@ function renderDetail(job, cal) {
 
     <div class="actions">
       <button class="btn primary" data-act="interested">✓ Me interesa</button>
-      <button class="btn danger" data-act="discard">❌ Descartar</button>
-      <button class="btn" data-act="read">👁 Marcar leída</button>
-      <button class="btn" data-act="applied">📩 Apliqué</button>
-      <button class="btn" data-act="priority">⭐ Prioridad</button>
+      <button class="btn danger" data-act="discard">✕ Descartar</button>
+      <span class="actions-sep" aria-hidden="true"></span>
+      <button class="btn" data-act="applied">Apliqué</button>
+      <button class="btn" data-act="priority">★ Prioridad</button>
+      <button class="btn" data-act="read">Marcar leída</button>
     </div>
 
     ${disagreementHtml(job, cal)}
 
     <div class="scores">
-      ${scoreCard('General', a.overallMatchScore)}
+      ${scoreCard('General', a.overallMatchScore, true)}
       ${scoreCard('Profesional', a.professionalFitScore)}
       ${scoreCard('Interés', a.interestFitScore)}
       ${scoreCard('CV', a.cvFitScore)}
