@@ -345,13 +345,15 @@ function jobItemHtml(job) {
   return `<li class="job-item${unread}${selected}" data-id="${esc(v.jobId)}">
     <div class="score-badge ${scoreClass(v.overall)}">${sc}</div>
     <div class="job-main">
-      <div class="job-title">${esc(v.title || 'Sin título')}</div>
+      <div class="job-line">
+        <span class="job-title">${esc(v.title || 'Sin título')}</span>
+        <span class="job-date">${fmtDate(v.firstSeenAt)}</span>
+      </div>
       <div class="job-sub">${esc(sub)}</div>
       <div class="job-tags">
         <span class="badge ai-${ai}">${v.aiDecision ? esc(lbl(DECISION_LABELS, v.aiDecision, v.aiDecision)) : 'IA —'}</span>
-        <span class="status-chip st-${v.status}">${esc(lbl(STATUS_LABELS, v.status, titleCase(v.status)))}</span>
+        ${v.status === 'new' ? '' : `<span class="status-chip st-${v.status}">${esc(lbl(STATUS_LABELS, v.status, titleCase(v.status)))}</span>`}
         ${v.easyApply ? '<span class="badge easy">Easy Apply</span>' : ''}
-        <span class="muted small">${fmtDate(v.firstSeenAt)}</span>
       </div>
     </div>
   </li>`;
