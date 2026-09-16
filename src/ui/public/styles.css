@@ -536,3 +536,14 @@ body {
 .settings-status.is-error { color: var(--danger); }
 
 @media (max-width: 860px) { .settings-body { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); } }
+
+/* Panel de Busqueda en Configuracion. */
+.chips-inline { display: flex; flex-wrap: wrap; gap: 12px; }
+.chips-inline label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.settings-row textarea, .settings-row input[type='number'] { flex: 1; min-width: 220px; font: inherit; font-size: 13px; }
+.settings-row textarea { resize: vertical; }
+.query-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+.query-group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.query-group-head strong { font-size: 13px; font-weight: 650; }
+.query-group-head label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+.query-group textarea { width: 100%; font: inherit; font-size: 13px; resize: vertical; }

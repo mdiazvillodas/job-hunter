@@ -774,6 +774,69 @@ function showSettingsSection(section) {
   });
 }
 
+/* ---------- configuracion: busqueda ---------- */
+// Un bloque por grupo existente. El editor nunca inventa ni funde grupos:
+// se repintan todos y se reenvian todos, conservando identidad y orden.
+function renderSearchSettings(search) {
+  state.searchSettings = search;
+  el('settingsTarget').value = search.targetAnalyzedJobs;
+  el('settingsLocations').value = search.locations.join('\n');
+  el('settingsModalities').querySelectorAll('input[type="checkbox"]').forEach((box) => {
+    box.checked = search.modalities.includes(box.value);
+  });
+  el('settingsQueryGroups').innerHTML = search.queryGroups.map((group, i) => `
+    <div class="query-group" data-family="${esc(group.family)}">
+      <div class="query-group-head">
+        <strong>${esc(group.label)}</strong>
+        <label><input type="checkbox" data-group-enabled="${i}" ${group.enabled ? 'checked' : ''} /> Activo</label>
+      </div>
+      <textarea rows="${Math.max(3, group.queries.length + 1)}" data-group-queries="${i}" aria-label="Queries de ${esc(group.label)}">${esc(group.queries.join('\n'))}</textarea>
+    </div>`).join('');
+}
+
+function collectSearchSettings() {
+  const groups = Array.from(el('settingsQueryGroups').querySelectorAll('.query-group'));
+  return {
+    targetAnalyzedJobs: Number(el('settingsTarget').value),
+    locations: el('settingsLocations').value.split('\n').map((s) => s.trim()).filter(Boolean),
+    modalities: Array.from(el('settingsModalities').querySelectorAll('input:checked')).map((b) => b.value),
+    // Se reenvian TODOS los grupos, siempre: el servidor rechaza un guardado
+    // que omita alguno para que no se pierda por accidente.
+    queryGroups: groups.map((node) => ({
+      family: node.dataset.family,
+      enabled: node.querySelector('[data-group-enabled]').checked,
+      queries: node.querySelector('[data-group-queries]').value.split('\n').map((s) => s.trim()).filter(Boolean),
+    })),
+  };
+}
+
+function setSettingsStatus(id, message, kind) {
+  const node = el(id);
+  if (!node) return;
+  node.textContent = message;
+  node.className = 'settings-status' + (kind ? ' is-' + kind : '');
+}
+
+async function loadSearchSettings() {
+  try {
+    const { search } = await api('/api/settings');
+    renderSearchSettings(search);
+  } catch (e) {
+    setSettingsStatus('searchSettingsStatus', 'No se pudo cargar: ' + e.message, 'error');
+  }
+}
+
+async function saveSearchSettings() {
+  setSettingsStatus('searchSettingsStatus', 'Guardando…');
+  try {
+    const { search } = await api('/api/settings/search', 'PUT', collectSearchSettings());
+    renderSearchSettings(search);
+    setSettingsStatus('searchSettingsStatus', 'Guardado', 'ok');
+  } catch (e) {
+    setSettingsStatus('searchSettingsStatus', e.message, 'error');
+  }
+}
+
 /* ---------- wire up ---------- */
 function init() {
   el('globalSearch').addEventListener('input', (e) => { state.filters.search = e.target.value; renderList(); });
@@ -823,6 +886,7 @@ function init() {
   });
 
   el('settingsBtn').addEventListener('click', toggleSettings);
+  el('saveSearchBtn').addEventListener('click', saveSearchSettings);
   el('settingsCloseBtn').addEventListener('click', closeSettings);
   el('settingsNav').addEventListener('click', (e) => {
     const item = e.target.closest('.settings-nav-item');
@@ -865,5 +929,6 @@ function init() {
   loadUserConfig();
   loadOperations();
   loadRuntimeAndSchedule();
+  loadSearchSettings();
 }
 document.addEventListener('DOMContentLoaded', init);

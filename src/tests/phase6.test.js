@@ -10,6 +10,7 @@ const path = require('path');
 
 const P = require('../ui/public/uiPrefs');
 const L = require('../ui/jobListLogic');
+const { toEditableSearch, applySearchSettings } = require('../config/searchSettings');
 
 let passed = 0;
 let failed = 0;
@@ -155,6 +156,86 @@ function run() {
   ok('36. se conservan las cinco acciones del detalle',
     ['interested', 'discard', 'applied', 'priority', 'read']
       .every((a) => app.includes(`data-act="${a}"`)));
+
+  section('Configuracion de busqueda: los grupos nunca se pierden');
+  const baseConfig = () => ({
+    identity: { name: 'Test User', linkedinUrl: 'https://www.linkedin.com/in/test-user/' },
+    cvSource: 'profile.json',
+    search: {
+      targetAnalyzedJobs: 20,
+      locations: ['Ciudad A'],
+      modalities: ['remote'],
+      queryGroups: [
+        { family: 'operations', label: 'Operations', enabled: true, priority: 1, queries: [{ query: 'Ops Manager', enabled: true }, { query: 'Ops Lead', enabled: false }] },
+        { family: 'delivery', label: 'Delivery', enabled: true, priority: 2, queries: [{ query: 'Delivery Manager', enabled: true }] },
+        { family: 'strategy', label: 'Strategy', enabled: false, priority: 3, queries: [{ query: 'Transformation', enabled: false }] },
+      ],
+    },
+  });
+  const editable = toEditableSearch(baseConfig());
+  const fullBody = (over) => Object.assign({
+    targetAnalyzedJobs: 20, locations: ['Ciudad A'], modalities: ['remote'],
+    queryGroups: editable.queryGroups.map((g) => ({ family: g.family, enabled: g.enabled, queries: g.queries.slice() })),
+  }, over || {});
+
+  ok('37. la vista editable expone un bloque por grupo existente',
+    editable.queryGroups.length === 3
+    && editable.queryGroups.map((g) => g.family).join() === 'operations,delivery,strategy'
+    && editable.queryGroups[0].label === 'Operations');
+
+  const onlyOps = fullBody();
+  onlyOps.queryGroups[0].queries = ['Ops Manager', 'Head of Ops'];
+  const afterEdit = applySearchSettings(baseConfig(), onlyOps);
+  ok('38. editar un grupo no toca a los demas',
+    afterEdit.search.queryGroups.length === 3
+    && JSON.stringify(afterEdit.search.queryGroups[1]) === JSON.stringify(baseConfig().search.queryGroups[1])
+    && JSON.stringify(afterEdit.search.queryGroups[2]) === JSON.stringify(baseConfig().search.queryGroups[2]));
+  ok('39. se conservan identidad, rotulo, prioridad y orden',
+    afterEdit.search.queryGroups.map((g) => g.family + '/' + g.label + '/' + g.priority).join() === 'operations/Operations/1,delivery/Delivery/2,strategy/Strategy/3');
+  ok('40. una query que sobrevive conserva su estado y una nueva nace activa',
+    afterEdit.search.queryGroups[0].queries[0].enabled === true
+    && afterEdit.search.queryGroups[0].queries[1].query === 'Head of Ops'
+    && afterEdit.search.queryGroups[0].queries[1].enabled === true);
+  ok('41. un grupo desactivado sigue desactivado con sus queries intactas',
+    afterEdit.search.queryGroups[2].enabled === false
+    && afterEdit.search.queryGroups[2].queries[0].enabled === false);
+
+  let omitted = null;
+  try { applySearchSettings(baseConfig(), fullBody({ queryGroups: [{ family: 'operations', enabled: true, queries: ['Ops Manager'] }] })); }
+  catch (e) { omitted = e; }
+  ok('42. omitir grupos se rechaza en lugar de descartarlos en silencio',
+    !!omitted && /Faltan grupos/.test(omitted.message) && omitted.statusCode === 400);
+
+  let unknown = null;
+  try { applySearchSettings(baseConfig(), fullBody({ queryGroups: editable.queryGroups.concat([{ family: 'inventado', enabled: true, queries: ['X'] }]) })); }
+  catch (e) { unknown = e; }
+  ok('43. no se pueden inventar grupos desde el editor', !!unknown && /no existe/.test(unknown.message));
+
+  const toggled = fullBody();
+  toggled.queryGroups[2].enabled = true;
+  ok('44. el interruptor del grupo si es editable',
+    applySearchSettings(baseConfig(), toggled).search.queryGroups[2].enabled === true);
+
+  const messy = fullBody();
+  messy.queryGroups[1].queries = ['  Delivery Manager  ', '', 'delivery manager', 'Head of Delivery'];
+  const cleaned = applySearchSettings(baseConfig(), messy).search.queryGroups[1].queries;
+  ok('45. se limpian espacios, vacios y duplicados sin perder el resto',
+    cleaned.map((q) => q.query).join() === 'Delivery Manager,Head of Delivery');
+
+  ok('46. el objetivo de analisis respeta el rango existente',
+    applySearchSettings(baseConfig(), fullBody({ targetAnalyzedJobs: 50 })).search.targetAnalyzedJobs === 50);
+  let badTarget = null;
+  try { applySearchSettings(baseConfig(), fullBody({ targetAnalyzedJobs: 51 })); } catch (e) { badTarget = e; }
+  ok('47. un objetivo fuera de rango se rechaza', !!badTarget);
+  let noQueries = null;
+  try {
+    const empty = fullBody();
+    empty.queryGroups.forEach((g) => { g.queries = []; });
+    applySearchSettings(baseConfig(), empty);
+  } catch (e) { noQueries = e; }
+  ok('48. no se puede dejar la busqueda sin ninguna query activa', !!noQueries);
+  ok('49. se conservan campos ajenos al editor',
+    applySearchSettings(baseConfig(), fullBody()).cvSource === 'profile.json');
 
   console.log(`\n=== RESULT: ${failed === 0 ? 'ALL PASS' : failed + ' FAIL'} (${passed} passed, ${failed} failed) ===`);
   process.exitCode = failed === 0 ? 0 : 1;

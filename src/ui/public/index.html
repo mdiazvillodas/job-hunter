@@ -82,7 +82,34 @@
         <div class="settings-panels" id="settingsPanels">
           <section class="settings-panel" data-section="search">
             <h2>Búsqueda</h2>
-            <p class="muted small">Pendiente.</p>
+            <p class="settings-hint">Define qué busca Job Hunter en LinkedIn y cuántas oportunidades analiza por ejecución.</p>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label for="settingsTarget">Oportunidades a analizar por búsqueda</label>
+                <input id="settingsTarget" type="number" min="1" max="50" />
+              </div>
+              <div class="settings-row">
+                <label for="settingsLocations">Ubicaciones (una por línea)</label>
+                <textarea id="settingsLocations" rows="2"></textarea>
+              </div>
+              <div class="settings-row">
+                <label>Modalidad</label>
+                <div id="settingsModalities" class="chips-inline">
+                  <label><input type="checkbox" value="onsite" /> Presencial</label>
+                  <label><input type="checkbox" value="hybrid" /> Híbrido</label>
+                  <label><input type="checkbox" value="remote" /> Remoto</label>
+                </div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="settings-row"><label>Roles objetivo</label></div>
+              <p class="muted small">Una query por línea. Cada grupo se guarda por separado: editar uno no afecta a los demás.</p>
+              <div id="settingsQueryGroups"></div>
+            </div>
+            <div class="settings-actions">
+              <button id="saveSearchBtn" class="btn primary" type="button">Guardar cambios</button>
+              <span id="searchSettingsStatus" class="settings-status"></span>
+            </div>
           </section>
           <section class="settings-panel" data-section="schedule" hidden>
             <h2>Búsqueda automática</h2>

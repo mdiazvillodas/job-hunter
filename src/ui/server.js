@@ -13,6 +13,7 @@ const { computeLearnedPreferences } = require('../ai/learnedPreferences');
 const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
+const { toEditableSearch, applySearchSettings, saveUserConfigFile } = require('../config/searchSettings');
 const { createSetupService } = require('../setup/setupService');
 const { createLinkedinSessionService } = require('../session/linkedinSessionService');
 const { createHuntRunManager } = require('../run/huntRunManager');
@@ -139,6 +140,17 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
     return sendJson(res, 200, { jobs: svc.getAllJobs() });
   }
   // GET /api/user-config (solo campos publicos; nunca secretos)
+  // Configuracion editable por el usuario. Escribe SIEMPRE en runtime-data,
+  // nunca en el codigo fuente.
+  if (method === 'GET' && parts.length === 2 && parts[1] === 'settings') {
+    return sendJson(res, 200, { search: toEditableSearch(getUserConfig()) });
+  }
+  if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'search') {
+    const next = applySearchSettings(getUserConfig(), await readBody(req));
+    saveUserConfigFile(next);
+    return sendJson(res, 200, { search: toEditableSearch(next) });
+  }
+
   if (method === 'GET' && parts.length === 2 && parts[1] === 'user-config') {
     return sendJson(res, 200, toPublicUserConfig(getUserConfig()));
   }
