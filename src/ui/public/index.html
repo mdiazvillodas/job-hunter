@@ -39,6 +39,11 @@
         <a id="userLinkedinLink" class="ml-link" href="#" target="_blank" rel="noopener" hidden>LinkedIn ↗</a>
         <button id="copyLinkedinBtn" class="btn ghost small" type="button" hidden>Copiar enlace</button>
       </div>
+      <button id="linkedinControl" class="linkedin-control" type="button" aria-haspopup="dialog" aria-expanded="false">
+        <span class="linkedin-dot" id="linkedinDot" aria-hidden="true"></span>
+        <span id="linkedinLabel">LinkedIn</span>
+      </button>
+
       <button id="diagBtn" class="btn ghost" type="button">Diagnóstico</button>
       <button id="themeToggle" class="btn icon ghost" type="button" title="Cambiar tema" aria-label="Cambiar tema">
         <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -52,6 +57,17 @@
       </button>
       <div class="hunt-bar" id="huntBar" hidden><span id="huntBarFill"></span></div>
     </header>
+
+    <!-- Sesion de LinkedIn: acciones bajo demanda, no una tarjeta permanente. -->
+    <div class="popover linkedin-popover" id="linkedinPopover" hidden role="dialog" aria-label="Sesión de LinkedIn">
+      <div class="popover-title" id="linkedinPopoverTitle">LinkedIn</div>
+      <p class="popover-body" id="linkedinPopoverBody"></p>
+      <div class="popover-actions">
+        <button id="linkedinOpenBtn" class="btn primary small" type="button">Conectar LinkedIn</button>
+        <button id="linkedinVerifyBtn" class="btn small" type="button">Verificar sesión</button>
+        <button id="linkedinCloseBtn" class="btn ghost small" type="button">Cerrar ventana</button>
+      </div>
+    </div>
 
     <!-- Detalle del fallo: efimero y bajo demanda, no un panel permanente. -->
     <div class="popover hunt-popover" id="huntPopover" hidden role="dialog" aria-label="Detalle del fallo">
@@ -69,11 +85,6 @@
         <div>
           <h2>LinkedIn</h2>
           <p id="linkedinSessionStatus" class="operation-status">Consultando sesión…</p>
-        </div>
-        <div class="operation-actions">
-          <button id="linkedinOpenBtn" class="btn primary" type="button">Conectar LinkedIn</button>
-          <button id="linkedinVerifyBtn" class="btn" type="button">Verificar sesión</button>
-          <button id="linkedinCloseBtn" class="btn ghost" type="button">Cerrar ventana</button>
         </div>
       </div>
       <div class="operation-card">

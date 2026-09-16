@@ -150,6 +150,16 @@ const SESSION_LABELS = {
   AUTHENTICATED: 'Sesión activa', CHECKPOINT_REQUIRED: 'Verificación necesaria', ERROR: 'Error',
 };
 const HUNT_LABELS = { IDLE: 'Sin ejecutar', STARTING: 'Iniciando', RUNNING: 'Buscando oportunidades', COMPLETED: 'Completado', CANCELLED: 'Cancelado', FAILED: 'Error' };
+// Presentacion de los estados que expone linkedinSessionService. La etiqueta
+// acompana siempre al punto: el color no comunica por si solo.
+const SESSION_PRESENTATION = {
+  AUTHENTICATED: { cls: 'is-ok', label: 'LinkedIn' },
+  LOGIN_REQUIRED: { cls: 'is-warn', label: 'Iniciar sesión' },
+  CHECKPOINT_REQUIRED: { cls: 'is-warn', label: 'Verificación' },
+  ERROR: { cls: 'is-error', label: 'Error' },
+  NOT_INITIALIZED: { cls: '', label: 'Sin conectar' },
+};
+
 let huntPollTimer = null;
 let browserInstallPollTimer = null;
 
@@ -254,6 +264,47 @@ function openHuntPopover() {
 }
 function closeHuntPopover() { setHidden('huntPopover', true); }
 
+// Control de LinkedIn: punto + etiqueta. Las acciones se despliegan al pulsar.
+function renderLinkedinControl() {
+  const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
+  const pres = SESSION_PRESENTATION[session.state] || SESSION_PRESENTATION.NOT_INITIALIZED;
+  const message = SESSION_LABELS[session.state] || 'Estado desconocido';
+  const control = el('linkedinControl');
+  if (control) {
+    control.classList.remove('is-ok', 'is-warn', 'is-error');
+    if (pres.cls) control.classList.add(pres.cls);
+    control.setAttribute('aria-label', 'LinkedIn: ' + message);
+    control.title = message;
+  }
+  setText('linkedinLabel', pres.label);
+  setText('linkedinPopoverBody', message);
+
+  // Solo se ofrece lo que tiene sentido en cada estado.
+  const connected = session.state === 'AUTHENTICATED';
+  setHidden('linkedinOpenBtn', connected && !session.windowOpen ? false : false);
+  setDisabled('linkedinOpenBtn', !!session.windowOpen);
+  setText('linkedinOpenBtn', connected ? 'Abrir ventana' : 'Conectar LinkedIn');
+  setDisabled('linkedinCloseBtn', !session.windowOpen);
+}
+
+function openLinkedinPopover() {
+  const control = el('linkedinControl');
+  const pop = el('linkedinPopover');
+  const anchor = control.getBoundingClientRect();
+  pop.hidden = false;
+  control.setAttribute('aria-expanded', 'true');
+  pop.style.top = Math.round(anchor.bottom + 8) + 'px';
+  pop.style.left = Math.round(Math.min(Math.max(12, anchor.left - 120), window.innerWidth - 332)) + 'px';
+}
+function closeLinkedinPopover() {
+  setHidden('linkedinPopover', true);
+  const control = el('linkedinControl');
+  if (control) control.setAttribute('aria-expanded', 'false');
+}
+function toggleLinkedinPopover() {
+  if (el('linkedinPopover').hidden) openLinkedinPopover(); else closeLinkedinPopover();
+}
+
 function renderOperations() {
   const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
   const hunt = state.hunt || { status: 'IDLE' };
@@ -263,6 +314,7 @@ function renderOperations() {
   setText('huntStatus', HUNT_LABELS[hunt.status] || hunt.status);
   const active = hunt.status === 'STARTING' || hunt.status === 'RUNNING';
   renderHuntControl();
+  renderLinkedinControl();
   el('huntCancelBtn').disabled = !active || !!(hunt.progress && hunt.progress.cancellationRequested);
   el('completeSetupLink').hidden = state.setupReady;
   const summary = hunt.summary;
@@ -760,6 +812,8 @@ function init() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if (!el('linkedinPopover').hidden) return closeLinkedinPopover();
+    if (!el('huntPopover').hidden) return closeHuntPopover();
     if (!el('filterDrawer').hidden) return setDrawer(false);
     if (!el('discardModal').hidden) return closeDiscardModal();
     if (!el('diagPanel').hidden) el('diagPanel').hidden = true;
@@ -769,6 +823,12 @@ function init() {
   el('diagClose').addEventListener('click', () => { el('diagPanel').hidden = true; });
   el('diagPanel').addEventListener('click', (e) => { if (e.target.id === 'diagPanel') el('diagPanel').hidden = true; });
 
+  el('linkedinControl').addEventListener('click', toggleLinkedinPopover);
+  document.addEventListener('click', (e) => {
+    if (el('linkedinPopover').hidden) return;
+    if (el('linkedinPopover').contains(e.target) || el('linkedinControl').contains(e.target)) return;
+    closeLinkedinPopover();
+  });
   el('linkedinOpenBtn').addEventListener('click', openLinkedinSession);
   el('linkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
   el('linkedinCloseBtn').addEventListener('click', closeLinkedinSession);
