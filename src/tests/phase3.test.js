@@ -521,9 +521,29 @@ async function run() {
   const afterFailureStart = await restartAfterFailure.start(); await tick(); await tick();
   ok('24e. segundo hunt inicia después de FAILED', !!afterFailureStart.runId && restartAfterFailure.getStatus().status === 'COMPLETED');
 
+  let cancelLocks = 0; let cancelSignal;
+  const cancellableManager = createHuntRunManager({
+    setupService: setupReady, sessionService: sessionReady,
+    acquireLock: () => { cancelLocks += 1; }, releaseLock: () => { cancelLocks -= 1; },
+    huntRunner: ({ signal, reportProgress }) => new Promise((resolve, reject) => {
+      cancelSignal = signal;
+      reportProgress({ phase: 'analysis', analysisCompleted: 1, analysisTarget: 20, currentQueryLabel: 'Operations', generatedUrl: 'https://secret.invalid' });
+      signal.addEventListener('abort', () => { const error = new Error('cancel'); error.name = 'AbortError'; reject(error); }, { once: true });
+    }),
+  });
+  await cancellableManager.start(); await tick();
+  const cancelOne = cancellableManager.cancel();
+  const cancelTwo = cancellableManager.cancel();
+  await cancellableManager.waitForIdle();
+  const cancelledRun = cancellableManager.getStatus();
+  ok('24f. cancel is idempotent', cancelOne.progress.cancellationRequested && cancelTwo.progress.cancellationRequested && cancelSignal.aborted);
+  ok('24g. cancel ends CANCELLED, not FAILED', cancelledRun.status === 'CANCELLED' && cancelledRun.error === null);
+  ok('24h. cancel releases lock', cancelLocks === 0);
+  ok('24i. public progress is safely whitelisted', cancelledRun.progress.analysisCompleted === 1 && !('generatedUrl' in cancelledRun.progress) && !JSON.stringify(cancelledRun.progress).includes('secret.invalid'));
+
   console.log('\n### HTTP y frontend');
   const endpointSession = { open: async () => ({ state: 'LOGIN_REQUIRED', message: 'manual', windowOpen: true }), getStatus: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }), verifyPersistedSession: async () => ({ state: 'AUTHENTICATED', message: 'ok', windowOpen: false }), close: async () => ({ state: 'NOT_INITIALIZED', message: 'closed', windowOpen: false }) };
-  const endpointRuns = { start: async () => ({ runId: 'run_http', status: 'STARTING' }), waitForRun: async () => ({ runId: 'run_http', status: 'COMPLETED' }), getStatus: () => ({ runId: 'run_http', status: 'RUNNING', error: null }) };
+  const endpointRuns = { start: async () => ({ runId: 'run_http', status: 'STARTING' }), cancel: () => ({ runId: 'run_http', status: 'RUNNING', progress: { cancellationRequested: true } }), waitForRun: async () => ({ runId: 'run_http', status: 'COMPLETED' }), getStatus: () => ({ runId: 'run_http', status: 'RUNNING', error: null }) };
   const server = startServer({ port: 0, jobService: {}, setupService: {}, linkedinSessionService: endpointSession, huntRunManager: endpointRuns });
   if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
   const openResponse = await request(server, 'POST', '/api/linkedin/session/open');
@@ -532,6 +552,7 @@ async function run() {
   const closeResponse = await request(server, 'POST', '/api/linkedin/session/close');
   const huntResponse = await request(server, 'POST', '/api/hunt');
   const huntStatus = await request(server, 'GET', '/api/hunt/status');
+  const huntCancel = await request(server, 'POST', '/api/hunt/cancel');
   await new Promise((resolve) => server.close(resolve));
   ok('25. endpoint open responde sin esperar login', openResponse.status === 202 && openResponse.json.state === 'LOGIN_REQUIRED');
   ok('26. session status sólo expone estado operativo', statusResponse.status === 200 && Object.keys(statusResponse.json).every((key) => ['state', 'message', 'windowOpen'].includes(key)));
@@ -540,11 +561,15 @@ async function run() {
   ok('28a. endpoint verify-persisted devuelve estado verificado', verifyResponse.status === 200 && verifyResponse.json.state === 'AUTHENTICATED');
   ok('28b. endpoint close verifica el perfil después de cerrar', closeResponse.status === 200 && closeResponse.json.state === 'AUTHENTICATED' && closeResponse.json.windowOpen === false);
 
+  ok('28c. cancel endpoint is asynchronous and idempotent', huntCancel.status === 202 && huntCancel.json.progress.cancellationRequested === true);
+
   const frontend = fs.readFileSync(path.join(__dirname, '../ui/public/app.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../ui/public/index.html'), 'utf8');
   ok('29. polling usa ~2 segundos', /setInterval\([\s\S]*?,\s*2000\)/.test(frontend));
-  ok('30. polling se detiene en COMPLETED y FAILED', frontend.includes("status === 'COMPLETED' || state.hunt.status === 'FAILED'") && frontend.includes('clearInterval(huntPollTimer)'));
+  ok('30. polling se detiene en estados terminales', frontend.includes("status === 'COMPLETED' || state.hunt.status === 'CANCELLED' || state.hunt.status === 'FAILED'") && frontend.includes('clearInterval(huntPollTimer)'));
   ok('31. setup incompleto ofrece /setup', html.includes('id="completeSetupLink"') && html.includes('href="/setup"'));
+
+  ok('31a. UI offers hunt cancellation', html.includes('id="huntCancelBtn"') && frontend.includes("'/api/hunt/cancel'"));
 
   console.log('\n### LinkedIn search inputs');
   function selectorPage(visibleSelector) {

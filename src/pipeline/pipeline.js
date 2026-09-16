@@ -13,6 +13,20 @@ function isChallenge(err) {
   return !!err && err.name === 'SecurityChallengeError';
 }
 
+function isCancellation(err) {
+  return !!err && (err.name === 'AbortError' || err.name === 'HuntCancelledError');
+}
+
+function cancellationError() {
+  const error = new Error('Hunt cancelled.');
+  error.name = 'HuntCancelledError';
+  return error;
+}
+
+function throwIfCancelled(signal) {
+  if (signal && signal.aborted) throw cancellationError();
+}
+
 function newRunId() {
   return 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -35,21 +49,26 @@ function compactJob(job) {
 }
 
 async function runPipeline(deps) {
-  const { jobService, discover, fetchDetails, analyze, analyzeLimit, log } = deps;
+  const { jobService, discover, fetchDetails, analyze, analyzeLimit, analysisTarget = 20, signal, log } = deps;
+  const reportProgress = typeof deps.reportProgress === 'function' ? deps.reportProgress : () => {};
   const say = typeof log === 'function' ? log : () => {};
   const startMs = Date.now();
   const runId = newRunId();
   const startedAt = new Date().toISOString();
   const durations = { discoveryMs: 0, detailsMs: 0, analysisMs: 0, totalMs: 0 };
+  const progress = (next) => reportProgress({ analysisTarget, ...next });
 
   // ---------- DISCOVERY ----------
   say('discovery:start');
+  throwIfCancelled(signal);
+  progress({ phase: 'discovery' });
   const d0 = Date.now();
   const discovered = await discover();
   durations.discoveryMs = Date.now() - d0;
   const uniqueJobs = (discovered && discovered.jobs) || [];
   const dstats = (discovered && discovered.discovery) || {};
   say(`discovery:done unique=${uniqueJobs.length}`);
+  progress({ rawJobsDiscovered: dstats.rawResults || 0, uniqueJobsDiscovered: uniqueJobs.length });
 
   // ---------- PERSISTENCIA DE DISCOVERY (idempotente) ----------
   let created = 0;
@@ -58,16 +77,19 @@ async function runPipeline(deps) {
   let newJobs = 0;
   let existingJobs = 0;
   for (const uj of uniqueJobs) {
+    throwIfCancelled(signal);
     const existedBefore = !!jobService.getJob(uj.jobId);
     const r = jobService.ingestDiscovery(uj);
     if (r.created) { created += 1; newJobs += 1; }
     else { existingJobs += 1; if (r.changed) updated += 1; else unchanged += 1; }
     void existedBefore;
   }
+  progress({ jobsPersisted: created + existingJobs });
 
   // ---------- SELECCION DE CANDIDATOS (analysis) ----------
   // Semantica de analyzeLimit: 0 = no analizar; N>0 = maximo N; ausente/invalido = sin limite.
-  const limit = Number.isFinite(analyzeLimit) && analyzeLimit >= 0 ? analyzeLimit : Infinity;
+  const configuredLimit = Number.isFinite(analyzeLimit) && analyzeLimit >= 0 ? analyzeLimit : 50;
+  const limit = Math.min(configuredLimit, 50);
   const persisted = uniqueJobs.map((uj) => jobService.getJob(uj.jobId)).filter(Boolean);
   const analyzable = persisted.filter((j) => shouldAnalyzeJob(j));
   const alreadyAnalyzed = persisted.length - analyzable.length;
@@ -82,17 +104,23 @@ async function runPipeline(deps) {
   let failed = 0;
   let detailsFetched = 0;
   let stoppedByChallenge = false;
+  let attempted = 0;
+  let stopReason = null;
 
   for (const cand of candidates) {
+    throwIfCancelled(signal);
+    if (analyzed >= analysisTarget) { stopReason = 'target_reached'; break; }
     // 1) detalle (LinkedIn) — solo si aun no tenemos description (idempotente / evita refetch).
     if (!cand.description) {
       try {
+        progress({ phase: 'details', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
         const t = Date.now();
         const detailed = await fetchDetails(cand);
         durations.detailsMs += Date.now() - t;
         detailsFetched += 1;
         jobService.updateDiscovery(cand.jobId, detailed || {});
       } catch (err) {
+        if (isCancellation(err) || (signal && signal.aborted)) throw cancellationError();
         if (isChallenge(err)) { stoppedByChallenge = true; say('challenge:stop'); break; }
         jobService.applyAnalysisFailure(cand.jobId, 'detail: ' + (err.message || err));
         failed += 1;
@@ -103,13 +131,18 @@ async function runPipeline(deps) {
 
     // 2) analisis (OpenAI) — si no hay analyzer, el job queda 'pending' (skipped).
     if (!analyze) continue;
-    jobService.applyAnalysisProcessing(cand.jobId);
+    throwIfCancelled(signal);
+    attempted += 1;
+    progress({ phase: 'analysis', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
     try {
       const t = Date.now();
       const res = await analyze(jobService.getJob(cand.jobId));
       durations.analysisMs += Date.now() - t;
+      throwIfCancelled(signal);
+      jobService.applyAnalysisProcessing(cand.jobId);
       jobService.applyAnalysisResult(cand.jobId, res.analysis);
       analyzed += 1;
+      progress({ phase: 'analysis', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
       model = res.model || model;
       if (res.usage) {
         usage.promptTokens += res.usage.prompt_tokens || 0;
@@ -120,10 +153,18 @@ async function runPipeline(deps) {
       }
       say(`analyzed ${cand.jobId} -> ${res.analysis.decision}`);
     } catch (err) {
+      if (isCancellation(err) || (signal && signal.aborted)) throw cancellationError();
       jobService.applyAnalysisFailure(cand.jobId, err.message || String(err));
       failed += 1;
+      progress({ phase: 'analysis', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
       say(`analysis:failed ${cand.jobId}`);
     }
+  }
+
+  if (!stopReason) {
+    if (!analyze) stopReason = 'analysis_disabled';
+    else if (analyzed >= analysisTarget) stopReason = 'target_reached';
+    else stopReason = 'candidates_exhausted';
   }
 
   const skipped = analyzable.length - analyzed - failed;
@@ -152,6 +193,8 @@ async function runPipeline(deps) {
       skipped,
       detailsFetched,
       analysisEnabled: !!analyze,
+      target: analysisTarget,
+      stopReason,
     },
     persistence: { created, updated, unchanged },
     usageTotals: { ...usage, model },
@@ -160,4 +203,4 @@ async function runPipeline(deps) {
   };
 }
 
-module.exports = { runPipeline, isChallenge, compactJob };
+module.exports = { runPipeline, isChallenge, isCancellation, compactJob, throwIfCancelled, cancellationError };

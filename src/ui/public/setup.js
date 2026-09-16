@@ -60,6 +60,7 @@ async function loadSetup() {
     byId('linkedinUrl').value = editable.linkedinUrl || '';
     byId('location').value = editable.location || '';
     byId('queries').value = (editable.queries || []).join('\n');
+    byId('targetAnalyzedJobs').value = editable.targetAnalyzedJobs || 20;
     document.querySelectorAll('[name="modality"]').forEach((box) => { box.checked = (editable.modalities || []).includes(box.value); });
     if (editable.openAiKeyConfigured) {
       byId('openAiKey').placeholder = 'Configurada — dejar vacío para conservar';
@@ -84,6 +85,7 @@ byId('setupForm').addEventListener('submit', async (event) => {
     location: byId('location').value,
     queries: byId('queries').value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
     modalities: Array.from(document.querySelectorAll('[name="modality"]:checked')).map((box) => box.value),
+    targetAnalyzedJobs: Number(byId('targetAnalyzedJobs').value),
   };
   try {
     await api('/api/setup/user-config', 'PUT', userConfig);

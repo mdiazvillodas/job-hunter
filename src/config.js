@@ -67,6 +67,7 @@ const config = {
 
 Object.defineProperties(config, {
   CANDIDATE_NAME: { enumerable: true, get: () => getUserConfig().identity.name },
+  TARGET_ANALYZED_JOBS: { enumerable: true, get: () => configuredSearch().targetAnalyzedJobs },
   USER_LINKEDIN_URL: { enumerable: true, get: () => getUserConfig().identity.linkedinUrl },
   SEARCH_QUERIES: { enumerable: true, get: () => configuredSearch().queryGroups },
   LINKEDIN_SEARCH_QUERY: { enumerable: true, get: () => getActiveSearchQueries()[0].query },

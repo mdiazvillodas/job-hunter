@@ -5,6 +5,13 @@ const {
   collectCurrentPageJobs,
 } = require('./jobsCollector');
 
+function throwIfCancelled(signal) {
+  if (!signal || !signal.aborted) return;
+  const error = new Error('Hunt cancelled.');
+  error.name = 'HuntCancelledError';
+  throw error;
+}
+
 // --- Mapeo de etiquetas legibles -> ids reales del DOM de LinkedIn ---
 // (verificados inspeccionando el modal "All filters" de la UI real)
 const DATE_POSTED_IDS = {
@@ -274,7 +281,9 @@ async function goToNextPage(page, nextLocator) {
 // Abre LinkedIn Jobs con la primera query y aplica los filtros por UI UNA sola vez.
 // Deja la pagina en el estado de resultados filtrados. Devuelve la verificacion de filtros.
 async function initializeSearchWithFilters(page, query, filters, options = {}) {
+  throwIfCancelled(options.signal);
   await openJobsSearch(page, query);
+  throwIfCancelled(options.signal);
   await waitForJobResults(page);
 
   if (filters.location) {
@@ -293,6 +302,7 @@ async function initializeSearchWithFilters(page, query, filters, options = {}) {
 // -location, employment type, date posted- se conservan; verificado contra la UI real).
 // Espera de forma robusta a que LinkedIn refleje el nuevo keyword antes de continuar.
 async function changeSearchQuery(page, query, options = {}) {
+  throwIfCancelled(options.signal);
   const kw = await getKeywordInput(page);
 
   const prevFirstId = await getFirstCardId(page);
@@ -330,6 +340,7 @@ async function changeSearchQuery(page, query, options = {}) {
   await waitForJobResults(page).catch(() => {});
   await page.waitForTimeout(800);
   await detectSecurityChallenge(page);
+  throwIfCancelled(options.signal);
 
   debugLog(options, { event: 'query_changed', query, changed });
   return changed;
@@ -352,9 +363,11 @@ async function collectCurrentSearch(page, query, filters, options = {}) {
   let stopReason = null;
 
   while (true) {
+    throwIfCancelled(options.signal);
     pagesVisited += 1;
 
     const pageResult = await collectCurrentPageJobs(page, options);
+    throwIfCancelled(options.signal);
     await detectSecurityChallenge(page);
     rawResults += pageResult.jobs.length;
 
@@ -423,6 +436,7 @@ async function collectCurrentSearch(page, query, filters, options = {}) {
     }
 
     const advanced = await goToNextPage(page, next.locator);
+    throwIfCancelled(options.signal);
     await detectSecurityChallenge(page);
     if (!advanced) {
       stopReason = 'page_did_not_change';
@@ -477,4 +491,5 @@ module.exports = {
   KEYWORD_INPUT_SELECTORS,
   ALL_FILTERS_BUTTON_SELECTORS,
   SHOW_RESULTS_BUTTON_SELECTORS,
+  throwIfCancelled,
 };

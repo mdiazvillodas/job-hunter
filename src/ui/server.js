@@ -130,6 +130,9 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
   if (method === 'GET' && parts[1] === 'hunt' && parts[2] === 'status') {
     return sendJson(res, 200, huntRunManager.getStatus());
   }
+  if (method === 'POST' && parts[1] === 'hunt' && parts[2] === 'cancel') {
+    return sendJson(res, 202, huntRunManager.cancel());
+  }
 
   // GET /api/jobs
   if (method === 'GET' && parts.length === 2 && parts[1] === 'jobs') {

@@ -195,6 +195,77 @@ async function run() {
     ok('ANALYZE_LIMIT=2 -> analiza 2, skip 1', s2.analysis.analyzed === 2 && calls2.length === 2 && s2.analysis.skipped === 1);
   }
 
+  // ---------- v0.2 hunt execution contract ----------
+  section('Target de análisis exitosos del run actual');
+  {
+    const jobs = Array.from({ length: 55 }, (_, index) => listing(String(index + 1)));
+    const discover = async () => ({ jobs, discovery: { queriesExecuted: 10, rawResults: 58, duplicatesRemoved: 3 } });
+    const svcDefault = tmpSvc(); const defaultCalls = [];
+    const defaultRun = await runPipeline({ jobService: svcDefault, discover, fetchDetails: okDetail, analyze: makeAnalyze(defaultCalls), analyzeLimit: 50 });
+    ok('target por defecto = 20', defaultRun.analysis.target === 20 && defaultRun.analysis.analyzed === 20 && defaultCalls.length === 20);
+    ok('target alcanzado informa stop reason', defaultRun.analysis.stopReason === 'target_reached');
+
+    const svcCustom = tmpSvc(); const customCalls = [];
+    const customRun = await runPipeline({ jobService: svcCustom, discover, fetchDetails: okDetail, analyze: makeAnalyze(customCalls), analyzeLimit: 50, analysisTarget: 3 });
+    ok('target custom detiene en 3 exitosos', customRun.analysis.analyzed === 3 && customCalls.length === 3);
+
+    const svcFailures = tmpSvc(); const failureCalls = [];
+    const failureRun = await runPipeline({ jobService: svcFailures,
+      discover: async () => ({ jobs: jobs.slice(0, 5), discovery: {} }), fetchDetails: okDetail,
+      analyze: makeAnalyze(failureCalls, { failFor: ['1', '2'] }), analyzeLimit: 50, analysisTarget: 3 });
+    ok('fallos no cuentan para target', failureRun.analysis.analyzed === 3 && failureRun.analysis.failed === 2 && failureCalls.length === 5);
+
+    const svcExhausted = tmpSvc();
+    const exhausted = await runPipeline({ jobService: svcExhausted,
+      discover: async () => ({ jobs: jobs.slice(0, 2), discovery: {} }), fetchDetails: okDetail,
+      analyze: makeAnalyze([]), analyzeLimit: 50, analysisTarget: 5 });
+    ok('agotamiento bajo target termina normalmente', exhausted.analysis.analyzed === 2 && exhausted.analysis.stopReason === 'candidates_exhausted');
+
+    const svcPrevious = tmpSvc();
+    svcPrevious.createJob(listing('old', { aiAnalysis: analysisOf('old') }));
+    const previousCalls = [];
+    const previous = await runPipeline({ jobService: svcPrevious,
+      discover: async () => ({ jobs: [listing('old'), ...jobs.slice(0, 2)], discovery: {} }), fetchDetails: okDetail,
+      analyze: makeAnalyze(previousCalls), analyzeLimit: 50, analysisTarget: 2 });
+    ok('análisis de runs previos no cuentan', previous.analysis.alreadyAnalyzed === 1 && previous.analysis.analyzed === 2 && previousCalls.length === 2);
+
+    const svcCeiling = tmpSvc(); const ceilingCalls = [];
+    const ceiling = await runPipeline({ jobService: svcCeiling, discover, fetchDetails: okDetail,
+      analyze: makeAnalyze(ceilingCalls, { failFor: jobs.map((job) => job.jobId) }), analyzeLimit: 999, analysisTarget: 50 });
+    ok('ceiling absoluto conserva 50 candidatos', ceilingCalls.length === 50 && ceiling.analysis.failed === 50);
+  }
+
+  section('Progreso y cancelación cooperativa');
+  {
+    const progress = [];
+    const svc = tmpSvc();
+    await runPipeline({ jobService: svc,
+      discover: async () => ({ jobs: [listing('1')], discovery: { rawResults: 2 } }), fetchDetails: okDetail,
+      analyze: makeAnalyze([]), analysisTarget: 1, reportProgress: (value) => progress.push(value) });
+    ok('progreso cubre discovery/análisis/target', progress.some((p) => p.phase === 'discovery' && p.analysisTarget === 1)
+      && progress.some((p) => p.phase === 'analysis' && p.analysisCompleted === 1));
+
+    const discoveryController = new AbortController(); discoveryController.abort(); let discoveryCalled = false;
+    let discoveryCancelled = false;
+    try { await runPipeline({ jobService: tmpSvc(), signal: discoveryController.signal, discover: async () => { discoveryCalled = true; return { jobs: [] }; } }); }
+    catch (error) { discoveryCancelled = error.name === 'HuntCancelledError'; }
+    ok('cancel durante discovery no inicia trabajo', discoveryCancelled && !discoveryCalled);
+
+    const analysisController = new AbortController(); const partialSvc = tmpSvc(); let analysisCalls = 0;
+    let analysisCancelled = false;
+    try {
+      await runPipeline({ jobService: partialSvc, signal: analysisController.signal,
+        discover: async () => ({ jobs: [listing('1'), listing('2')], discovery: {} }), fetchDetails: okDetail,
+        analysisTarget: 2, analyze: async () => {
+          analysisCalls += 1;
+          if (analysisCalls === 2) analysisController.abort();
+          return { analysis: analysisOf(String(analysisCalls)), model: 'test' };
+        } });
+    } catch (error) { analysisCancelled = error.name === 'HuntCancelledError'; }
+    ok('cancel durante analysis conserva resultado parcial', analysisCancelled && partialSvc.getJob('1').analysisStatus === 'completed');
+    ok('cancel no deja processing ni inicia más análisis', analysisCalls === 2 && partialSvc.getJob('2').analysisStatus === 'pending');
+  }
+
   console.log(`\n=== RESULT: ${failed === 0 ? 'ALL PASS' : failed + ' FAIL'} (${passed} passed, ${failed} failed) ===`);
   process.exitCode = failed === 0 ? 0 : 1;
 }

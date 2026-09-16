@@ -47,9 +47,14 @@ function buildUserConfig(input) {
   if (!Array.isArray(input.modalities) || input.modalities.some((value) => !ALLOWED_MODALITIES.has(value))) {
     throw new SetupValidationError('Modalidades invalidas.');
   }
+  const targetAnalyzedJobs = input.targetAnalyzedJobs === undefined ? 20 : Number(input.targetAnalyzedJobs);
+  if (!Number.isInteger(targetAnalyzedJobs) || targetAnalyzedJobs < 1 || targetAnalyzedJobs > 50) {
+    throw new SetupValidationError('El objetivo de análisis debe ser un entero entre 1 y 50.');
+  }
   return validateUserConfig({
     identity: { name, linkedinUrl },
     search: {
+      targetAnalyzedJobs,
       locations: [location],
       modalities: input.modalities.slice(),
       queryGroups: [{
@@ -203,13 +208,14 @@ function createSetupService(options = {}) {
 
   function getEditableSetup() {
     const config = readUserConfigOrNull();
-    if (!config) return { name: '', linkedinUrl: '', location: '', queries: [], modalities: [], openAiKeyConfigured: readOpenAiKeyConfigured() };
+    if (!config) return { name: '', linkedinUrl: '', location: '', queries: [], modalities: [], targetAnalyzedJobs: 20, openAiKeyConfigured: readOpenAiKeyConfigured() };
     return {
       name: config.identity.name,
       linkedinUrl: config.identity.linkedinUrl,
       location: config.search.locations[0],
       queries: config.search.queryGroups.flatMap((group) => group.queries.map((item) => item.query)),
       modalities: config.search.modalities || [],
+      targetAnalyzedJobs: config.search.targetAnalyzedJobs,
       openAiKeyConfigured: readOpenAiKeyConfigured(),
     };
   }

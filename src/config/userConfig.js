@@ -20,6 +20,10 @@ function validateUserConfig(config) {
     invalid('search.locations');
   }
   if (!Array.isArray(config.search.queryGroups) || !config.search.queryGroups.length) invalid('search.queryGroups');
+  if (config.search.targetAnalyzedJobs === undefined) config.search.targetAnalyzedJobs = 20;
+  if (!Number.isInteger(config.search.targetAnalyzedJobs) || config.search.targetAnalyzedJobs < 1 || config.search.targetAnalyzedJobs > 50) {
+    invalid('search.targetAnalyzedJobs');
+  }
   for (const group of config.search.queryGroups) {
     if (!group || typeof group.family !== 'string' || typeof group.label !== 'string' || !Array.isArray(group.queries)) {
       invalid('search.queryGroups');

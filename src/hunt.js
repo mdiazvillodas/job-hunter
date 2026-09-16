@@ -123,6 +123,7 @@ function getExecutionConfig() {
     BROWSER_PROFILE_DIR: config.BROWSER_PROFILE_DIR,
     LINKEDIN_FILTERS: config.LINKEDIN_FILTERS,
     ANALYZE_LIMIT: config.ANALYZE_LIMIT,
+    TARGET_ANALYZED_JOBS: config.TARGET_ANALYZED_JOBS,
     CANDIDATE_NAME: config.CANDIDATE_NAME,
     MAX_PAGES_PER_SEARCH: config.MAX_PAGES_PER_SEARCH,
     MAX_RESULTS_PER_SEARCH: config.MAX_RESULTS_PER_SEARCH,
@@ -135,25 +136,29 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
   let currentStage = 'collector_launch';
   const stage = (name) => { currentStage = name; reportStage(name); };
   const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
-  const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, CANDIDATE_NAME, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH, activeQueries } = executionConfig;
+  const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, TARGET_ANALYZED_JOBS = 20, CANDIDATE_NAME, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH, activeQueries } = executionConfig;
+  const reportProgress = typeof options.reportProgress === 'function' ? options.reportProgress : () => {};
+  if (options.signal && options.signal.aborted) { const error = new Error('Hunt cancelled.'); error.name = 'HuntCancelledError'; throw error; }
   const repository = createLocalRepository();
   const jobService = createJobService(repository);
 
   const matchingProfile = getMatchingProfile();
+  reportProgress({ phase: 'starting', searchesTotal: activeQueries.length, analysisTarget: TARGET_ANALYZED_JOBS });
 
   // Decidir el modo de analisis.
   let analyze = null;
   if (options.dryRun) {
-    analyze = (job) => analyzeJob(matchingProfile, job, { transport: mockTransport, candidateName: CANDIDATE_NAME });
+    analyze = (job) => analyzeJob(matchingProfile, job, { transport: mockTransport, candidateName: CANDIDATE_NAME, signal: options.signal });
     console.error('MODO --dry-run: no se llamara a OpenAI (mock).');
   } else if (process.env.OPENAI_API_KEY) {
-    analyze = (job) => analyzeJob(matchingProfile, job, { candidateName: CANDIDATE_NAME }); // REAL
+    analyze = (job) => analyzeJob(matchingProfile, job, { candidateName: CANDIDATE_NAME, signal: options.signal }); // REAL
   } else {
     console.error('AVISO: OPENAI_API_KEY ausente. Se hara discovery + detail + persistencia,');
     console.error('       pero el analisis de OpenAI queda pendiente (jobs en analysisStatus=pending).');
   }
 
   stage('collector_launch');
+  if (options.signal && options.signal.aborted) { const error = new Error('Hunt cancelled.'); error.name = 'HuntCancelledError'; throw error; }
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   let searchResultsUrl = null;
   let failedStage = null;
@@ -168,6 +173,8 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
         debug: options.debug,
         maxResultsPerSearch: MAX_RESULTS_PER_SEARCH,
         maxPagesPerSearch: MAX_PAGES_PER_SEARCH,
+        signal: options.signal,
+        reportProgress,
       });
       searchResultsUrl = page.url();
       return {
@@ -182,6 +189,7 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
 
     const fetchDetails = async (job) => {
       stage('detail_collection');
+      if (options.signal && options.signal.aborted) { const error = new Error('Hunt cancelled.'); error.name = 'HuntCancelledError'; throw error; }
       const r = await collectJobDetails(page, [job], { limit: 1, searchResultsUrl, debug: options.debug });
       if (!r.details.length) throw new Error('no detail extracted');
       return r.details[0];
@@ -209,6 +217,9 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
       fetchDetails,
       analyze: analyzeWithStage,
       analyzeLimit: ANALYZE_LIMIT,
+      analysisTarget: TARGET_ANALYZED_JOBS,
+      signal: options.signal,
+      reportProgress,
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
     });
   } catch (error) {

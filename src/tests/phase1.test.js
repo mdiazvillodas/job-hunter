@@ -9,7 +9,7 @@ const { spawnSync } = require('child_process');
 
 const { PROJECT_ROOT } = require('../runtime');
 const { loadUserConfig, toPublicUserConfig } = require('../config/userConfig');
-const { buildSystemPrompt, analyzeJob, JOB_ANALYSIS_SCHEMA } = require('../ai/jobAnalyzer');
+const { buildSystemPrompt, analyzeJob, defaultTransport, JOB_ANALYSIS_SCHEMA } = require('../ai/jobAnalyzer');
 
 let passed = 0;
 let failed = 0;
@@ -92,6 +92,17 @@ async function run() {
   const loaded = loadUserConfig(configFile);
   ok('userConfig valido carga identidad', loaded.identity.name === 'Alex Example');
   ok('modalities se almacena sin alterar collector', loaded.search.modalities.join(',') === 'hybrid,remote');
+  ok('config existente migra target a 20', loaded.search.targetAnalyzedJobs === 20);
+  for (const target of [1, 50]) {
+    const boundary = fixtureConfig(); boundary.search.targetAnalyzedJobs = target;
+    ok(`target ${target} es válido`, loadUserConfig((() => { const file = path.join(tempDir(), 'user.json'); fs.writeFileSync(file, JSON.stringify(boundary)); return file; })()).search.targetAnalyzedJobs === target);
+  }
+  for (const target of [0, 51, 1.5, '20']) {
+    const invalidTarget = fixtureConfig(); invalidTarget.search.targetAnalyzedJobs = target;
+    let rejected = false;
+    try { require('../config/userConfig').validateUserConfig(invalidTarget); } catch (error) { rejected = error.code === 'CONFIGURATION_REQUIRED'; }
+    ok(`target inválido ${JSON.stringify(target)} se rechaza`, rejected);
+  }
 
   const runtimeRoot = tempDir();
   fs.mkdirSync(path.join(runtimeRoot, 'config'));
@@ -144,6 +155,34 @@ async function run() {
   });
   ok('mocked analysis conserva parsing y schema', JSON.stringify(result.analysis) === JSON.stringify(expectedAnalysis));
   ok('candidateName llega a system y user prompts', capturedMessages.every((message) => message.content.includes('Alex Example')));
+
+  let transportOptions;
+  await analyzeJob(matchingProfile, { jobId: '2', title: 'Example role' }, {
+    transport: async (options) => { transportOptions = options; return { model: 'mock', choices: [{ message: { content: JSON.stringify(expectedAnalysis) } }] }; },
+    timeoutMs: 1234,
+  });
+  ok('analyzer propaga signal y request timeout', transportOptions.timeoutMs === 1234 && 'signal' in transportOptions);
+
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async (_url, options) => ({ ok: true, text: async () => JSON.stringify({ model: 'mock', choices: [] }), requestSignal: options.signal });
+    const normalBody = await defaultTransport({ apiKey: 'fake', model: 'mock', messages: [], timeoutMs: 100 });
+    ok('OpenAI transport normal completa', normalBody.model === 'mock');
+
+    global.fetch = (_url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
+    });
+    const cancelledController = new AbortController();
+    const cancelledRequest = defaultTransport({ apiKey: 'fake', model: 'mock', messages: [], signal: cancelledController.signal, timeoutMs: 100 });
+    cancelledController.abort();
+    let cancellationName;
+    try { await cancelledRequest; } catch (error) { cancellationName = error.name; }
+    ok('OpenAI transport respeta cancelación', cancellationName === 'AbortError');
+
+    let timeoutCode;
+    try { await defaultTransport({ apiKey: 'fake', model: 'mock', messages: [], timeoutMs: 1 }); } catch (error) { timeoutCode = error.code; }
+    ok('OpenAI transport aplica timeout acotado', timeoutCode === 'OPENAI_TIMEOUT');
+  } finally { global.fetch = originalFetch; }
 
   const publicConfig = toPublicUserConfig(loaded);
   const html = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'ui', 'public', 'index.html'), 'utf8');

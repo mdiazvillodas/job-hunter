@@ -13,6 +13,7 @@
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4.1-mini';
+const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 
 class MissingApiKeyError extends Error {
   constructor(message) {
@@ -231,9 +232,21 @@ function buildUserPrompt(job, candidateName = 'the candidate') {
 }
 
 // Transporte por defecto: llamada real a la API de OpenAI con fetch (Node >=18/24 tiene fetch global).
-async function defaultTransport({ apiKey, model, messages }) {
-  const response = await fetch(OPENAI_ENDPOINT, {
+async function defaultTransport({ apiKey, model, messages, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS }) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromParent = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', abortFromParent, { once: true });
+  }
+  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  let response;
+  let rawText;
+  try {
+    response = await fetch(OPENAI_ENDPOINT, {
     method: 'POST',
+    signal: controller.signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -247,9 +260,21 @@ async function defaultTransport({ apiKey, model, messages }) {
         json_schema: { name: 'job_analysis', strict: true, schema: JOB_ANALYSIS_SCHEMA },
       },
     }),
-  });
+    });
+    rawText = await response.text();
+  } catch (error) {
+    if (signal && signal.aborted) { error.name = 'AbortError'; throw error; }
+    if (timedOut) {
+      const timeoutError = new AnalyzerError('OpenAI request timed out.');
+      timeoutError.code = 'OPENAI_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    if (signal) signal.removeEventListener('abort', abortFromParent);
+  }
 
-  const rawText = await response.text();
   let body = null;
   try {
     body = JSON.parse(rawText);
@@ -350,7 +375,7 @@ async function analyzeJob(profile, job, options = {}) {
   const approxInputChars = messages.reduce((acc, m) => acc + m.content.length, 0);
 
   const startedAt = Date.now();
-  const body = await transport({ apiKey, model, messages });
+  const body = await transport({ apiKey, model, messages, signal: options.signal, timeoutMs: options.timeoutMs || DEFAULT_REQUEST_TIMEOUT_MS });
   const durationMs = Date.now() - startedAt;
 
   const choice = body && body.choices && body.choices[0];
@@ -394,4 +419,6 @@ module.exports = {
   MissingApiKeyError,
   AnalyzerError,
   DEFAULT_MODEL,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  defaultTransport,
 };

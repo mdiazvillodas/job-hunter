@@ -4,6 +4,7 @@
     "linkedinUrl": "https://www.linkedin.com/in/example-user/"
   },
   "search": {
+    "targetAnalyzedJobs": 20,
     "locations": ["Example City", "Second Example City"],
     "modalities": ["hybrid", "remote"],
     "queryGroups": [

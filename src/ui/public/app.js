@@ -140,7 +140,7 @@ const SESSION_LABELS = {
   NOT_INITIALIZED: 'No conectado', LOGIN_REQUIRED: 'Requiere login',
   AUTHENTICATED: 'Sesión activa', CHECKPOINT_REQUIRED: 'Verificación necesaria', ERROR: 'Error',
 };
-const HUNT_LABELS = { IDLE: 'Sin ejecutar', STARTING: 'Iniciando', RUNNING: 'Buscando oportunidades', COMPLETED: 'Completado', FAILED: 'Error' };
+const HUNT_LABELS = { IDLE: 'Sin ejecutar', STARTING: 'Iniciando', RUNNING: 'Buscando oportunidades', COMPLETED: 'Completado', CANCELLED: 'Cancelado', FAILED: 'Error' };
 let huntPollTimer = null;
 let browserInstallPollTimer = null;
 
@@ -153,10 +153,20 @@ function renderOperations() {
   el('huntStatus').textContent = HUNT_LABELS[hunt.status] || hunt.status;
   const active = hunt.status === 'STARTING' || hunt.status === 'RUNNING';
   el('huntStartBtn').disabled = !state.setupReady || session.state !== 'AUTHENTICATED' || session.windowOpen || active;
+  el('huntCancelBtn').hidden = !active;
+  el('huntCancelBtn').disabled = !active || !!(hunt.progress && hunt.progress.cancellationRequested);
   el('completeSetupLink').hidden = state.setupReady;
   const summary = hunt.summary;
   const summaryEl = el('huntSummary');
-  if (summary && summary.discovery && summary.analysis) {
+  const progress = hunt.progress;
+  if (active && progress) {
+    const lines = [];
+    if (progress.phase === 'analysis' || progress.phase === 'details' || progress.analysisAttempted) lines.push(`Analizando oportunidades: ${progress.analysisCompleted} / ${progress.analysisTarget}`);
+    lines.push(`${progress.rawJobsDiscovered} encontradas · ${progress.uniqueJobsDiscovered} únicas`);
+    if (progress.searchesTotal) lines.push(`Búsqueda ${progress.searchesCompleted} / ${progress.searchesTotal}`);
+    summaryEl.textContent = lines.join(' · ');
+    summaryEl.hidden = false;
+  } else if (summary && summary.discovery && summary.analysis) {
     summaryEl.textContent = `${summary.discovery.uniqueResults || 0} encontradas · ${summary.discovery.newJobs || 0} nuevas · ${summary.analysis.analyzed || 0} analizadas`;
     summaryEl.hidden = false;
   } else {
@@ -175,7 +185,7 @@ async function refreshSession() {
 async function refreshHunt() {
   state.hunt = await api('/api/hunt/status');
   renderOperations();
-  if (state.hunt.status === 'COMPLETED' || state.hunt.status === 'FAILED') {
+  if (state.hunt.status === 'COMPLETED' || state.hunt.status === 'CANCELLED' || state.hunt.status === 'FAILED') {
     clearInterval(huntPollTimer);
     huntPollTimer = null;
     if (state.hunt.status === 'COMPLETED') loadAll();
@@ -276,6 +286,13 @@ async function startHunt() {
     state.hunt = await api('/api/hunt', 'POST');
     renderOperations();
     startHuntPolling();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function cancelHunt() {
+  try {
+    state.hunt = await api('/api/hunt/cancel', 'POST');
+    renderOperations();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -570,6 +587,7 @@ function init() {
   el('linkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
   el('linkedinCloseBtn').addEventListener('click', closeLinkedinSession);
   el('huntStartBtn').addEventListener('click', startHunt);
+  el('huntCancelBtn').addEventListener('click', cancelHunt);
   el('installBrowserBtn').addEventListener('click', installBrowser);
   el('saveScheduleBtn').addEventListener('click', saveSchedule);
 

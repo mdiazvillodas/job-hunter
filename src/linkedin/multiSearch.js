@@ -20,6 +20,13 @@ function fmtDuration(ms) {
   return `${m}m ${s}s`;
 }
 
+function throwIfCancelled(signal) {
+  if (!signal || !signal.aborted) return;
+  const error = new Error('Hunt cancelled.');
+  error.name = 'HuntCancelledError';
+  throw error;
+}
+
 // Fusiona un job en el mapa global deduplicando por jobId (fallback url).
 // No pierde de que query/familia vino: acumula matchedQueries y matchedFamilies.
 function mergeJob(globalMap, job, query, family) {
@@ -56,18 +63,23 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
   const globalMap = new Map();
   const perQuery = [];
   let rawResults = 0;
+  let rawJobsDiscovered = 0;
   let completed = 0;
 
   const total = activeQueries.length;
+  const reportProgress = typeof options.reportProgress === 'function' ? options.reportProgress : () => {};
   const runStart = Date.now();
   const scopeOptions = {
     debug,
     maxResults: options.maxResultsPerSearch,
     maxPages: options.maxPagesPerSearch,
+    signal: options.signal,
   };
 
   for (let i = 0; i < activeQueries.length; i += 1) {
-    const { query, family } = activeQueries[i];
+    throwIfCancelled(options.signal);
+    const { query, family, familyLabel } = activeQueries[i];
+    reportProgress({ phase: 'discovery', searchesCompleted: completed, searchesTotal: total, currentQueryIndex: i + 1, currentQueryLabel: familyLabel || family });
     const queryStart = Date.now();
 
     log(debug, `\n=== QUERY ${i + 1}/${total} ===`);
@@ -128,7 +140,9 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
       ...scopeOptions,
       onPageProcessed,
     });
+    throwIfCancelled(options.signal);
     const paginationMs = Date.now() - paginationStart;
+    rawJobsDiscovered += scope.metadata.rawResults;
 
     for (const job of scope.jobs) {
       rawResults += 1;
@@ -145,6 +159,11 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
       filtersActive: scope.metadata.filtersActive,
     });
     completed += 1;
+    reportProgress({
+      phase: 'discovery', searchesCompleted: completed, searchesTotal: total,
+      rawJobsDiscovered, uniqueJobsDiscovered: globalMap.size,
+      currentQueryIndex: i + 1, currentQueryLabel: familyLabel || family,
+    });
 
     log(debug, `\nPagination: ${fmtDuration(paginationMs)}`);
     log(debug, `Total query duration: ${fmtDuration(Date.now() - queryStart)}`);
@@ -204,4 +223,5 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
 
 module.exports = {
   collectMultipleSearches,
+  throwIfCancelled,
 };
