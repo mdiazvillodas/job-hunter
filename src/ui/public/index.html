@@ -45,6 +45,13 @@
       </button>
 
       <button id="diagBtn" class="btn ghost" type="button">Diagnóstico</button>
+      <button id="settingsBtn" class="btn icon ghost" type="button" title="Configuración" aria-label="Configuración" aria-expanded="false" aria-controls="settingsView">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7" />
+          <path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.4-1.8-3.2-2.3.8a7.7 7.7 0 0 0-1.7-1L15.1 3H8.9l-.4 2.2c-.6.25-1.17.58-1.7 1l-2.3-.8-1.8 3.2L4.6 11a7.6 7.6 0 0 0 0 2l-1.9 1.4 1.8 3.2 2.3-.8c.53.42 1.1.75 1.7 1L8.9 21h6.2l.4-2.2c.6-.25 1.17-.58 1.7-1l2.3.8 1.8-3.2z"
+                fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+        </svg>
+      </button>
       <button id="themeToggle" class="btn icon ghost" type="button" title="Cambiar tema" aria-label="Cambiar tema">
         <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7" />
@@ -57,6 +64,84 @@
       </button>
       <div class="hunt-bar" id="huntBar" hidden><span id="huntBarFill"></span></div>
     </header>
+
+    <!-- CONFIGURACION: overlay de alto completo. Al cerrarse, la bandeja
+         recupera toda su altura sin recargar la pagina. -->
+    <section class="settings-view" id="settingsView" hidden aria-label="Configuración">
+      <div class="settings-head">
+        <h1>Configuración</h1>
+        <button id="settingsCloseBtn" class="btn ghost small" type="button">Cerrar</button>
+      </div>
+      <div class="settings-body">
+        <nav class="settings-nav" id="settingsNav" aria-label="Secciones de configuración">
+          <button class="settings-nav-item active" type="button" data-section="search">Búsqueda</button>
+          <button class="settings-nav-item" type="button" data-section="schedule">Programación</button>
+          <button class="settings-nav-item" type="button" data-section="notifications">Notificaciones</button>
+          <button class="settings-nav-item" type="button" data-section="linkedin">LinkedIn y navegador</button>
+        </nav>
+        <div class="settings-panels" id="settingsPanels">
+          <section class="settings-panel" data-section="search">
+            <h2>Búsqueda</h2>
+            <p class="muted small">Pendiente.</p>
+          </section>
+          <section class="settings-panel" data-section="schedule" hidden>
+            <h2>Búsqueda automática</h2>
+            <p class="settings-hint">Job Hunter debe permanecer abierto para ejecutar el horario.</p>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label for="scheduleEnabled">Activar búsqueda automática</label>
+                <input id="scheduleEnabled" type="checkbox" />
+              </div>
+              <div class="settings-row">
+                <label>Días</label>
+                <div id="scheduleDays" class="schedule-days">
+                  <label><input type="checkbox" value="1" /> Lu</label><label><input type="checkbox" value="2" /> Ma</label>
+                  <label><input type="checkbox" value="3" /> Mi</label><label><input type="checkbox" value="4" /> Ju</label>
+                  <label><input type="checkbox" value="5" /> Vi</label><label><input type="checkbox" value="6" /> Sá</label>
+                  <label><input type="checkbox" value="0" /> Do</label>
+                </div>
+              </div>
+              <div class="settings-row">
+                <label for="scheduleTime">Hora</label>
+                <input id="scheduleTime" type="time" value="09:00" />
+              </div>
+              <div class="settings-actions">
+                <button id="saveScheduleBtn" class="btn" type="button">Guardar horario</button>
+                <span id="scheduleStatus" class="settings-status">Desactivada</span>
+              </div>
+            </div>
+          </section>
+          <section class="settings-panel" data-section="notifications" hidden>
+            <h2>Notificaciones</h2>
+            <p class="muted small">Pendiente.</p>
+          </section>
+          <section class="settings-panel" data-section="linkedin" hidden>
+            <h2>LinkedIn y navegador</h2>
+            <p class="settings-hint">La sesión de LinkedIn se abre en una ventana propia y se conserva entre búsquedas.</p>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label>Sesión de LinkedIn</label>
+                <span id="linkedinSessionStatus" class="settings-status">Consultando sesión…</span>
+              </div>
+              <div class="settings-actions">
+                <button id="settingsLinkedinOpenBtn" class="btn" type="button">Conectar LinkedIn</button>
+                <button id="settingsLinkedinVerifyBtn" class="btn" type="button">Verificar sesión</button>
+                <button id="settingsLinkedinCloseBtn" class="btn ghost" type="button">Cerrar ventana</button>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label>Navegador de LinkedIn</label>
+                <span id="runtimeStatus" class="settings-status">Comprobando componentes…</span>
+              </div>
+              <div class="settings-actions">
+                <button id="installBrowserBtn" class="btn" type="button">Preparar navegador de LinkedIn</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
 
     <!-- Sesion de LinkedIn: acciones bajo demanda, no una tarjeta permanente. -->
     <div class="popover linkedin-popover" id="linkedinPopover" hidden role="dialog" aria-label="Sesión de LinkedIn">
@@ -79,49 +164,6 @@
         <button id="huntDismissBtn" class="btn ghost small" type="button">Descartar</button>
       </div>
     </div>
-
-    <section class="operations" aria-label="Operaciones">
-      <div class="operation-card">
-        <div>
-          <h2>LinkedIn</h2>
-          <p id="linkedinSessionStatus" class="operation-status">Consultando sesión…</p>
-        </div>
-      </div>
-      <div class="operation-card">
-        <div>
-          <h2>Búsqueda</h2>
-          <p id="huntStatus" class="operation-status">Sin ejecutar</p>
-          <p id="huntSummary" class="operation-summary" hidden></p>
-        </div>
-      </div>
-      <div class="operation-card">
-        <div>
-          <h2>Runtime</h2>
-          <p id="runtimeStatus" class="operation-status">Comprobando componentes…</p>
-        </div>
-        <div class="operation-actions">
-          <button id="installBrowserBtn" class="btn" type="button">Preparar navegador de LinkedIn</button>
-        </div>
-      </div>
-      <div class="operation-card schedule-card">
-        <div>
-          <h2>Búsqueda automática</h2>
-          <p id="scheduleStatus" class="operation-status">Desactivada</p>
-          <p class="operation-summary">Job Hunter debe permanecer abierto para ejecutar el horario.</p>
-        </div>
-        <div class="schedule-controls">
-          <label><input id="scheduleEnabled" type="checkbox" /> Activar</label>
-          <div id="scheduleDays" class="schedule-days">
-            <label><input type="checkbox" value="1" /> Lu</label><label><input type="checkbox" value="2" /> Ma</label>
-            <label><input type="checkbox" value="3" /> Mi</label><label><input type="checkbox" value="4" /> Ju</label>
-            <label><input type="checkbox" value="5" /> Vi</label><label><input type="checkbox" value="6" /> Sá</label>
-            <label><input type="checkbox" value="0" /> Do</label>
-          </div>
-          <input id="scheduleTime" type="time" value="09:00" />
-          <button id="saveScheduleBtn" class="btn" type="button">Guardar horario</button>
-        </div>
-      </div>
-    </section>
 
     <main class="layout" id="mainLayout">
       <!-- SIDEBAR -->

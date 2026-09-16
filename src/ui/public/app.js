@@ -285,6 +285,8 @@ function renderLinkedinControl() {
   setDisabled('linkedinOpenBtn', !!session.windowOpen);
   setText('linkedinOpenBtn', connected ? 'Abrir ventana' : 'Conectar LinkedIn');
   setDisabled('linkedinCloseBtn', !session.windowOpen);
+  setDisabled('settingsLinkedinOpenBtn', !!session.windowOpen);
+  setDisabled('settingsLinkedinCloseBtn', !session.windowOpen);
 }
 
 function openLinkedinPopover() {
@@ -305,34 +307,11 @@ function toggleLinkedinPopover() {
   if (el('linkedinPopover').hidden) openLinkedinPopover(); else closeLinkedinPopover();
 }
 
+// Punto unico de repintado del estado operativo. El detalle de progreso y de
+// resultado lo presentan los controles compactos de la topbar.
 function renderOperations() {
-  const session = state.linkedinSession || { state: 'NOT_INITIALIZED', windowOpen: false };
-  const hunt = state.hunt || { status: 'IDLE' };
-  setText('linkedinSessionStatus', SESSION_LABELS[session.state] || 'Estado desconocido');
-  setDisabled('linkedinOpenBtn', !!session.windowOpen);
-  setDisabled('linkedinCloseBtn', !session.windowOpen);
-  setText('huntStatus', HUNT_LABELS[hunt.status] || hunt.status);
-  const active = hunt.status === 'STARTING' || hunt.status === 'RUNNING';
   renderHuntControl();
   renderLinkedinControl();
-  el('huntCancelBtn').disabled = !active || !!(hunt.progress && hunt.progress.cancellationRequested);
-  el('completeSetupLink').hidden = state.setupReady;
-  const summary = hunt.summary;
-  const summaryEl = el('huntSummary');
-  const progress = hunt.progress;
-  if (active && progress) {
-    const lines = [];
-    if (progress.phase === 'analysis' || progress.phase === 'details' || progress.analysisAttempted) lines.push(`Analizando oportunidades: ${progress.analysisCompleted} / ${progress.analysisTarget}`);
-    lines.push(`${progress.rawJobsDiscovered} encontradas · ${progress.uniqueJobsDiscovered} únicas`);
-    if (progress.searchesTotal) lines.push(`Búsqueda ${progress.searchesCompleted} / ${progress.searchesTotal}`);
-    summaryEl.textContent = lines.join(' · ');
-    summaryEl.hidden = false;
-  } else if (summary && summary.discovery && summary.analysis) {
-    summaryEl.textContent = `${summary.discovery.uniqueResults || 0} encontradas · ${summary.discovery.newJobs || 0} nuevas · ${summary.analysis.analyzed || 0} analizadas`;
-    summaryEl.hidden = false;
-  } else {
-    summaryEl.hidden = true;
-  }
 }
 
 async function refreshSession() {
@@ -772,6 +751,29 @@ async function openDiagnostics() {
   }
 }
 
+/* ---------- configuracion ---------- */
+// Overlay, no pagina: cerrarla devuelve la bandeja intacta sin recargar.
+function openSettings(section) {
+  el('settingsView').hidden = false;
+  el('settingsBtn').setAttribute('aria-expanded', 'true');
+  if (section) showSettingsSection(section);
+}
+function closeSettings() {
+  el('settingsView').hidden = true;
+  el('settingsBtn').setAttribute('aria-expanded', 'false');
+}
+function toggleSettings() {
+  if (el('settingsView').hidden) openSettings(); else closeSettings();
+}
+function showSettingsSection(section) {
+  el('settingsNav').querySelectorAll('.settings-nav-item').forEach((b) => {
+    b.classList.toggle('active', b.dataset.section === section);
+  });
+  el('settingsPanels').querySelectorAll('.settings-panel').forEach((p) => {
+    p.hidden = p.dataset.section !== section;
+  });
+}
+
 /* ---------- wire up ---------- */
 function init() {
   el('globalSearch').addEventListener('input', (e) => { state.filters.search = e.target.value; renderList(); });
@@ -813,10 +815,18 @@ function init() {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (!el('linkedinPopover').hidden) return closeLinkedinPopover();
+    if (!el('settingsView').hidden) return closeSettings();
     if (!el('huntPopover').hidden) return closeHuntPopover();
     if (!el('filterDrawer').hidden) return setDrawer(false);
     if (!el('discardModal').hidden) return closeDiscardModal();
     if (!el('diagPanel').hidden) el('diagPanel').hidden = true;
+  });
+
+  el('settingsBtn').addEventListener('click', toggleSettings);
+  el('settingsCloseBtn').addEventListener('click', closeSettings);
+  el('settingsNav').addEventListener('click', (e) => {
+    const item = e.target.closest('.settings-nav-item');
+    if (item) showSettingsSection(item.dataset.section);
   });
 
   el('diagBtn').addEventListener('click', openDiagnostics);
@@ -830,6 +840,10 @@ function init() {
     closeLinkedinPopover();
   });
   el('linkedinOpenBtn').addEventListener('click', openLinkedinSession);
+  // Las mismas acciones de sesion tambien desde Configuracion.
+  el('settingsLinkedinOpenBtn').addEventListener('click', openLinkedinSession);
+  el('settingsLinkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
+  el('settingsLinkedinCloseBtn').addEventListener('click', closeLinkedinSession);
   el('linkedinVerifyBtn').addEventListener('click', () => refreshSession().catch((e) => toast(e.message, true)));
   el('linkedinCloseBtn').addEventListener('click', closeLinkedinSession);
   el('huntStartBtn').addEventListener('click', startHunt);
