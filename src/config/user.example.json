@@ -5,8 +5,14 @@
   },
   "search": {
     "targetAnalyzedJobs": 20,
-    "locations": ["Example City", "Second Example City"],
-    "modalities": ["hybrid", "remote"],
+    "locations": [
+      "Example City",
+      "Second Example City"
+    ],
+    "modalities": [
+      "hybrid",
+      "remote"
+    ],
     "queryGroups": [
       {
         "family": "operations",
@@ -14,12 +20,28 @@
         "enabled": true,
         "priority": 1,
         "queries": [
-          { "query": "Operations Manager", "enabled": true },
-          { "query": "Operations Lead", "enabled": true }
+          {
+            "query": "Operations Manager",
+            "enabled": true
+          },
+          {
+            "query": "Operations Lead",
+            "enabled": true
+          }
         ]
       }
     ]
   },
   "cvSource": "profile.example.json",
-  "workPreferences": ["Collaborative teams"]
+  "workPreferences": [
+    "Collaborative teams"
+  ],
+  "notifications": {
+    "ntfy": {
+      "enabled": false,
+      "topic": "",
+      "baseUrl": "https://ntfy.sh",
+      "threshold": 90
+    }
+  }
 }

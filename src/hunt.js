@@ -17,6 +17,8 @@ const { getMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob } = require('./ai/jobAnalyzer');
 const { runPipeline } = require('./pipeline/pipeline');
 const { acquireLock, releaseLock } = require('./domain/huntLock');
+const { getUserConfig, getNotificationSettings } = require('./config/userConfig');
+const { createHighMatchNotifier } = require('./notifications/ntfy');
 
 function parseArgs(argv) {
   return { debug: argv.includes('--debug'), dryRun: argv.includes('--dry-run') };
@@ -211,6 +213,17 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
       },
     });
 
+    // Notificador push. Si el usuario no lo activo devuelve {status:'disabled'}
+    // por job y el hunt sigue igual. Nunca rechaza.
+    const notifier = createHighMatchNotifier({
+      settings: getNotificationSettings(getUserConfig()),
+      markNotified: (jobId) => stagedJobService.markHighMatchNotified(jobId),
+      log: (m) => console.error('[notify] ' + m),
+    });
+    if (notifier.config.enabled && notifier.config.configError) {
+      console.error('[notify] notificaciones activadas pero mal configuradas: ' + notifier.config.configError);
+    }
+
     return await runPipeline({
       jobService: stagedJobService,
       discover,
@@ -218,6 +231,7 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
       analyze: analyzeWithStage,
       analyzeLimit: ANALYZE_LIMIT,
       analysisTarget: TARGET_ANALYZED_JOBS,
+      notify: (job) => notifier.notifyHighMatch(job),
       signal: options.signal,
       reportProgress,
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,

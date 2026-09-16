@@ -70,6 +70,10 @@ function createJobRecord(input = {}, options = {}) {
     },
 
     feedbackEvents: [],
+
+    // Side effect informativo (push de high match). No es feedback ni decision
+    // del usuario. Se setea SOLO tras confirmar el envio; null = notificable.
+    highMatchNotifiedAt: null,
   };
 }
 
@@ -147,7 +151,15 @@ function unionInto(target, values) {
   return added;
 }
 
-// Actualiza SOLO informacion de discovery + lastSeenAt. NO toca userState/feedback/feedbackEvents/
+// Deja constancia de que ya se envio la push de high match para este jobId.
+// La marca es por jobId, no por ejecucion de analisis: un reanalisis posterior
+// no vuelve a notificar. No toca userState ni feedback.
+function applyHighMatchNotified(job, options = {}) {
+  job.highMatchNotifiedAt = (options.clock || nowIso)();
+  return job;
+}
+
+// Actualiza SOLO informacion de discovery + lastSeenAt. NO toca highMatchNotifiedAt/userState/feedback/feedbackEvents/
 // aiAnalysis/analysisStatus/firstSeenAt. Rellena campos faltantes (no pisa datos ya conocidos).
 // Devuelve { changed } (cambios significativos: matchedQueries/families o campos rellenados).
 function mergeDiscovery(job, incoming = {}, options = {}) {
@@ -205,6 +217,7 @@ module.exports = {
   applyPriority,
   applyApplied,
   applyDiscarded,
+  applyHighMatchNotified,
   mergeDiscovery,
   shouldAnalyzeJob,
   markAnalysisProcessing,

@@ -13,7 +13,9 @@ const { computeLearnedPreferences } = require('../ai/learnedPreferences');
 const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
-const { toEditableSearch, applySearchSettings, saveUserConfigFile } = require('../config/searchSettings');
+const { toEditableSearch, applySearchSettings, toEditableNotifications, applyNotificationSettings, saveUserConfigFile } = require('../config/searchSettings');
+const { getNotificationSettings } = require('../config/userConfig');
+const { getNtfyConfig, defaultSend } = require('../notifications/ntfy');
 const { createSetupService } = require('../setup/setupService');
 const { createLinkedinSessionService } = require('../session/linkedinSessionService');
 const { createHuntRunManager } = require('../run/huntRunManager');
@@ -143,12 +145,27 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
   // Configuracion editable por el usuario. Escribe SIEMPRE en runtime-data,
   // nunca en el codigo fuente.
   if (method === 'GET' && parts.length === 2 && parts[1] === 'settings') {
-    return sendJson(res, 200, { search: toEditableSearch(getUserConfig()) });
+    const cfg = getUserConfig();
+    return sendJson(res, 200, { search: toEditableSearch(cfg), notifications: toEditableNotifications(cfg) });
   }
   if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'search') {
     const next = applySearchSettings(getUserConfig(), await readBody(req));
     saveUserConfigFile(next);
     return sendJson(res, 200, { search: toEditableSearch(next) });
+  }
+  if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'notifications') {
+    const next = applyNotificationSettings(getUserConfig(), await readBody(req));
+    saveUserConfigFile(next);
+    return sendJson(res, 200, { notifications: toEditableNotifications(next) });
+  }
+  // Envio de prueba: usa la configuracion guardada y NO toca ninguna oferta.
+  if (method === 'POST' && parts[1] === 'settings' && parts[2] === 'notifications' && parts[3] === 'test') {
+    const config = getNtfyConfig(getNotificationSettings(getUserConfig()));
+    if (!config.enabled) return sendJson(res, 409, { error: 'Activá las notificaciones antes de probarlas.' });
+    if (config.configError) return sendJson(res, 400, { error: config.configError });
+    const send = operations.sendNotification || defaultSend;
+    await send(config.url, { title: 'Job Hunter - Test', body: 'Notification integration working', priority: 'high', click: null });
+    return sendJson(res, 200, { ok: true, topic: config.topic });
   }
 
   if (method === 'GET' && parts.length === 2 && parts[1] === 'user-config') {

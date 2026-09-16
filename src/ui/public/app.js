@@ -819,8 +819,9 @@ function setSettingsStatus(id, message, kind) {
 
 async function loadSearchSettings() {
   try {
-    const { search } = await api('/api/settings');
+    const { search, notifications } = await api('/api/settings');
     renderSearchSettings(search);
+    renderNotificationSettings(notifications);
   } catch (e) {
     setSettingsStatus('searchSettingsStatus', 'No se pudo cargar: ' + e.message, 'error');
   }
@@ -834,6 +835,53 @@ async function saveSearchSettings() {
     setSettingsStatus('searchSettingsStatus', 'Guardado', 'ok');
   } catch (e) {
     setSettingsStatus('searchSettingsStatus', e.message, 'error');
+  }
+}
+
+/* ---------- configuracion: notificaciones ---------- */
+function renderNotificationSettings(n) {
+  el('ntfyEnabled').checked = n.enabled;
+  el('ntfyTopic').value = n.topic;
+  el('ntfyThreshold').value = n.threshold;
+  el('ntfyBaseUrl').value = n.baseUrl;
+  syncNotificationFields();
+}
+
+// Los campos solo tienen sentido con los avisos activados.
+function syncNotificationFields() {
+  const on = el('ntfyEnabled').checked;
+  ['ntfyTopic', 'ntfyThreshold', 'ntfyBaseUrl'].forEach((id) => { el(id).disabled = !on; });
+  el('testNotificationBtn').disabled = !on;
+}
+
+function collectNotificationSettings() {
+  return {
+    enabled: el('ntfyEnabled').checked,
+    topic: el('ntfyTopic').value.trim(),
+    threshold: Number(el('ntfyThreshold').value),
+    baseUrl: el('ntfyBaseUrl').value.trim() || 'https://ntfy.sh',
+  };
+}
+
+async function saveNotificationSettings() {
+  setSettingsStatus('notificationsStatus', 'Guardando…');
+  try {
+    const { notifications } = await api('/api/settings/notifications', 'PUT', collectNotificationSettings());
+    renderNotificationSettings(notifications);
+    setSettingsStatus('notificationsStatus', 'Guardado', 'ok');
+  } catch (e) {
+    setSettingsStatus('notificationsStatus', e.message, 'error');
+  }
+}
+
+// Envia una notificacion real de prueba. No modifica ninguna oferta.
+async function sendTestNotification() {
+  setSettingsStatus('notificationsStatus', 'Enviando…');
+  try {
+    await api('/api/settings/notifications/test', 'POST', {});
+    setSettingsStatus('notificationsStatus', 'Enviada: revisá el teléfono', 'ok');
+  } catch (e) {
+    setSettingsStatus('notificationsStatus', e.message, 'error');
   }
 }
 
@@ -887,6 +935,9 @@ function init() {
 
   el('settingsBtn').addEventListener('click', toggleSettings);
   el('saveSearchBtn').addEventListener('click', saveSearchSettings);
+  el('saveNotificationsBtn').addEventListener('click', saveNotificationSettings);
+  el('testNotificationBtn').addEventListener('click', sendTestNotification);
+  el('ntfyEnabled').addEventListener('change', syncNotificationFields);
   el('settingsCloseBtn').addEventListener('click', closeSettings);
   el('settingsNav').addEventListener('click', (e) => {
     const item = e.target.closest('.settings-nav-item');

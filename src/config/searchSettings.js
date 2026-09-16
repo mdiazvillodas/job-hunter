@@ -138,4 +138,41 @@ function saveUserConfigFile(config, filePath = USER_CONFIG_PATH) {
   return config;
 }
 
-module.exports = { toEditableSearch, applySearchSettings, saveUserConfigFile, SearchSettingsError, ALLOWED_MODALITIES };
+// Vista editable de notificaciones. Un bloque ausente se presenta como
+// desactivado, nunca como un error de configuracion.
+function toEditableNotifications(config) {
+  const ntfy = (config.notifications && config.notifications.ntfy) || {};
+  return {
+    enabled: ntfy.enabled === true,
+    topic: typeof ntfy.topic === 'string' ? ntfy.topic : '',
+    baseUrl: typeof ntfy.baseUrl === 'string' && ntfy.baseUrl ? ntfy.baseUrl : 'https://ntfy.sh',
+    threshold: Number.isInteger(ntfy.threshold) ? ntfy.threshold : 90,
+  };
+}
+
+// Aplica la edicion conservando el resto de la configuracion intacta.
+function applyNotificationSettings(currentConfig, input) {
+  if (!input || typeof input !== 'object') throw new SearchSettingsError('Cuerpo invalido.');
+  const enabled = input.enabled === true;
+  const topic = typeof input.topic === 'string' ? input.topic.trim() : '';
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.trim() ? input.baseUrl.trim() : 'https://ntfy.sh';
+  const threshold = Number(input.threshold);
+
+  if (!Number.isInteger(threshold) || threshold < 50 || threshold > 100) {
+    throw new SearchSettingsError('El umbral debe ser un entero entre 50 y 100.');
+  }
+  if (enabled && !/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
+    throw new SearchSettingsError('Indicá un topic válido (letras, números, guiones).');
+  }
+  if (!/^https?:\/\/[^\s]+$/.test(baseUrl)) {
+    throw new SearchSettingsError('La URL del servidor no es válida.');
+  }
+
+  const next = {
+    ...currentConfig,
+    notifications: { ...(currentConfig.notifications || {}), ntfy: { enabled, topic, baseUrl, threshold } },
+  };
+  return validateUserConfig(next);
+}
+
+module.exports = { toEditableSearch, applySearchSettings, toEditableNotifications, applyNotificationSettings, saveUserConfigFile, SearchSettingsError, ALLOWED_MODALITIES };

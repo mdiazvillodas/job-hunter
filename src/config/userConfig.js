@@ -8,6 +8,27 @@ function invalid(field) {
   throw new ConfigurationRequiredError(`El campo ${field} falta o no es valido en config/user.json.`);
 }
 
+// Bloque OPCIONAL: un user.json anterior a esta funcionalidad no lo tiene y
+// debe seguir validando. Ausente significa notificaciones desactivadas, de modo
+// que actualizar el producto nunca empieza a enviar avisos por su cuenta.
+const NTFY_TOPIC_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function validateNotifications(config) {
+  if (config.notifications === undefined) return;
+  if (!config.notifications || typeof config.notifications !== 'object' || Array.isArray(config.notifications)) invalid('notifications');
+  const ntfy = config.notifications.ntfy;
+  if (ntfy === undefined) return;
+  if (!ntfy || typeof ntfy !== 'object' || Array.isArray(ntfy)) invalid('notifications.ntfy');
+  if (ntfy.enabled !== undefined && typeof ntfy.enabled !== 'boolean') invalid('notifications.ntfy.enabled');
+  if (ntfy.topic !== undefined && typeof ntfy.topic !== 'string') invalid('notifications.ntfy.topic');
+  if (ntfy.baseUrl !== undefined && typeof ntfy.baseUrl !== 'string') invalid('notifications.ntfy.baseUrl');
+  if (ntfy.threshold !== undefined && (!Number.isInteger(ntfy.threshold) || ntfy.threshold < 50 || ntfy.threshold > 100)) {
+    invalid('notifications.ntfy.threshold');
+  }
+  // Activarlo exige un topic utilizable: no se guarda una configuracion que no
+  // podria enviar nada.
+  if (ntfy.enabled === true && (!ntfy.topic || !NTFY_TOPIC_RE.test(ntfy.topic.trim()))) invalid('notifications.ntfy.topic');
+}
+
 function validateUserConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) invalid('root');
   if (!config.identity || typeof config.identity !== 'object') invalid('identity');
@@ -37,6 +58,7 @@ function validateUserConfig(config) {
   );
   if (!hasActiveQuery) invalid('search.queryGroups (se requiere al menos una query activa)');
   if (config.search.modalities !== undefined && !Array.isArray(config.search.modalities)) invalid('search.modalities');
+  validateNotifications(config);
   return config;
 }
 
@@ -61,4 +83,10 @@ function toPublicUserConfig(config) {
   return { name: config.identity.name, linkedinUrl: config.identity.linkedinUrl };
 }
 
-module.exports = { getUserConfig, loadUserConfig, validateUserConfig, toPublicUserConfig, ConfigurationRequiredError };
+// Notificaciones efectivas: ausente equivale a desactivado.
+function getNotificationSettings(config) {
+  const ntfy = config && config.notifications && config.notifications.ntfy;
+  return ntfy && typeof ntfy === 'object' ? ntfy : { enabled: false };
+}
+
+module.exports = { getUserConfig, loadUserConfig, validateUserConfig, toPublicUserConfig, getNotificationSettings, ConfigurationRequiredError };

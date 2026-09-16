@@ -140,7 +140,34 @@
           </section>
           <section class="settings-panel" data-section="notifications" hidden>
             <h2>Notificaciones</h2>
-            <p class="muted small">Pendiente.</p>
+            <p class="settings-hint">Recibí un aviso en el móvil cuando aparezca una oportunidad destacada. Usa <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>: instalá la app y suscribite al mismo topic.</p>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label for="ntfyEnabled">Avisarme de oportunidades destacadas</label>
+                <input id="ntfyEnabled" type="checkbox" />
+              </div>
+              <div class="settings-row">
+                <label for="ntfyTopic">Topic</label>
+                <input id="ntfyTopic" type="text" placeholder="mi-topic-privado" autocomplete="off" />
+              </div>
+              <p class="muted small">Cualquiera que conozca el topic recibe tus avisos: elegí uno difícil de adivinar y no lo compartas.</p>
+              <div class="settings-row">
+                <label for="ntfyThreshold">Avisar desde un puntaje de</label>
+                <input id="ntfyThreshold" type="number" min="50" max="100" />
+              </div>
+              <details class="settings-advanced">
+                <summary>Avanzado</summary>
+                <div class="settings-row">
+                  <label for="ntfyBaseUrl">Servidor</label>
+                  <input id="ntfyBaseUrl" type="text" placeholder="https://ntfy.sh" autocomplete="off" />
+                </div>
+              </details>
+            </div>
+            <div class="settings-actions">
+              <button id="saveNotificationsBtn" class="btn primary" type="button">Guardar cambios</button>
+              <button id="testNotificationBtn" class="btn" type="button">Enviar notificación de prueba</button>
+              <span id="notificationsStatus" class="settings-status"></span>
+            </div>
           </section>
           <section class="settings-panel" data-section="linkedin" hidden>
             <h2>LinkedIn y navegador</h2>

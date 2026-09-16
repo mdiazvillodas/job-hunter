@@ -5,6 +5,8 @@
 //   discover()        -> { jobs: uniqueJob[], discovery: {queriesExecuted,rawResults,uniqueResults,duplicatesRemoved} }
 //   fetchDetails(job) -> detailedJob (con description...)   | throw (challenge/error)
 //   analyze(job)      -> { analysis, usage, model, durationMs } | throw
+//   notify(job)       -> { status } (opcional). Side effect informativo: SIEMPRE resuelve,
+//                        nunca rechaza, y no puede afectar al resultado del analisis.
 // analyze puede ser null: en ese caso NO se analiza nada (los candidatos quedan 'skipped', pending).
 
 const { shouldAnalyzeJob } = require('../domain/jobRecord');
@@ -49,7 +51,7 @@ function compactJob(job) {
 }
 
 async function runPipeline(deps) {
-  const { jobService, discover, fetchDetails, analyze, analyzeLimit, analysisTarget = 20, signal, log } = deps;
+  const { jobService, discover, fetchDetails, analyze, analyzeLimit, analysisTarget = 20, signal, log, notify } = deps;
   const reportProgress = typeof deps.reportProgress === 'function' ? deps.reportProgress : () => {};
   const say = typeof log === 'function' ? log : () => {};
   const startMs = Date.now();
@@ -106,6 +108,7 @@ async function runPipeline(deps) {
   let stoppedByChallenge = false;
   let attempted = 0;
   let stopReason = null;
+  const notifications = { eligible: 0, sent: 0, alreadyNotified: 0, failed: 0 };
 
   for (const cand of candidates) {
     throwIfCancelled(signal);
@@ -132,6 +135,7 @@ async function runPipeline(deps) {
     // 2) analisis (OpenAI) — si no hay analyzer, el job queda 'pending' (skipped).
     if (!analyze) continue;
     throwIfCancelled(signal);
+    let analysisJustSucceeded = false;
     attempted += 1;
     progress({ phase: 'analysis', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
     try {
@@ -151,6 +155,7 @@ async function runPipeline(deps) {
         const cached = res.usage.prompt_tokens_details && res.usage.prompt_tokens_details.cached_tokens;
         usage.cachedTokens += cached || 0;
       }
+      analysisJustSucceeded = true;
       say(`analyzed ${cand.jobId} -> ${res.analysis.decision}`);
     } catch (err) {
       if (isCancellation(err) || (signal && signal.aborted)) throw cancellationError();
@@ -158,6 +163,27 @@ async function runPipeline(deps) {
       failed += 1;
       progress({ phase: 'analysis', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
       say(`analysis:failed ${cand.jobId}`);
+    }
+
+    // 3) Notificacion push de high match. DELIBERADAMENTE fuera del try/catch
+    // del analisis: si fallara ahi dentro, el catch marcaria como fallido un
+    // analisis que fue exitoso. Solo entran analisis recien persistidos en ESTE
+    // run, nunca un escaneo del repositorio. Un fallo aqui no afecta al hunt ni
+    // se confunde con una cancelacion.
+    if (analysisJustSucceeded && typeof notify === 'function') {
+      try {
+        const outcome = await notify(jobService.getJob(cand.jobId));
+        const status = outcome && outcome.status;
+        if (status && status !== 'below_threshold') notifications.eligible += 1;
+        if (status === 'sent') notifications.sent += 1;
+        else if (status === 'already_notified') notifications.alreadyNotified += 1;
+        else if (status === 'failed') notifications.failed += 1;
+      } catch (err) {
+        // Blindaje extra: un notificador que incumpla el contrato tampoco rompe
+        // el hunt ni se propaga como cancelacion.
+        notifications.failed += 1;
+        say(`notify:threw ${cand.jobId} ${err && err.message ? err.message : err}`);
+      }
     }
   }
 
@@ -197,6 +223,7 @@ async function runPipeline(deps) {
       stopReason,
     },
     persistence: { created, updated, unchanged },
+    notifications,
     usageTotals: { ...usage, model },
     durations,
     jobs: uniqueJobs.map((uj) => compactJob(jobService.getJob(uj.jobId))),

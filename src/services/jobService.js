@@ -10,6 +10,7 @@ const {
   applyPriority,
   applyApplied,
   applyDiscarded,
+  applyHighMatchNotified,
   mergeDiscovery,
   shouldAnalyzeJob,
   markAnalysisProcessing,
@@ -85,6 +86,8 @@ function createJobService(repository, options = {}) {
   const markAsPriority = (jobId, opts) => transition(jobId, applyPriority, opts);
   const markAsApplied = (jobId, opts) => transition(jobId, applyApplied, opts);
   const markAsDiscarded = (jobId, feedback) => transition(jobId, applyDiscarded, feedback);
+  // Marca de notificacion push. Side effect informativo: no toca userState ni feedback.
+  const markHighMatchNotified = (jobId) => transition(jobId, applyHighMatchNotified);
 
   function getCalibration(jobId) {
     return computeCalibrationSignal(requireJob(jobId));
@@ -142,6 +145,7 @@ function createJobService(repository, options = {}) {
     markAsPriority,
     markAsApplied,
     markAsDiscarded,
+    markHighMatchNotified,
     getCalibration,
     ingestDiscovery,
     updateDiscovery,
