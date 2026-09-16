@@ -13,7 +13,6 @@
     <div id="setupNotice" class="setup-notice" hidden>Job Hunter todavía no está configurado. <a href="/setup">Configurar</a></div>
     <header class="topbar">
       <div class="brand">Job&nbsp;Hunter</div>
-      <input id="globalSearch" class="global-search" type="search" placeholder="Buscar título, empresa, ubicación…" />
       <label class="sort">
         Orden
         <select id="sortSelect">
@@ -97,6 +96,23 @@
     <main class="layout" id="mainLayout">
       <!-- SIDEBAR -->
       <aside class="sidebar" id="sidebar">
+        <div class="sidebar-toolbar">
+          <div class="search-wrap">
+            <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.8" />
+              <path d="M15.8 15.8L20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <input id="globalSearch" class="global-search" type="search" placeholder="Buscar título, empresa, ubicación…" aria-label="Buscar oportunidades" />
+          </div>
+          <button id="filtersBtn" class="btn filters-btn" type="button" aria-expanded="false" aria-controls="filterDrawer">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M3.5 6h17M6.5 12h11M10 18h4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            </svg>
+            <span>Filtros</span>
+            <span id="filterCount" class="filter-count" hidden>0</span>
+          </button>
+        </div>
+
         <div class="status-tabs-wrap">
           <nav class="status-tabs" id="statusFilter" aria-label="Vistas por estado"></nav>
         </div>
@@ -106,10 +122,10 @@
           <div class="active-chips" id="activeChips"></div>
         </div>
 
-        <section class="filters">
-
-          <div class="filter-row">
-            <label>Decisión IA
+        <!-- FILTER DRAWER: se superpone a la lista, no la empuja -->
+        <div class="filter-drawer" id="filterDrawer" hidden role="group" aria-label="Filtros avanzados">
+          <div class="drawer-grid">
+            <label class="field">Decisión IA
               <select id="aiDecisionFilter">
                 <option value="all">Todas</option>
                 <option value="YES">SÍ</option>
@@ -117,17 +133,14 @@
                 <option value="NO">NO</option>
               </select>
             </label>
-            <label>Easy Apply
+            <label class="field">Easy Apply
               <select id="easyApplyFilter">
                 <option value="all">Todas</option>
                 <option value="yes">Easy Apply</option>
                 <option value="no">Sin Easy Apply</option>
               </select>
             </label>
-          </div>
-
-          <div class="filter-row">
-            <label>Puntaje
+            <label class="field">Puntaje
               <select id="scoreFilter">
                 <option value="0">Todos</option>
                 <option value="60">60+</option>
@@ -135,22 +148,24 @@
                 <option value="80">80+</option>
               </select>
             </label>
-            <label>Búsqueda
+            <label class="field">Búsqueda
               <select id="queryFilter"><option value="">Todas las búsquedas</option></select>
             </label>
-          </div>
-
-          <div class="filter-row">
-            <label class="grow">Empresa
+            <label class="field span-2">Empresa
               <input id="companyFilter" type="search" placeholder="Filtrar por empresa…" />
             </label>
           </div>
 
-          <div class="filter-group">
-            <div class="filter-label">Familias de rol</div>
+          <div class="field span-2">
+            <span class="field-label">Familias de rol</span>
             <div id="familyFilter" class="chips"></div>
           </div>
-        </section>
+
+          <div class="drawer-actions">
+            <button class="btn ghost small" id="clearFiltersBtn" type="button" hidden>Limpiar filtros</button>
+            <button class="btn small" id="closeFiltersBtn" type="button">Listo</button>
+          </div>
+        </div>
 
         <ul class="job-list" id="jobList"></ul>
       </aside>

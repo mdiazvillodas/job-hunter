@@ -124,6 +124,36 @@
     return counts;
   }
 
+  // Cuenta cuantas DIMENSIONES de filtro estan activas respecto de los valores por
+  // defecto. Solo cubre los filtros del panel desplegable: el estado (tabs) y la
+  // busqueda libre viven fuera y tienen su propia presentacion.
+  // Es presentacion pura: no altera como se filtra.
+  var FILTER_DEFAULTS = { aiDecision: 'all', easyApply: 'all', minScore: 0, company: '', matchedQuery: '' };
+  function activeFilterKeys(filters) {
+    var f = filters || {};
+    var keys = [];
+    if (f.aiDecision && f.aiDecision !== FILTER_DEFAULTS.aiDecision) keys.push('aiDecision');
+    if (f.easyApply && f.easyApply !== FILTER_DEFAULTS.easyApply) keys.push('easyApply');
+    if (Number(f.minScore) > 0) keys.push('minScore');
+    if (f.matchedQuery) keys.push('matchedQuery');
+    if (f.company && String(f.company).trim()) keys.push('company');
+    if (f.families && f.families.length) keys.push('families');
+    return keys;
+  }
+  function countActiveFilters(filters) {
+    return activeFilterKeys(filters).length;
+  }
+  // Devuelve los filtros del panel a su valor por defecto. NO toca status ni search.
+  function clearedFilters(filters) {
+    var f = filters || {};
+    return {
+      status: f.status, search: f.search,
+      aiDecision: FILTER_DEFAULTS.aiDecision, easyApply: FILTER_DEFAULTS.easyApply,
+      minScore: FILTER_DEFAULTS.minScore, company: FILTER_DEFAULTS.company,
+      matchedQuery: FILTER_DEFAULTS.matchedQuery, families: [],
+    };
+  }
+
   function deriveFamilies(jobs) {
     const set = new Set();
     jobs.forEach((j) => (j.matchedFamilies || []).forEach((f) => set.add(f)));
@@ -146,6 +176,10 @@
     deriveFamilies,
     deriveQueries,
     isPending,
+    activeFilterKeys,
+    countActiveFilters,
+    clearedFilters,
+    FILTER_DEFAULTS: FILTER_DEFAULTS,
     helpers: { overall, decision, status, isPending },
   };
 });

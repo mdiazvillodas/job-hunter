@@ -45,6 +45,15 @@ const REASON_LABELS = { role_type: 'Tipo de rol', too_commercial: 'Demasiado com
 // Mapea un valor a su etiqueta en castellano. Si no está en el mapa, usa el fallback (o el valor tal cual).
 function lbl(map, key, fb) { if (key != null && map[key]) return map[key]; return fb !== undefined ? fb : (key == null ? '' : String(key)); }
 function reasonLabel(k) { return lbl(REASON_LABELS, k, titleCase(String(k || '').replace(/_/g, ' '))); }
+// Rotulo corto de cada dimension de filtro activa. Solo presentacion.
+const FILTER_CHIP_LABELS = {
+  aiDecision: (f) => 'IA: ' + lbl(DECISION_LABELS, f.aiDecision, f.aiDecision),
+  easyApply: (f) => (f.easyApply === 'yes' ? 'Easy Apply' : 'Sin Easy Apply'),
+  minScore: (f) => f.minScore + '+',
+  matchedQuery: (f) => f.matchedQuery,
+  company: (f) => 'Empresa: ' + f.company,
+  families: (f) => (f.families.length === 1 ? f.families[0] : f.families.length + ' familias'),
+};
 
 /* ---------- LinkedIn del usuario (configuracion publica local) ---------- */
 async function copyUserLinkedinLink(btn) {
@@ -332,7 +341,51 @@ function renderFilters() {
   const cur = state.filters.matchedQuery;
   qSel.innerHTML = '<option value="">Todas las búsquedas</option>' + queries.map((q) => `<option value="${esc(q)}">${esc(q)}</option>`).join('');
   qSel.value = cur;
+
+  syncFilterControls();
+  renderFilterState();
 }
+
+// Refleja el estado en los inputs del panel (necesario tras "Limpiar filtros").
+function syncFilterControls() {
+  const f = state.filters;
+  el('aiDecisionFilter').value = f.aiDecision;
+  el('easyApplyFilter').value = f.easyApply;
+  el('scoreFilter').value = String(f.minScore);
+  el('companyFilter').value = f.company;
+}
+
+// Badge del boton Filtros + chips de lo que esta activo. Presentacion pura.
+function renderFilterState() {
+  const keys = L.activeFilterKeys(state.filters);
+  const badge = el('filterCount');
+  badge.textContent = keys.length;
+  badge.hidden = keys.length === 0;
+  el('clearFiltersBtn').hidden = keys.length === 0;
+
+  const chips = keys.map((k) => {
+    const text = FILTER_CHIP_LABELS[k](state.filters);
+    return `<span class="active-chip" title="${esc(text)}">${esc(text)}</span>`;
+  }).join('');
+  el('activeChips').innerHTML = chips
+    ? chips + '<button class="clear-chip" id="clearChipsBtn" type="button" title="Limpiar filtros">Limpiar</button>'
+    : '';
+  const clearChip = el('clearChipsBtn');
+  if (clearChip) clearChip.addEventListener('click', clearFilters);
+}
+
+function clearFilters() {
+  state.filters = L.clearedFilters(state.filters);
+  renderFilters();
+  renderList();
+}
+
+/* ---------- filter drawer ---------- */
+function setDrawer(open) {
+  el('filterDrawer').hidden = !open;
+  el('filtersBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function toggleDrawer() { setDrawer(el('filterDrawer').hidden); }
 
 /* ---------- job list ---------- */
 function jobItemHtml(job) {
@@ -568,11 +621,11 @@ async function openDiagnostics() {
 function init() {
   el('globalSearch').addEventListener('input', (e) => { state.filters.search = e.target.value; renderList(); });
   el('sortSelect').addEventListener('change', (e) => { state.sort = e.target.value; renderList(); });
-  el('aiDecisionFilter').addEventListener('change', (e) => { state.filters.aiDecision = e.target.value; renderList(); });
-  el('easyApplyFilter').addEventListener('change', (e) => { state.filters.easyApply = e.target.value; renderList(); });
-  el('scoreFilter').addEventListener('change', (e) => { state.filters.minScore = Number(e.target.value); renderList(); });
-  el('companyFilter').addEventListener('input', (e) => { state.filters.company = e.target.value; renderList(); });
-  el('queryFilter').addEventListener('change', (e) => { state.filters.matchedQuery = e.target.value; renderList(); });
+  el('aiDecisionFilter').addEventListener('change', (e) => { state.filters.aiDecision = e.target.value; renderList(); renderFilterState(); });
+  el('easyApplyFilter').addEventListener('change', (e) => { state.filters.easyApply = e.target.value; renderList(); renderFilterState(); });
+  el('scoreFilter').addEventListener('change', (e) => { state.filters.minScore = Number(e.target.value); renderList(); renderFilterState(); });
+  el('companyFilter').addEventListener('input', (e) => { state.filters.company = e.target.value; renderList(); renderFilterState(); });
+  el('queryFilter').addEventListener('change', (e) => { state.filters.matchedQuery = e.target.value; renderList(); renderFilterState(); });
 
   el('discardCancel').addEventListener('click', closeDiscardModal);
   el('discardConfirm').addEventListener('click', confirmDiscard);
@@ -591,6 +644,23 @@ function init() {
       P.storeTheme(window.localStorage, next);
     });
   }
+
+  // Panel de filtros: superpuesto a la lista; cierra con el boton, Escape o click fuera.
+  el('filtersBtn').addEventListener('click', toggleDrawer);
+  el('closeFiltersBtn').addEventListener('click', () => setDrawer(false));
+  el('clearFiltersBtn').addEventListener('click', clearFilters);
+  document.addEventListener('click', (e) => {
+    const drawer = el('filterDrawer');
+    if (drawer.hidden) return;
+    if (drawer.contains(e.target) || el('filtersBtn').contains(e.target)) return;
+    setDrawer(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!el('filterDrawer').hidden) return setDrawer(false);
+    if (!el('discardModal').hidden) return closeDiscardModal();
+    if (!el('diagPanel').hidden) el('diagPanel').hidden = true;
+  });
 
   el('diagBtn').addEventListener('click', openDiagnostics);
   el('diagClose').addEventListener('click', () => { el('diagPanel').hidden = true; });
