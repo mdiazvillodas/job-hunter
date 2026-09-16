@@ -215,7 +215,11 @@ body {
 .detail-head h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.3px; }
 .detail-company { font-size: 15px; color: var(--text); font-weight: 600; }
 .meta-line { color: var(--muted); font-size: 13px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
-.meta-line .dot::before { content: "·"; margin-right: 8px; color: var(--border); }
+.meta-line .dot::before { content: "·"; margin-right: 8px; color: var(--border-strong); }
+/* Guard visual: algunos registros traen un blob enorme en campos de cabecera
+   (p. ej. seniority scrapeado). Es un problema de datos del collector, no de la
+   UI; aca solo evitamos que destruya la cabecera. No se altera ningun dato. */
+.meta-line > span { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .head-badges { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 .actions { margin: 18px 0 10px; display: flex; flex-wrap: wrap; gap: 8px; }
