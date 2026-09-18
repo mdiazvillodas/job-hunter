@@ -85,6 +85,29 @@ function run() {
     ok('14. browsers administrados inicialmente vacíos', fs.readdirSync(path.join(result.target, 'runtime-managed', 'playwright-browsers')).length === 0);
     const manifest = JSON.parse(fs.readFileSync(path.join(result.target, 'package-manifest.json'), 'utf8')); ok('15. manifest seguro y reproducible', manifest.nodeVersion === 'v22.22.3' && !JSON.stringify(manifest).includes(PROJECT_ROOT) && !('createdAt' in manifest));
     ok('16. source data no mutado', !fs.existsSync(sourceDataMarker));
+    // Telegram: el CODIGO viaja, la identidad y el secreto no.
+    ok('16a. el codigo de Telegram viaja en el package',
+      ['api.js', 'commands.js', 'listener.js', 'huntControl.js', 'telegramService.js', 'telegramSecret.js', 'telegramState.js']
+        .every((file) => fs.existsSync(path.join(result.target, 'src', 'telegram', file))));
+    ok('16b. el package no lleva estado de polling de Telegram',
+      !fs.existsSync(path.join(result.target, 'runtime-data')) && !fs.existsSync(path.join(result.target, 'telegram')));
+    ok('16c. el package no lleva ningun token ni cuenta autorizada',
+      (() => {
+        const stack = [path.join(result.target, 'src')];
+        const token = /\b\d{8,12}:[A-Za-z0-9_-]{30,}\b/;
+        while (stack.length) {
+          const current = stack.pop();
+          for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+            const absolute = path.join(current, entry.name);
+            if (entry.isDirectory()) { stack.push(absolute); continue; }
+            if (!/\.(js|json|html|css)$/.test(entry.name)) continue;
+            const text = fs.readFileSync(absolute, 'utf8');
+            if (token.test(text)) return false;
+            if (/allowedUserId\s*[:=]\s*['"]\d+['"]/.test(text)) return false;
+          }
+        }
+        return true;
+      })());
   } finally {
     if (fs.existsSync(outputRoot)) fs.rmSync(outputRoot, { recursive: true, force: true });
   }

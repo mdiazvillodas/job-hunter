@@ -114,6 +114,47 @@ function run() {
   ok('config real apunta a DATA_DIR/config/user.json', runtime.USER_CONFIG_PATH === path.join(runtime.DATA_DIR, 'config', 'user.json'));
   ok('perfiles reales apuntan a DATA_DIR/profile', runtime.PROFILE_DIR === path.join(runtime.DATA_DIR, 'profile'));
 
+  // --- Telegram: que se distribuye y que se conserva ---
+  // El estado de polling es del INSTALADOR, no del producto: vive en
+  // runtime-data para sobrevivir a una actualizacion y no viajar en el package.
+  ok('estado de Telegram apunta a DATA_DIR/telegram/state.json',
+    runtime.TELEGRAM_STATE_PATH === path.join(runtime.DATA_DIR, 'telegram', 'state.json'));
+  ok('el estado de Telegram queda cubierto por el ignore de runtime-data',
+    runtime.TELEGRAM_STATE_PATH.startsWith(runtime.DATA_DIR + path.sep));
+
+  const telegramSources = ['api.js', 'commands.js', 'listener.js', 'huntControl.js', 'telegramService.js', 'telegramSecret.js', 'telegramState.js'];
+  ok('el codigo de Telegram existe y es empaquetable',
+    telegramSources.every((file) => fs.existsSync(path.join(runtime.PROJECT_ROOT, 'src', 'telegram', file))));
+
+  // Ningun fuente puede traer un token, una cuenta autorizada ni un chat real.
+  const telegramText = telegramSources
+    .map((file) => fs.readFileSync(path.join(runtime.PROJECT_ROOT, 'src', 'telegram', file), 'utf8'))
+    .join('\n');
+  ok('el codigo de Telegram no contiene ningun token plausible',
+    !/\b\d{8,12}:[A-Za-z0-9_-]{30,}\b/.test(telegramText));
+  ok('el codigo de Telegram no fija ninguna cuenta autorizada',
+    !/allowedUserId\s*[:=]\s*['"]\d+['"]/.test(telegramText));
+
+  // El secreto vive en el .env de la raiz, que el package excluye por contrato.
+  const envExample = fs.readFileSync(path.join(runtime.PROJECT_ROOT, '.env.example'), 'utf8');
+  ok('.env.example documenta el token pero lo deja vacio',
+    /^TELEGRAM_BOT_TOKEN=\s*$/m.test(envExample));
+  ok('.env real esta cubierto por gitignore', /^\.env$/m.test(gitignore));
+  ok('el empaquetado prohibe .env en el package',
+    fs.readFileSync(path.join(runtime.PROJECT_ROOT, 'scripts', 'package-windows.js'), 'utf8').includes("entry.name === '.env'"));
+
+  // El bloque telegram de user.json es OPCIONAL: una instalacion anterior
+  // sigue siendo valida y arranca con el control remoto apagado.
+  const { validateUserConfig } = require('../config/userConfig');
+  const { getTelegramSettings } = require('../config/telegramSettings');
+  const legacyConfig = JSON.parse(fs.readFileSync(path.join(runtime.PROJECT_ROOT, 'src', 'config', 'user.example.json'), 'utf8'));
+  let legacyValid = true;
+  try { validateUserConfig(JSON.parse(JSON.stringify(legacyConfig))); } catch (_) { legacyValid = false; }
+  ok('una configuracion de usuario anterior a Telegram sigue siendo valida', legacyValid);
+  ok('y arranca con el control remoto desactivado',
+    getTelegramSettings(legacyConfig).enabled === false && getTelegramSettings(legacyConfig).allowedUserId === null);
+  ok('el ejemplo de user.json no trae identidad de Telegram', legacyConfig.telegram === undefined);
+
   console.log(`\n=== RESULT: ${failed === 0 ? 'ALL PASS' : failed + ' FAIL'} (${passed} passed, ${failed} failed) ===`);
   process.exitCode = failed === 0 ? 0 : 1;
 }
