@@ -77,6 +77,7 @@
           <button class="settings-nav-item active" type="button" data-section="search">Búsqueda</button>
           <button class="settings-nav-item" type="button" data-section="schedule">Programación</button>
           <button class="settings-nav-item" type="button" data-section="notifications">Notificaciones</button>
+          <button class="settings-nav-item" type="button" data-section="telegram">Telegram</button>
           <button class="settings-nav-item" type="button" data-section="linkedin">LinkedIn y navegador</button>
         </nav>
         <div class="settings-panels" id="settingsPanels">
@@ -167,6 +168,55 @@
               <button id="saveNotificationsBtn" class="btn primary" type="button">Guardar cambios</button>
               <button id="testNotificationBtn" class="btn" type="button">Enviar notificación de prueba</button>
               <span id="notificationsStatus" class="settings-status"></span>
+            </div>
+          </section>
+          <!-- TELEGRAM: control remoto desde el móvil. El token se escribe una
+               vez y no vuelve a mostrarse; la cuenta se detecta y se vincula
+               explícitamente, sin que haga falta saber qué es un user ID. -->
+          <section class="settings-panel" data-section="telegram" hidden>
+            <h2>Telegram / Control remoto</h2>
+            <p class="settings-hint">Lanzá una búsqueda y consultá el estado desde el móvil, sin tocar la PC. Job Hunter debe permanecer abierto.</p>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label>Estado</label>
+                <span id="telegramState" class="settings-status">Consultando…</span>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-row"><label>1. Creá tu bot</label></div>
+              <p class="muted small">Abrí <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> en Telegram, mandale <code>/newbot</code> y seguí los pasos. Al final te da un token: pegalo acá.</p>
+              <div class="settings-row">
+                <label for="telegramToken">Token del bot</label>
+                <input id="telegramToken" type="password" placeholder="123456789:AA…" autocomplete="off" spellcheck="false" />
+              </div>
+              <p class="muted small">El token es una contraseña: quien lo tenga controla tu bot. Se guarda en esta PC y no se vuelve a mostrar.</p>
+              <div class="settings-actions">
+                <button id="telegramValidateBtn" class="btn primary" type="button">Validar bot</button>
+                <span id="telegramTokenStatus" class="settings-status"></span>
+              </div>
+            </div>
+
+            <div class="settings-group" id="telegramLinkGroup">
+              <div class="settings-row"><label>2. Vinculá tu cuenta</label></div>
+              <p class="muted small">Abrí tu bot en Telegram, pulsá <b>Start</b> y mandale un mensaje cualquiera. Después tocá Detectar mi cuenta.</p>
+              <div class="settings-actions">
+                <button id="telegramDetectBtn" class="btn" type="button">Detectar mi cuenta</button>
+                <span id="telegramLinkStatus" class="settings-status"></span>
+              </div>
+              <div id="telegramCandidates" class="telegram-candidates"></div>
+            </div>
+
+            <div class="settings-group">
+              <div class="settings-row">
+                <label for="telegramEnabled">Control remoto activo</label>
+                <input id="telegramEnabled" type="checkbox" />
+              </div>
+              <div class="settings-actions">
+                <button id="telegramTestBtn" class="btn" type="button">Probar</button>
+                <button id="telegramUnlinkBtn" class="btn ghost" type="button">Desvincular cuenta</button>
+                <span id="telegramActionStatus" class="settings-status"></span>
+              </div>
             </div>
           </section>
           <section class="settings-panel" data-section="linkedin" hidden>

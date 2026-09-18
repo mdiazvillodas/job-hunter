@@ -17,6 +17,10 @@ const state = {
   schedule: null,
   runtime: null,
   browserInstall: null,
+  telegram: null,
+  // Deteccion de cuenta EN CURSO. Solo vive mientras la usuaria elige; nunca
+  // se persiste y nunca vincula sola.
+  telegramDetection: null,
 };
 
 /* ---------- utils ---------- */
@@ -885,6 +889,140 @@ async function sendTestNotification() {
   }
 }
 
+/* ---------- configuracion: telegram ---------- */
+// El token JAMAS se pinta desde el estado guardado: el campo solo existe para
+// escribir uno nuevo y se vacia en cuanto el backend lo acepta.
+function renderTelegramSettings(t) {
+  state.telegram = t;
+  const linked = t.linked && t.account;
+  const parts = [];
+  if (!t.tokenConfigured) parts.push('⚪ Sin configurar');
+  else if (!linked) parts.push('🟡 Bot listo, falta vincular tu cuenta');
+  else if (!t.enabled) parts.push('⚪ Desactivado');
+  else if (t.listener && t.listener.state === 'ERROR') parts.push('🔴 Con problemas de conexión');
+  else if (t.listener && t.listener.state === 'RUNNING') parts.push('🟢 Activo');
+  else parts.push('🟡 Configurado');
+  if (t.bot && t.bot.username) parts.push('Bot: @' + t.bot.username);
+  if (linked) parts.push('Cuenta vinculada: ' + (t.account.displayName || '@' + t.account.username));
+  if (t.listener && t.listener.error) parts.push(t.listener.error);
+  el('telegramState').textContent = parts.join(' · ');
+
+  el('telegramTokenStatus').textContent = t.tokenConfigured ? 'Token configurado ✓' : '';
+  el('telegramTokenStatus').className = 'settings-status' + (t.tokenConfigured ? ' is-ok' : '');
+  el('telegramToken').value = '';
+  el('telegramToken').placeholder = t.tokenConfigured ? 'Pegá un token nuevo para reemplazarlo' : '123456789:AA…';
+
+  el('telegramEnabled').checked = !!t.enabled;
+  el('telegramEnabled').disabled = !linked;
+  el('telegramDetectBtn').disabled = !t.tokenConfigured;
+  el('telegramTestBtn').disabled = !linked;
+  el('telegramUnlinkBtn').disabled = !linked;
+  el('telegramValidateBtn').disabled = false;
+}
+
+function renderTelegramCandidates(detection) {
+  state.telegramDetection = detection;
+  const node = el('telegramCandidates');
+  if (!detection || !detection.candidates.length) { node.innerHTML = ''; return; }
+  // Nunca se vincula sola: cada cuenta necesita un clic explicito.
+  node.innerHTML = detection.candidates.map((c, i) => `
+    <div class="telegram-candidate">
+      <div>
+        <strong>${esc(c.displayName || 'Cuenta de Telegram')}</strong>
+        ${c.username ? `<span class="muted small"> @${esc(c.username)}</span>` : ''}
+        ${c.lastText ? `<div class="muted small">“${esc(c.lastText)}”</div>` : ''}
+      </div>
+      <button class="btn small" type="button" data-link-index="${i}">Vincular</button>
+    </div>`).join('');
+}
+
+async function loadTelegramSettings() {
+  try {
+    renderTelegramSettings(await api('/api/settings/telegram'));
+  } catch (e) {
+    setSettingsStatus('telegramState', 'No se pudo cargar: ' + e.message, 'error');
+  }
+}
+
+async function validateTelegramToken() {
+  const token = el('telegramToken').value.trim();
+  if (!token) return setSettingsStatus('telegramTokenStatus', 'Pegá el token que te dio BotFather.', 'error');
+  setSettingsStatus('telegramTokenStatus', 'Validando…');
+  el('telegramValidateBtn').disabled = true;
+  try {
+    renderTelegramSettings(await api('/api/settings/telegram/bot-token', 'PUT', { token }));
+    setSettingsStatus('telegramTokenStatus', 'Token configurado ✓', 'ok');
+  } catch (e) {
+    el('telegramValidateBtn').disabled = false;
+    setSettingsStatus('telegramTokenStatus', e.message, 'error');
+  }
+}
+
+async function detectTelegramAccount() {
+  setSettingsStatus('telegramLinkStatus', 'Buscando tu mensaje…');
+  renderTelegramCandidates(null);
+  try {
+    const detection = await api('/api/settings/telegram/detect-account', 'POST', {});
+    renderTelegramCandidates(detection);
+    setSettingsStatus('telegramLinkStatus', detection.candidates.length
+      ? 'Elegí tu cuenta y tocá Vincular.'
+      : 'No encontré mensajes nuevos. Abrí el bot, pulsá Start, mandale un mensaje y probá otra vez.',
+    detection.candidates.length ? 'ok' : 'error');
+  } catch (e) {
+    setSettingsStatus('telegramLinkStatus', e.message, 'error');
+  }
+}
+
+async function linkTelegramAccount(index) {
+  const detection = state.telegramDetection;
+  const candidate = detection && detection.candidates[index];
+  if (!candidate) return;
+  setSettingsStatus('telegramLinkStatus', 'Vinculando…');
+  try {
+    renderTelegramSettings(await api('/api/settings/telegram/account', 'PUT', {
+      detectionId: detection.detectionId,
+      userId: candidate.userId,
+    }));
+    renderTelegramCandidates(null);
+    setSettingsStatus('telegramLinkStatus', 'Cuenta vinculada ✓', 'ok');
+  } catch (e) {
+    setSettingsStatus('telegramLinkStatus', e.message, 'error');
+  }
+}
+
+async function toggleTelegramEnabled() {
+  const enabled = el('telegramEnabled').checked;
+  setSettingsStatus('telegramActionStatus', enabled ? 'Activando…' : 'Desactivando…');
+  try {
+    renderTelegramSettings(await api('/api/settings/telegram', 'PUT', { enabled }));
+    setSettingsStatus('telegramActionStatus', enabled ? 'Control remoto activo' : 'Control remoto desactivado', 'ok');
+  } catch (e) {
+    setSettingsStatus('telegramActionStatus', e.message, 'error');
+    loadTelegramSettings();
+  }
+}
+
+async function testTelegram() {
+  setSettingsStatus('telegramActionStatus', 'Enviando…');
+  try {
+    await api('/api/settings/telegram/test', 'POST', {});
+    setSettingsStatus('telegramActionStatus', 'Enviado: revisá Telegram', 'ok');
+  } catch (e) {
+    setSettingsStatus('telegramActionStatus', e.message, 'error');
+  }
+}
+
+async function unlinkTelegramAccount() {
+  setSettingsStatus('telegramActionStatus', 'Desvinculando…');
+  try {
+    renderTelegramSettings(await api('/api/settings/telegram/account', 'DELETE'));
+    renderTelegramCandidates(null);
+    setSettingsStatus('telegramActionStatus', 'Cuenta desvinculada', 'ok');
+  } catch (e) {
+    setSettingsStatus('telegramActionStatus', e.message, 'error');
+  }
+}
+
 /* ---------- wire up ---------- */
 function init() {
   el('globalSearch').addEventListener('input', (e) => { state.filters.search = e.target.value; renderList(); });
@@ -936,6 +1074,15 @@ function init() {
   el('settingsBtn').addEventListener('click', toggleSettings);
   el('saveSearchBtn').addEventListener('click', saveSearchSettings);
   el('saveNotificationsBtn').addEventListener('click', saveNotificationSettings);
+  el('telegramValidateBtn').addEventListener('click', validateTelegramToken);
+  el('telegramDetectBtn').addEventListener('click', detectTelegramAccount);
+  el('telegramEnabled').addEventListener('change', toggleTelegramEnabled);
+  el('telegramTestBtn').addEventListener('click', testTelegram);
+  el('telegramUnlinkBtn').addEventListener('click', unlinkTelegramAccount);
+  el('telegramCandidates').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-link-index]');
+    if (button) linkTelegramAccount(Number(button.dataset.linkIndex));
+  });
   el('testNotificationBtn').addEventListener('click', sendTestNotification);
   el('ntfyEnabled').addEventListener('change', syncNotificationFields);
   el('settingsCloseBtn').addEventListener('click', closeSettings);

@@ -157,6 +157,36 @@ function run() {
     ['interested', 'discard', 'applied', 'priority', 'read']
       .every((a) => app.includes(`data-act="${a}"`)));
 
+  section('Configuracion: seccion de Telegram');
+  ok('36a. Telegram es una seccion mas de Configuracion, no una pantalla nueva',
+    html.includes('data-section="telegram"')
+    && (html.match(/class="settings-nav-item"[^>]*data-section="telegram"/) || []).length === 1
+    && (html.match(/class="settings-panel" data-section="telegram"/) || []).length === 1);
+  ok('36b. la seccion de Telegram nace oculta como las demas',
+    /class="settings-panel" data-section="telegram" hidden/.test(html));
+  ok('36c. las cuatro secciones anteriores siguen presentes',
+    ['search', 'schedule', 'notifications', 'linkedin']
+      .every((s) => html.includes(`data-section="${s}"`)));
+  ok('36d. la bandeja compacta no cambia: Telegram vive dentro del overlay',
+    html.indexOf('id="settingsView"') < html.indexOf('data-section="telegram"')
+    && html.indexOf('data-section="telegram"') < html.indexOf('id="mainLayout"'));
+  ok('36e. existen los controles de onboarding y de estado',
+    ['telegramToken', 'telegramValidateBtn', 'telegramDetectBtn', 'telegramCandidates',
+      'telegramEnabled', 'telegramTestBtn', 'telegramUnlinkBtn', 'telegramState']
+      .every((id) => html.includes(`id="${id}"`)));
+  ok('36f. el campo del token no se rellena nunca desde el estado guardado',
+    /el\('telegramToken'\)\.value = '';/.test(app)
+    && !/el\('telegramToken'\)\.value = [^']/.test(app)
+    && !/value="[^"]/.test((html.match(/<input id="telegramToken"[^>]*>/) || [''])[0]));
+  ok('36g. el token viaja como campo de contrasena y sin autocompletado',
+    /<input id="telegramToken"[^>]*type="password"/.test(html)
+    && /<input id="telegramToken"[^>]*autocomplete="off"/.test(html));
+  ok('36h. vincular una cuenta exige un clic explicito por candidato',
+    app.includes('data-link-index') && app.includes('linkTelegramAccount')
+    && !/autoLink|linkFirst/.test(app));
+  ok('36i. la UI no muestra el Telegram User ID como dato que haya que entender',
+    !/User ID|userId:/.test(html));
+
   section('Configuracion de busqueda: los grupos nunca se pierden');
   const baseConfig = () => ({
     identity: { name: 'Test User', linkedinUrl: 'https://www.linkedin.com/in/test-user/' },

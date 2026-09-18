@@ -553,3 +553,7 @@ body {
 .settings-advanced > summary { cursor: pointer; font-size: 12.5px; color: var(--text-muted); padding: 4px 0; }
 .settings-advanced > summary:hover { color: var(--text); }
 .settings-hint a { color: var(--accent); }
+
+/* Telegram: lista de cuentas detectadas. Cada una exige un clic explícito. */
+.telegram-candidates { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.telegram-candidate { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
