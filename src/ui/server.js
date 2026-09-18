@@ -191,7 +191,7 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
     if (method === 'PUT' && parts[3] === 'account') {
       requireJsonContentType(req);
       const body = await readBody(req);
-      return sendJson(res, 200, telegram.linkAccount({ detectionId: body.detectionId, userId: body.userId }));
+      return sendJson(res, 200, await telegram.linkAccount({ detectionId: body.detectionId, userId: body.userId }));
     }
     if (method === 'DELETE' && parts[3] === 'account') {
       return sendJson(res, 200, await telegram.unlinkAccount());

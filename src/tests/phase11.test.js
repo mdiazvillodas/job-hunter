@@ -55,7 +55,7 @@ function harness(over) {
   let config = o.config || baseConfig(o.telegram);
   let token = o.token === undefined ? TOKEN : o.token;
   let offset = o.offset === undefined ? null : o.offset;
-  const events = { listenersCreated: 0, listenersRunning: 0, stops: 0, getMe: 0, getUpdates: 0, sent: [], savedTokens: [] };
+  const events = { listenersCreated: 0, listenersRunning: 0, stops: 0, getMe: 0, getUpdates: 0, sent: [], savedTokens: [], listenerOptions: [] };
   const apiCalls = [];
 
   const service = S.createTelegramService({
@@ -97,6 +97,7 @@ function harness(over) {
     createListener: (opts) => {
       events.listenersCreated += 1;
       events.listenersRunning += 1;
+      events.listenerOptions.push(opts);
       let stopped = false;
       let release = null;
       return {
@@ -279,7 +280,7 @@ async function expectError(fn, code) {
   {
     const h = harness({ token: TOKEN, updates: [update(30, { fromId: 4242, username: 'mariana' })] });
     const detected = await h.service.detectAccount();
-    const status = h.service.linkAccount({ detectionId: detected.detectionId, userId: '4242' });
+    const status = await h.service.linkAccount({ detectionId: detected.detectionId, userId: '4242' });
     ok('31. vincular guarda la cuenta y activa el control remoto',
       h.config().telegram.allowedUserId === '4242' && h.config().telegram.enabled === true && status.linked === true);
     ok('32. vincular arranca el listener', h.events.listenersCreated === 1);
@@ -314,10 +315,56 @@ async function expectError(fn, code) {
   {
     const h = harness({ token: TOKEN, updates: [update(30, { fromId: 4242 })] });
     const detected = await h.service.detectAccount();
-    h.service.linkAccount({ detectionId: detected.detectionId, userId: '4242' });
+    await h.service.linkAccount({ detectionId: detected.detectionId, userId: '4242' });
     ok('38. una deteccion se consume: no se puede reutilizar',
       await expectError(() => h.service.linkAccount({ detectionId: detected.detectionId, userId: '4242' }), 'TELEGRAM_DETECTION_EXPIRED'));
     await h.service.stop();
+  }
+
+  {
+    // REGRESION: re-vincular con el listener vivo. El bucle toma la cuenta
+    // autorizada al nacer, asi que reutilizarlo dejaria mandando a la cuenta
+    // VIEJA mientras Configuracion anuncia la nueva.
+    const h = harness({ telegram: LINKED, token: TOKEN, updates: [update(70, { fromId: 777, firstName: 'Otra' })] });
+    h.service.start();
+    ok('38a. punto de partida: listener vivo con la cuenta original',
+      h.events.listenerOptions[0].allowedUserId === '4242');
+    await h.service.setEnabled(false);
+    const detected = await h.service.detectAccount();
+    // La usuaria vuelve a activar el control remoto ANTES de vincular.
+    await h.service.setEnabled(true);
+    ok('38b. al reactivar, el bucle sigue autorizando a la cuenta vieja',
+      h.events.listenerOptions[h.events.listenerOptions.length - 1].allowedUserId === '4242');
+    await h.service.linkAccount({ detectionId: detected.detectionId, userId: '777' });
+    ok('38c. vincular rehace el listener con la cuenta NUEVA',
+      h.events.listenerOptions[h.events.listenerOptions.length - 1].allowedUserId === '777',
+      JSON.stringify(h.events.listenerOptions.map((o) => o.allowedUserId)));
+    ok('38d. y sigue habiendo exactamente un bucle vivo', h.events.listenersRunning === 1);
+    ok('38e. lo que anuncia Configuracion coincide con quien manda de verdad',
+      h.service.getStatus().account.displayName === 'Otra');
+    await h.service.stop();
+  }
+
+  {
+    // REGRESION: reemplazar el token con el listener vivo. El bucle viejo
+    // seguiria sondeando el bot ANTERIOR, que continuaria obedeciendo.
+    const SECOND_TOKEN = '987654321:BBotherrandomsecretvalue_klmnopqrstu';
+    const h = harness({ telegram: LINKED, token: TOKEN });
+    h.service.start();
+    const before = h.events.listenersCreated;
+    await h.service.validateAndSaveToken(SECOND_TOKEN);
+    ok('38f. cambiar el token rehace el listener', h.events.listenersCreated === before + 1);
+    ok('38g. el bucle nuevo usa el token nuevo', h.token() === SECOND_TOKEN && h.apiCalls[h.apiCalls.length - 1] === SECOND_TOKEN);
+    ok('38h. y no quedan dos bucles sondeando el mismo bot', h.events.listenersRunning === 1);
+    await h.service.stop();
+  }
+
+  {
+    // Guardar el primer token durante el onboarding no debe arrancar nada.
+    const h = harness({ token: null });
+    await h.service.validateAndSaveToken(TOKEN);
+    ok('38i. validar el primer token no arranca ningun listener',
+      h.events.listenersCreated === 0 && h.service.getStatus().listener.state === S.STATE_STOPPED);
   }
 
   {

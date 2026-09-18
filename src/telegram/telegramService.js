@@ -192,6 +192,11 @@ function createTelegramService(options = {}) {
 
   // Parada + arranque SECUENCIALES: el bucle viejo esta muerto antes de que
   // nazca el nuevo, asi que nunca hay dos consumidores de getUpdates.
+  //
+  // Es tambien la UNICA forma correcta de aplicar un cambio de configuracion:
+  // el listener toma el token y la cuenta autorizada al nacer, asi que un
+  // start() sobre un bucle ya vivo (que es idempotente) seguiria obedeciendo
+  // a la configuracion ANTERIOR mientras Configuracion muestra la nueva.
   async function restart() {
     await stop();
     return start();
@@ -237,7 +242,9 @@ function createTelegramService(options = {}) {
     // Cambiar de bot invalida la cola pendiente del bot anterior.
     detection = null;
     log('bot validado y token guardado');
-    return getStatus();
+    // Si habia un listener vivo estaba sondeando con el token ANTERIOR: hay que
+    // rehacerlo para que el bot viejo deje de responder y el nuevo empiece.
+    return restart();
   }
 
   // 2) Detectar la cuenta. Requiere que el listener NO este sondeando.
@@ -271,7 +278,7 @@ function createTelegramService(options = {}) {
   }
 
   // 3) Vincular. Solo una cuenta ofrecida por la deteccion VIGENTE.
-  function linkAccount(input = {}) {
+  async function linkAccount(input = {}) {
     if (!detection || detection.id !== input.detectionId) {
       throw serviceError('TELEGRAM_DETECTION_EXPIRED', 'La detección caducó. Volvé a detectar tu cuenta.');
     }
@@ -285,7 +292,10 @@ function createTelegramService(options = {}) {
     if (Number.isInteger(detection.maxUpdateId)) stateStore.setNextUpdateId(detection.maxUpdateId + 1);
     detection = null;
     log('cuenta vinculada');
-    return start();
+    // restart(), no start(): si quedara un bucle vivo de una vinculacion
+    // anterior seguiria autorizando a la cuenta VIEJA mientras Configuracion
+    // anuncia la nueva.
+    return restart();
   }
 
   async function setEnabled(enabled) {
