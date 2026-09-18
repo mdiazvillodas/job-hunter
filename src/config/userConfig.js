@@ -29,6 +29,35 @@ function validateNotifications(config) {
   if (ntfy.enabled === true && (!ntfy.topic || !NTFY_TOPIC_RE.test(ntfy.topic.trim()))) invalid('notifications.ntfy.topic');
 }
 
+// Bloque OPCIONAL: igual que notifications, un user.json anterior a esta
+// funcionalidad no lo tiene y debe seguir validando. Ausente significa control
+// remoto desactivado, de modo que actualizar el producto nunca deja el bot
+// escuchando por su cuenta.
+// El TOKEN NO VIVE AQUI: es un secreto y se guarda en el .env de la raiz.
+const TELEGRAM_USER_ID_RE = /^\d{1,20}$/;
+function validateTelegramIdentity(value, field) {
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'object' || Array.isArray(value)) invalid(field);
+  for (const key of ['displayName', 'username']) {
+    if (value[key] !== undefined && value[key] !== null && typeof value[key] !== 'string') invalid(`${field}.${key}`);
+  }
+  if (value.id !== undefined && value.id !== null && !TELEGRAM_USER_ID_RE.test(String(value.id))) invalid(`${field}.id`);
+}
+function validateTelegram(config) {
+  if (config.telegram === undefined) return;
+  const telegram = config.telegram;
+  if (!telegram || typeof telegram !== 'object' || Array.isArray(telegram)) invalid('telegram');
+  if (telegram.enabled !== undefined && typeof telegram.enabled !== 'boolean') invalid('telegram.enabled');
+  if (telegram.allowedUserId !== undefined && telegram.allowedUserId !== null
+      && !TELEGRAM_USER_ID_RE.test(String(telegram.allowedUserId))) invalid('telegram.allowedUserId');
+  validateTelegramIdentity(telegram.account, 'telegram.account');
+  validateTelegramIdentity(telegram.bot, 'telegram.bot');
+  if (telegram.token !== undefined) invalid('telegram.token (el token no se guarda en user.json)');
+  // Activarlo exige una cuenta vinculada: sin ella no habria nadie autorizado
+  // y el listener escucharia sin poder obedecer a nadie.
+  if (telegram.enabled === true && !TELEGRAM_USER_ID_RE.test(String(telegram.allowedUserId))) invalid('telegram.allowedUserId');
+}
+
 function validateUserConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) invalid('root');
   if (!config.identity || typeof config.identity !== 'object') invalid('identity');
@@ -59,6 +88,7 @@ function validateUserConfig(config) {
   if (!hasActiveQuery) invalid('search.queryGroups (se requiere al menos una query activa)');
   if (config.search.modalities !== undefined && !Array.isArray(config.search.modalities)) invalid('search.modalities');
   validateNotifications(config);
+  validateTelegram(config);
   return config;
 }
 

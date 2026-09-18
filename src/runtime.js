@@ -63,6 +63,10 @@ module.exports = {
   USER_CONFIG_PATH: path.join(configDir, 'user.json'),
   SCHEDULE_CONFIG_PATH: path.join(configDir, 'schedule.json'),
   UI_LOCK_PATH: path.join(dataDir, 'ui.lock'),
+  // Estado de polling de Telegram: NO es configuracion editable, por eso vive
+  // fuera de config/. Se conserva entre actualizaciones junto al resto de
+  // runtime-data para no reprocesar comandos viejos.
+  TELEGRAM_STATE_PATH: path.join(dataDir, 'telegram', 'state.json'),
   PROFILE_DIR: profileDir,
   parseDotEnv,
   loadDotEnv,
