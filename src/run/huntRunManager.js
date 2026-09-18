@@ -91,8 +91,23 @@ function safeDiagnostic(error, stage) {
   };
 }
 
+// Notificador de cierre por defecto. Se construye EN EL MOMENTO de notificar,
+// no al crear el manager: cuando Job Hunter arranca sin configurar todavia,
+// getUserConfig() lanza, y eso no puede impedir que el manager exista.
+// Contrato: informativo puro, nunca rechaza, nunca altera el estado del run.
+function defaultNotifyRunOutcome(input) {
+  const { createRunOutcomeNotifier } = require('../notifications/runOutcome');
+  const { getUserConfig, getNotificationSettings } = require('../config/userConfig');
+  const notifier = createRunOutcomeNotifier({
+    settings: getNotificationSettings(getUserConfig()),
+    log: (message) => console.error('[notify] ' + message),
+  });
+  return notifier.notifyRunOutcome(input);
+}
+
 function createHuntRunManager(options = {}) {
   const huntRunner = options.huntRunner || ((huntOptions) => require('../hunt').runHunt(huntOptions));
+  const notifyRunOutcome = options.notifyRunOutcome || defaultNotifyRunOutcome;
   const setupService = options.setupService;
   const sessionService = options.sessionService;
   const lock = options.acquireLock || acquireLock;
@@ -136,6 +151,10 @@ function createHuntRunManager(options = {}) {
     activePromise = Promise.resolve().then(async () => {
       current.status = 'RUNNING';
       console.log(`[hunt-run] started runId=${current.runId}`);
+      // El summary CRUDO del pipeline se conserva solo aqui: safeSummary() es
+      // el contrato con la UI y no debe crecer para alimentar una notificacion.
+      let rawSummary = null;
+      let outcome = null;
       try {
         const reportStage = (nextStage) => {
           if (typeof nextStage === 'string' && nextStage) {
@@ -147,7 +166,8 @@ function createHuntRunManager(options = {}) {
           if (nextProgress && typeof nextProgress === 'object') current.progress = safeProgress({ ...current.progress, ...nextProgress });
         };
         stage = 'collector_launch';
-        current.summary = safeSummary(await huntRunner({ ...huntOptions, reportStage, reportProgress, signal: activeController.signal }));
+        rawSummary = await huntRunner({ ...huntOptions, reportStage, reportProgress, signal: activeController.signal });
+        current.summary = safeSummary(rawSummary);
         current.status = activeController.signal.aborted ? 'CANCELLED' : 'COMPLETED';
         current.progress = safeProgress({ ...current.progress, phase: current.status.toLowerCase() });
         console.log(`[hunt-run] ${current.status.toLowerCase()} runId=${current.runId}`);
@@ -167,10 +187,20 @@ function createHuntRunManager(options = {}) {
       } finally {
         current.finishedAt = now().toISOString();
         try { unlock(); } catch (_) { console.error('[hunt-run] no se pudo liberar el lock limpiamente.'); }
+        // Se captura el desenlace ANTES de ceder el control: a partir de aqui
+        // otro run puede empezar y reemplazar `current`, asi que waitForRun
+        // debe resolver con ESTE resultado, no con el que este vigente luego.
+        outcome = { status: current.status, error: current.error, result: snapshot() };
         activePromise = null;
         activeController = null;
       }
-      return snapshot();
+      // Aviso de cierre: informativo y ajeno al resultado. Se emite con el
+      // estado ya final y el lock ya liberado, y cualquier fallo se ignora:
+      // una notificacion no puede convertir un hunt exitoso en fallido.
+      try {
+        await notifyRunOutcome({ status: outcome.status, summary: rawSummary, error: outcome.error });
+      } catch (_) { console.error('[hunt-run] no se pudo notificar el cierre del hunt.'); }
+      return outcome.result;
     });
     return response;
   }
