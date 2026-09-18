@@ -23,6 +23,7 @@ const { createRuntimeService } = require('../install/runtimeService');
 const { createBrowserInstallManager } = require('../install/browserInstallManager');
 const { createScheduleStore } = require('../scheduler/scheduleStore');
 const { createLocalScheduler } = require('../scheduler/localScheduler');
+const { createTelegramService } = require('../telegram/telegramService');
 const { acquireUiLock, releaseUiLock } = require('../runtime/uiLock');
 const { version: APP_VERSION } = require('../../package.json');
 
@@ -168,6 +169,38 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
     return sendJson(res, 200, { ok: true, topic: config.topic });
   }
 
+  // --- Telegram / control remoto ---
+  // Ninguna respuesta de este bloque contiene el token: solo se informa de si
+  // hay uno guardado y de la identidad visible del bot y de la cuenta.
+  if (parts[1] === 'settings' && parts[2] === 'telegram') {
+    const telegram = operations.telegramService;
+    if (method === 'GET' && parts.length === 3) {
+      return sendJson(res, 200, telegram.getStatus());
+    }
+    if (method === 'PUT' && parts.length === 3) {
+      requireJsonContentType(req);
+      return sendJson(res, 200, await telegram.setEnabled((await readBody(req)).enabled === true));
+    }
+    if (method === 'PUT' && parts[3] === 'bot-token') {
+      requireJsonContentType(req);
+      return sendJson(res, 200, await telegram.validateAndSaveToken((await readBody(req)).token));
+    }
+    if (method === 'POST' && parts[3] === 'detect-account') {
+      return sendJson(res, 200, await telegram.detectAccount());
+    }
+    if (method === 'PUT' && parts[3] === 'account') {
+      requireJsonContentType(req);
+      const body = await readBody(req);
+      return sendJson(res, 200, telegram.linkAccount({ detectionId: body.detectionId, userId: body.userId }));
+    }
+    if (method === 'DELETE' && parts[3] === 'account') {
+      return sendJson(res, 200, await telegram.unlinkAccount());
+    }
+    if (method === 'POST' && parts[3] === 'test') {
+      return sendJson(res, 200, await telegram.sendTestMessage());
+    }
+  }
+
   if (method === 'GET' && parts.length === 2 && parts[1] === 'user-config') {
     return sendJson(res, 200, toPublicUserConfig(getUserConfig()));
   }
@@ -281,8 +314,9 @@ function createServer(options = {}) {
   const browserInstallManager = options.browserInstallManager || createBrowserInstallManager();
   const scheduleStore = options.scheduleStore || createScheduleStore();
   const scheduler = options.scheduler || createLocalScheduler({ scheduleStore, huntRunManager, browserInstallManager });
+  const telegramService = options.telegramService || createTelegramService({ huntRunManager });
   const lifecycle = options.lifecycle || { shuttingDown: false };
-  const operations = { runtimeService, browserInstallManager, scheduler, lifecycle };
+  const operations = { runtimeService, browserInstallManager, scheduler, telegramService, lifecycle };
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     try {
@@ -346,6 +380,7 @@ function startServer(options = {}) {
 function installShutdownHandlers(server, options = {}) {
   const sessionService = options.linkedinSessionService;
   const scheduler = options.scheduler;
+  const telegramService = options.telegramService;
   const browserInstallManager = options.browserInstallManager;
   const huntRunManager = options.huntRunManager;
   const lifecycle = options.lifecycle || { shuttingDown: false };
@@ -361,6 +396,7 @@ function installShutdownHandlers(server, options = {}) {
     process.removeListener('SIGTERM', shutdown);
     if (huntRunManager && huntRunManager.stopAccepting) huntRunManager.stopAccepting();
     try { if (scheduler) scheduler.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el scheduler limpiamente.'); }
+    try { if (telegramService) await telegramService.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el control remoto de Telegram limpiamente.'); }
     try { if (browserInstallManager && browserInstallManager.stop) browserInstallManager.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el instalador de Chromium limpiamente.'); }
     try { if (sessionService) await sessionService.close(); } catch (_) { console.error('[shutdown] No se pudo cerrar la ventana manual limpiamente.'); }
     if (huntRunManager && huntRunManager.waitForIdle) {
@@ -392,12 +428,16 @@ if (require.main === module) {
   const browserInstallManager = createBrowserInstallManager();
   const huntRunManager = createHuntRunManager({ setupService, sessionService: linkedinSessionService });
   const scheduler = createLocalScheduler({ scheduleStore, huntRunManager, browserInstallManager });
+  const telegramService = createTelegramService({ huntRunManager });
   const lifecycle = { shuttingDown: false };
   try {
-    const server = startServer({ setupService, linkedinSessionService, huntRunManager, scheduleStore, scheduler, browserInstallManager, lifecycle });
+    const server = startServer({ setupService, linkedinSessionService, huntRunManager, scheduleStore, scheduler, telegramService, browserInstallManager, lifecycle });
     try { scheduler.start(); }
     catch (error) { console.error(`[scheduler] ${error.code || 'INVALID_SCHEDULE'}: configuración inválida; scheduler desactivado.`); }
-    installShutdownHandlers(server, { linkedinSessionService, scheduler, browserInstallManager, huntRunManager, lifecycle });
+    // Sin control remoto configurado esto es un no-op y no genera trafico.
+    try { telegramService.start(); }
+    catch (error) { console.error('[telegram] no se pudo iniciar el control remoto; Job Hunter sigue funcionando.'); }
+    installShutdownHandlers(server, { linkedinSessionService, scheduler, telegramService, browserInstallManager, huntRunManager, lifecycle });
   } catch (error) {
     console.error(startupErrorMessage(error));
     process.exitCode = 1;
