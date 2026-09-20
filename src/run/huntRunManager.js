@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { acquireLock, releaseLock } = require('../domain/huntLock');
 const { STATES, operationalError } = require('../session/linkedinSessionService');
+const { isKnownStage } = require('../linkedin/challengeSignals');
 
 const ACTIVE = new Set(['STARTING', 'RUNNING']);
 const INITIAL_PROGRESS = Object.freeze({
@@ -30,6 +31,31 @@ function isCancellation(error) {
   return !!error && (error.name === 'AbortError' || error.name === 'HuntCancelledError');
 }
 
+// Diagnostico del challenge, acotado a campos seguros. El detector ya entrega
+// solo valores propios (id de señal, url sin query, extracto saneado); aqui se
+// vuelve a recortar porque esto SI cruza hacia la UI.
+function safeChallenge(value) {
+  if (!value || typeof value !== 'object') return null;
+  const text = (input, limit) => (typeof input === 'string' && input ? input.slice(0, limit) : undefined);
+  const diagnostic = {
+    source: text(value.source, 16) || 'unknown',
+    signal: text(value.signal, 64) || 'unknown',
+    at: text(value.at, 32) || null,
+  };
+  // La etapa SOLO puede ser una del vocabulario cerrado: mas abajo se traduce
+  // a una frase fija que lee el usuario, asi que una etiqueta libre no puede
+  // llegar hasta ahi.
+  const stage = isKnownStage(value.stage) ? value.stage : undefined;
+  const jobId = value.jobId == null ? undefined : String(value.jobId).slice(0, 32);
+  const url = text(value.url, 200);
+  const excerpt = text(value.excerpt, 80);
+  if (stage) diagnostic.stage = stage;
+  if (jobId) diagnostic.jobId = jobId;
+  if (url) diagnostic.url = url;
+  if (excerpt) diagnostic.excerpt = excerpt;
+  return diagnostic;
+}
+
 function safeSummary(value) {
   if (!value || typeof value !== 'object') return null;
   const discovery = value.discovery || {};
@@ -38,6 +64,7 @@ function safeSummary(value) {
   return {
     runId: value.runId || null,
     stoppedByChallenge: value.stoppedByChallenge === true,
+    challenge: safeChallenge(value.challenge),
     discovery: {
       queriesExecuted: discovery.queriesExecuted,
       rawResults: discovery.rawResults,
@@ -66,7 +93,14 @@ function safeSummary(value) {
 
 function safeError(error) {
   if (error && error.name === 'AuthenticationError') return { code: 'LOGIN_REQUIRED', message: 'Necesitás iniciar sesión en LinkedIn.' };
-  if (error && error.name === 'SecurityChallengeError') return { code: 'CHECKPOINT_REQUIRED', message: 'LinkedIn requiere una verificación manual.' };
+  if (error && error.name === 'SecurityChallengeError') {
+    // Un challenge que aborta el run ANTES del bucle de detalles (por ejemplo
+    // durante discovery) no pasa por el summary: su diagnostico viaja aqui.
+    const challenge = safeChallenge(error.challengeDiagnostic);
+    const result = { code: 'CHECKPOINT_REQUIRED', message: 'LinkedIn requiere una verificación manual.' };
+    if (challenge) result.challenge = challenge;
+    return result;
+  }
   return { code: 'HUNT_FAILED', message: 'La búsqueda no pudo completarse.' };
 }
 
@@ -220,4 +254,4 @@ function createHuntRunManager(options = {}) {
   return { start, cancel, getStatus: snapshot, stopAccepting, waitForIdle, waitForRun };
 }
 
-module.exports = { createHuntRunManager, safeSummary, safeProgress, safeError, safeDiagnostic, isCancellation };
+module.exports = { createHuntRunManager, safeSummary, safeChallenge, safeProgress, safeError, safeDiagnostic, isCancellation };

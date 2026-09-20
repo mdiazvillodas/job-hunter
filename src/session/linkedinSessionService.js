@@ -2,6 +2,7 @@
 
 const { BROWSER_PROFILE_DIR } = require('../runtime');
 const { acquireLock, releaseLock } = require('../domain/huntLock');
+const { evaluateChallenge, evaluateLogin } = require('../linkedin/challengeSignals');
 
 const STATES = Object.freeze({
   NOT_INITIALIZED: 'NOT_INITIALIZED',
@@ -34,14 +35,16 @@ async function visible(page, selector) {
 async function detectState(context, page) {
   if (!page || (typeof page.isClosed === 'function' && page.isClosed())) return STATES.ERROR;
   const url = String(page.url() || '').toLowerCase();
-  if (/\/checkpoint\/|\/challenge\/|\/uas\/login-submit|\/captcha|verification/.test(url)) {
-    return STATES.CHECKPOINT_REQUIRED;
-  }
+  // Las señales viven en un solo sitio (linkedin/challengeSignals) para que
+  // este servicio y el detector del hunt no vuelvan a divergir.
+  //
+  // El ORDEN importa y es el mismo en los dos: primero challenge (verificacion
+  // manual), despues login (no hay sesion). Un authwall es login, nunca
+  // checkpoint: lo que hay que hacer es iniciar sesion, no resolver nada.
+  if (evaluateChallenge({ url })) return STATES.CHECKPOINT_REQUIRED;
   const body = await page.locator('body').innerText({ timeout: 1500 }).catch(() => '');
-  if (/captcha|security verification|verificaci[oó]n de seguridad|confirm your identity|confirma tu identidad/i.test(body)) {
-    return STATES.CHECKPOINT_REQUIRED;
-  }
-  if (/\/login|\/signup|authwall/.test(url)) return STATES.LOGIN_REQUIRED;
+  if (body && evaluateChallenge({ text: body })) return STATES.CHECKPOINT_REQUIRED;
+  if (evaluateLogin({ url })) return STATES.LOGIN_REQUIRED;
 
   const hasAuthenticatedUi = await visible(page, 'a[href*="/feed/"], a[href*="/in/"]');
   if (hasAuthenticatedUi) return STATES.AUTHENTICATED;

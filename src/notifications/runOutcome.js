@@ -19,6 +19,7 @@
 const path = require('path');
 
 const { getNtfyConfig, defaultSend, HIGH_MATCH_THRESHOLD } = require('./ntfy');
+const { CHALLENGE_STAGES } = require('../linkedin/challengeSignals');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -41,8 +42,41 @@ const SECRET_ENV_KEYS = ['OPENAI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'HUNT_TRIGGER_T
 // puede resolver en la PC), no un fallo del pipeline.
 const INTERRUPTION_CODES = new Set(['CHECKPOINT_REQUIRED', 'LOGIN_REQUIRED']);
 
+// Explicacion del challenge segun la ETAPA en la que LinkedIn corto.
+//
+// Mapa CERRADO: la unica parte del diagnostico que llega al usuario es la
+// clave, y de ella sale una frase fija escrita aqui. Nunca se interpola nada
+// del diagnostico —ni url, ni selector, ni texto de la pagina, ni jobId— asi
+// que no hay forma de que el contenido de LinkedIn llegue a una notificacion.
+// Una etapa desconocida cae en CHALLENGE_GENERIC.
+const CHALLENGE_STAGE_TEXTS = Object.freeze({
+  [CHALLENGE_STAGES.SESSION]: 'LinkedIn pidió una verificación manual al comprobar la sesión.',
+  [CHALLENGE_STAGES.DISCOVERY]: 'LinkedIn pidió una verificación manual durante la búsqueda de ofertas.',
+  [CHALLENGE_STAGES.DETAIL]: 'LinkedIn pidió una verificación manual mientras analizaba una oferta.',
+  [CHALLENGE_STAGES.ANALYSIS]: 'LinkedIn pidió una verificación manual durante el análisis de una oferta.',
+});
+
+const CHALLENGE_GENERIC = 'LinkedIn pidió una verificación de seguridad y el hunt se detuvo.';
+// authwall / sesion caida: NO es una verificacion, es falta de sesion. El
+// usuario tiene que hacer algo distinto, asi que se le dice algo distinto.
+const LOGIN_REQUIRED_TEXT = 'LinkedIn pidió iniciar sesión y el hunt se detuvo.';
+const GENERIC_FAILURE_TEXT = 'El hunt no pudo completarse.';
+
 function errorCode(error) {
   return error && typeof error.code === 'string' ? error.code : null;
+}
+
+// Etapa del challenge, por cualquiera de sus dos caminos: el summary del
+// pipeline (se alcanzo a cerrar) o el error que aborto el run antes.
+// Devuelve SIEMPRE una clave conocida del mapa, o null.
+function challengeStageText({ summary = null, error = null } = {}) {
+  for (const holder of [summary, error]) {
+    const stage = holder && holder.challenge && holder.challenge.stage;
+    if (typeof stage === 'string' && Object.prototype.hasOwnProperty.call(CHALLENGE_STAGE_TEXTS, stage)) {
+      return CHALLENGE_STAGE_TEXTS[stage];
+    }
+  }
+  return null;
 }
 
 // Un challenge de LinkedIn, por cualquiera de sus dos caminos: el flag que el
@@ -148,9 +182,13 @@ function buildRunOutcomeNotification({ outcome, summary = null, error = null, th
     };
   }
 
-  const head = challenge
-    ? 'LinkedIn pidió una verificación de seguridad y el hunt se detuvo.'
-    : 'El hunt no pudo completarse.';
+  // Cabecera: la explicacion mas precisa que se pueda dar con informacion
+  // SEGURA. Con etapa conocida, la frase de esa etapa; si no, la generica de
+  // siempre. Un login requerido no se disfraza de verificacion.
+  let head;
+  if (challenge) head = challengeStageText({ summary, error }) || CHALLENGE_GENERIC;
+  else if (errorCode(error) === 'LOGIN_REQUIRED') head = LOGIN_REQUIRED_TEXT;
+  else head = GENERIC_FAILURE_TEXT;
   const detail = safeErrorMessage(error, { redact });
   const body = [head];
   if (detail && detail !== head) body.push(detail);
@@ -220,6 +258,11 @@ module.exports = {
   PRIORITY_COMPLETED,
   PRIORITY_PROBLEM,
   SECRET_ENV_KEYS,
+  CHALLENGE_STAGE_TEXTS,
+  CHALLENGE_GENERIC,
+  LOGIN_REQUIRED_TEXT,
+  GENERIC_FAILURE_TEXT,
+  challengeStageText,
   isChallengeStop,
   classifyRunOutcome,
   safeErrorMessage,

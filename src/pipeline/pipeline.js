@@ -10,9 +10,23 @@
 // analyze puede ser null: en ese caso NO se analiza nada (los candidatos quedan 'skipped', pending).
 
 const { shouldAnalyzeJob } = require('../domain/jobRecord');
+const { CHALLENGE_STAGES, isKnownStage } = require('../linkedin/challengeSignals');
 
 function isChallenge(err) {
   return !!err && err.name === 'SecurityChallengeError';
+}
+
+// Extrae el diagnostico que el detector adjunto al error y le añade el contexto
+// del pipeline. Solo campos acotados; nunca el error crudo ni la pagina.
+// La etapa que trae el detector manda: sabe mejor que este bucle donde estaba.
+function challengeDiagnostic(err, context = {}) {
+  const source = err && err.challengeDiagnostic;
+  if (!source || typeof source !== 'object') return null;
+  const diagnostic = { ...source };
+  if (!isKnownStage(diagnostic.stage)) delete diagnostic.stage;
+  if (isKnownStage(context.stage) && !diagnostic.stage) diagnostic.stage = context.stage;
+  if (context.jobId != null && diagnostic.jobId == null) diagnostic.jobId = String(context.jobId);
+  return diagnostic;
 }
 
 function isCancellation(err) {
@@ -106,6 +120,10 @@ async function runPipeline(deps) {
   let failed = 0;
   let detailsFetched = 0;
   let stoppedByChallenge = false;
+  // Diagnostico del challenge que detuvo el run: por que se detecto y donde.
+  // Es lo unico que despues permite distinguir un checkpoint real de un falso
+  // positivo sin tener la pagina delante.
+  let challenge = null;
   let attempted = 0;
   let stopReason = null;
   const notifications = { eligible: 0, sent: 0, alreadyNotified: 0, failed: 0 };
@@ -124,7 +142,12 @@ async function runPipeline(deps) {
         jobService.updateDiscovery(cand.jobId, detailed || {});
       } catch (err) {
         if (isCancellation(err) || (signal && signal.aborted)) throw cancellationError();
-        if (isChallenge(err)) { stoppedByChallenge = true; say('challenge:stop'); break; }
+        if (isChallenge(err)) {
+          stoppedByChallenge = true;
+          challenge = challengeDiagnostic(err, { stage: CHALLENGE_STAGES.DETAIL, jobId: cand.jobId });
+          say(`challenge:stop ${challenge ? challenge.signal : 'sin_diagnostico'}`);
+          break;
+        }
         jobService.applyAnalysisFailure(cand.jobId, 'detail: ' + (err.message || err));
         failed += 1;
         say(`detail:failed ${cand.jobId}`);
@@ -159,6 +182,15 @@ async function runPipeline(deps) {
       say(`analyzed ${cand.jobId} -> ${res.analysis.decision}`);
     } catch (err) {
       if (isCancellation(err) || (signal && signal.aborted)) throw cancellationError();
+      // Un challenge NO es un analisis fallido: es LinkedIn cortandonos. Se
+      // trata igual que en la fase de detalle -detiene el run y conserva el
+      // diagnostico- en vez de marcar la oferta como fallida y seguir.
+      if (isChallenge(err)) {
+        stoppedByChallenge = true;
+        challenge = challengeDiagnostic(err, { stage: CHALLENGE_STAGES.ANALYSIS, jobId: cand.jobId });
+        say(`challenge:stop ${challenge ? challenge.signal : 'sin_diagnostico'}`);
+        break;
+      }
       jobService.applyAnalysisFailure(cand.jobId, err.message || String(err));
       failed += 1;
       progress({ phase: 'analysis', analysisAttempted: attempted, analysisCompleted: analyzed, analysisFailed: failed });
@@ -202,6 +234,7 @@ async function runPipeline(deps) {
     startedAt,
     finishedAt,
     stoppedByChallenge,
+    challenge,
     discovery: {
       queriesExecuted: dstats.queriesExecuted ?? null,
       rawResults: dstats.rawResults ?? null,
@@ -230,4 +263,4 @@ async function runPipeline(deps) {
   };
 }
 
-module.exports = { runPipeline, isChallenge, isCancellation, compactJob, throwIfCancelled, cancellationError };
+module.exports = { runPipeline, isChallenge, challengeDiagnostic, isCancellation, compactJob, throwIfCancelled, cancellationError };

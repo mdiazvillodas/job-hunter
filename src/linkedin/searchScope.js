@@ -1,4 +1,9 @@
 const { detectSecurityChallenge } = require('./session');
+const { CHALLENGE_STAGES } = require('./challengeSignals');
+
+// Filtros, cambio de query y paginacion: todo es fase de busqueda.
+const CHALLENGE_CONTEXT = { stage: CHALLENGE_STAGES.DISCOVERY };
+
 const {
   openJobsSearch,
   waitForJobResults,
@@ -157,7 +162,7 @@ async function applyLocationFilter(page, location, options) {
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
   debugLog(options, { event: 'location_applied', location, pickedSuggestion: picked });
 }
 
@@ -188,7 +193,7 @@ async function applyModalFilters(page, filters, options) {
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
 
   debugLog(options, {
     event: 'modal_filters_applied',
@@ -339,7 +344,7 @@ async function changeSearchQuery(page, query, options = {}) {
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await waitForJobResults(page).catch(() => {});
   await page.waitForTimeout(800);
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
   throwIfCancelled(options.signal);
 
   debugLog(options, { event: 'query_changed', query, changed });
@@ -368,7 +373,7 @@ async function collectCurrentSearch(page, query, filters, options = {}) {
 
     const pageResult = await collectCurrentPageJobs(page, options);
     throwIfCancelled(options.signal);
-    await detectSecurityChallenge(page);
+    await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
     rawResults += pageResult.jobs.length;
 
     let newIds = 0;
@@ -437,7 +442,7 @@ async function collectCurrentSearch(page, query, filters, options = {}) {
 
     const advanced = await goToNextPage(page, next.locator);
     throwIfCancelled(options.signal);
-    await detectSecurityChallenge(page);
+    await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
     if (!advanced) {
       stopReason = 'page_did_not_change';
       debugLog(options, { event: 'page_change_failed', afterPage: activePage || pagesVisited });

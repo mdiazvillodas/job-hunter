@@ -1,4 +1,10 @@
 const { detectSecurityChallenge } = require('./session');
+const { CHALLENGE_STAGES } = require('./challengeSignals');
+
+// Todo lo que hace este modulo ocurre en la fase de busqueda: si LinkedIn
+// corta aqui, el corte fue buscando ofertas, no abriendo una.
+const CHALLENGE_CONTEXT = { stage: CHALLENGE_STAGES.DISCOVERY };
+
 
 function buildJobsSearchUrl(query) {
   const url = new URL('https://www.linkedin.com/jobs/search/');
@@ -9,11 +15,11 @@ function buildJobsSearchUrl(query) {
 async function openJobsSearch(page, query) {
   await page.goto('https://www.linkedin.com/jobs/', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
 
   await page.goto(buildJobsSearchUrl(query), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
 }
 
 async function waitForJobResults(page) {
@@ -232,7 +238,7 @@ async function collectFirstPageJobs(page, query, options = {}) {
   await openJobsSearch(page, query);
   await waitForJobResults(page);
   const result = await collectHydratedJobsWhileScrolling(page, options);
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
   return result;
 }
 

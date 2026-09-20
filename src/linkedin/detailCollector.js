@@ -1,4 +1,9 @@
 const { detectSecurityChallenge } = require('./session');
+const { CHALLENGE_STAGES } = require('./challengeSignals');
+
+// Este modulo abre ofertas concretas: un corte aqui es detail_collection.
+const CHALLENGE_CONTEXT = { stage: CHALLENGE_STAGES.DETAIL };
+
 
 function canonicalJobUrl(url, jobId) {
   if (jobId) return `https://www.linkedin.com/jobs/view/${jobId}/`;
@@ -10,7 +15,7 @@ function canonicalJobUrl(url, jobId) {
 async function waitForJobDetail(page, jobId) {
   await page.waitForLoadState('domcontentloaded');
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
 
   const detailRoot = page.locator(
     [
@@ -185,7 +190,7 @@ async function collectJobDetail(page, listingJob, options = {}) {
   await waitForJobDetail(page, listingJob.jobId);
 
   const expandInfo = await expandDescriptionIfNeeded(page);
-  await detectSecurityChallenge(page);
+  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
   const extracted = await extractJobDetail(page, listingJob, expandInfo);
 
   if (options.debug) {
@@ -215,7 +220,7 @@ async function collectJobDetails(page, listingJobs, options = {}) {
       if (options.searchResultsUrl) {
         await page.goto(options.searchResultsUrl, { waitUntil: 'domcontentloaded' });
         await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-        await detectSecurityChallenge(page);
+        await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
       }
     } catch (error) {
       diagnostics.push({
