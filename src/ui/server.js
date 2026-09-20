@@ -19,6 +19,7 @@ const { getNtfyConfig, defaultSend } = require('../notifications/ntfy');
 const { createSetupService } = require('../setup/setupService');
 const { createLinkedinSessionService } = require('../session/linkedinSessionService');
 const { createHuntRunManager } = require('../run/huntRunManager');
+const { createMarketDiscoveryRunManager } = require('../run/marketDiscoveryRunManager');
 const { createRuntimeService } = require('../install/runtimeService');
 const { createBrowserInstallManager } = require('../install/browserInstallManager');
 const { createScheduleStore } = require('../scheduler/scheduleStore');
@@ -136,6 +137,41 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
   }
   if (method === 'POST' && parts[1] === 'hunt' && parts[2] === 'cancel') {
     return sendJson(res, 202, huntRunManager.cancel());
+  }
+
+  // --- Market Discovery (MD7). Solo lectura sobre la configuracion de Hunter:
+  // ninguna ruta aplica la propuesta ni modifica las queries activas.
+  if (parts[1] === 'market-discovery') {
+    const marketDiscovery = operations.marketDiscoveryRunManager;
+    if (!marketDiscovery) return sendJson(res, 503, { error: 'La exploración de mercado no está disponible.', code: 'MARKET_DISCOVERY_UNAVAILABLE' });
+    if (method === 'POST' && parts.length === 3 && parts[2] === 'start') {
+      if (operations.lifecycle && operations.lifecycle.shuttingDown) {
+        return sendJson(res, 503, { error: 'Job Hunter se está cerrando.', code: 'APP_SHUTTING_DOWN' });
+      }
+      // No espera a que la exploracion termine: devuelve la corrida aceptada.
+      return sendJson(res, 202, await marketDiscovery.start());
+    }
+    if (method === 'GET' && parts.length === 3 && parts[2] === 'status') {
+      return sendJson(res, 200, marketDiscovery.getStatus());
+    }
+    if (method === 'POST' && parts.length === 3 && parts[2] === 'cancel') {
+      return sendJson(res, 202, marketDiscovery.cancel());
+    }
+    if (method === 'GET' && parts[2] === 'runs' && parts[3]) {
+      const runId = decodeURIComponent(parts[3]);
+      // El id nunca llega al sistema de archivos sin validarse.
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(runId)) return sendJson(res, 400, { error: 'Identificador de exploración inválido.', code: 'INVALID_RUN_ID' });
+      if (parts.length === 5 && parts[4] === 'proposal') {
+        const proposal = marketDiscovery.getProposal(runId);
+        if (!proposal) return sendJson(res, 404, { error: 'No hay propuesta para esa exploración.', code: 'PROPOSAL_NOT_FOUND' });
+        return sendJson(res, 200, proposal);
+      }
+      if (parts.length === 4) {
+        const run = marketDiscovery.getRun(runId);
+        if (!run) return sendJson(res, 404, { error: 'Exploración no encontrada.', code: 'RUN_NOT_FOUND' });
+        return sendJson(res, 200, run);
+      }
+    }
   }
 
   // GET /api/jobs
@@ -316,7 +352,9 @@ function createServer(options = {}) {
   const scheduler = options.scheduler || createLocalScheduler({ scheduleStore, huntRunManager, browserInstallManager });
   const telegramService = options.telegramService || createTelegramService({ huntRunManager });
   const lifecycle = options.lifecycle || { shuttingDown: false };
-  const operations = { runtimeService, browserInstallManager, scheduler, telegramService, lifecycle };
+  const marketDiscoveryRunManager = options.marketDiscoveryRunManager
+    || createMarketDiscoveryRunManager({ setupService });
+  const operations = { runtimeService, browserInstallManager, scheduler, telegramService, lifecycle, marketDiscoveryRunManager };
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     try {
@@ -383,6 +421,7 @@ function installShutdownHandlers(server, options = {}) {
   const telegramService = options.telegramService;
   const browserInstallManager = options.browserInstallManager;
   const huntRunManager = options.huntRunManager;
+  const marketDiscovery = options.marketDiscoveryRunManager;
   const lifecycle = options.lifecycle || { shuttingDown: false };
   const shutdownTimeoutMs = options.shutdownTimeoutMs === undefined ? 30000 : options.shutdownTimeoutMs;
   const scheduleTimeout = options.setTimeout || setTimeout;
@@ -395,6 +434,10 @@ function installShutdownHandlers(server, options = {}) {
     process.removeListener('SIGINT', shutdown);
     process.removeListener('SIGTERM', shutdown);
     if (huntRunManager && huntRunManager.stopAccepting) huntRunManager.stopAccepting();
+    // Market Discovery se cancela y limpia lo SUYO: su gestor cierra su navegador
+    // y libera su propia propiedad. No se toca ninguna otra operacion.
+    if (marketDiscovery && marketDiscovery.stopAccepting) marketDiscovery.stopAccepting();
+    try { if (marketDiscovery && marketDiscovery.cancel) marketDiscovery.cancel(); } catch (_) { console.error('[shutdown] No se pudo cancelar la exploración de mercado limpiamente.'); }
     try { if (scheduler) scheduler.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el scheduler limpiamente.'); }
     try { if (telegramService) await telegramService.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el control remoto de Telegram limpiamente.'); }
     try { if (browserInstallManager && browserInstallManager.stop) browserInstallManager.stop(); } catch (_) { console.error('[shutdown] No se pudo detener el instalador de Chromium limpiamente.'); }
@@ -407,6 +450,15 @@ function installShutdownHandlers(server, options = {}) {
       ]);
       if (timeout) cancelTimeout(timeout);
       if (timedOut) console.error('[shutdown] El hunt sigue activo después del tiempo de espera; no se lo cancela ni se elimina su lock.');
+    }
+    if (marketDiscovery && marketDiscovery.waitForIdle) {
+      let mdTimeout;
+      const mdTimedOut = await Promise.race([
+        marketDiscovery.waitForIdle().then(() => false),
+        new Promise((resolve) => { mdTimeout = scheduleTimeout(() => resolve(true), shutdownTimeoutMs); }),
+      ]);
+      if (mdTimeout) cancelTimeout(mdTimeout);
+      if (mdTimedOut) console.error('[shutdown] La exploración de mercado sigue activa después del tiempo de espera.');
     }
     await new Promise((resolve) => { if (!server.listening) return resolve(); server.close(resolve); });
   };
@@ -429,15 +481,18 @@ if (require.main === module) {
   const huntRunManager = createHuntRunManager({ setupService, sessionService: linkedinSessionService });
   const scheduler = createLocalScheduler({ scheduleStore, huntRunManager, browserInstallManager });
   const telegramService = createTelegramService({ huntRunManager });
+  // Se construye aqui (y no solo dentro del server) para que el apagado ordenado
+  // reciba EL MISMO gestor que atiende la API.
+  const marketDiscoveryRunManager = createMarketDiscoveryRunManager({ setupService });
   const lifecycle = { shuttingDown: false };
   try {
-    const server = startServer({ setupService, linkedinSessionService, huntRunManager, scheduleStore, scheduler, telegramService, browserInstallManager, lifecycle });
+    const server = startServer({ setupService, linkedinSessionService, huntRunManager, scheduleStore, scheduler, telegramService, browserInstallManager, marketDiscoveryRunManager, lifecycle });
     try { scheduler.start(); }
     catch (error) { console.error(`[scheduler] ${error.code || 'INVALID_SCHEDULE'}: configuración inválida; scheduler desactivado.`); }
     // Sin control remoto configurado esto es un no-op y no genera trafico.
     try { telegramService.start(); }
     catch (error) { console.error('[telegram] no se pudo iniciar el control remoto; Job Hunter sigue funcionando.'); }
-    installShutdownHandlers(server, { linkedinSessionService, scheduler, telegramService, browserInstallManager, huntRunManager, lifecycle });
+    installShutdownHandlers(server, { linkedinSessionService, scheduler, telegramService, browserInstallManager, huntRunManager, marketDiscoveryRunManager, lifecycle });
   } catch (error) {
     console.error(startupErrorMessage(error));
     process.exitCode = 1;
