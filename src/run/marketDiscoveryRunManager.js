@@ -77,6 +77,20 @@ function createMarketDiscoveryRunManager(options = {}) {
       const locations = getUserConfig().search.locations;
       return { location: Array.isArray(locations) && locations[0] ? locations[0] : null };
     });
+  // MD7.2: las queries ACTIVAS de Hunter, SOLO LECTURA, para que MD6 pueda
+  // compararlas con lo observado. No se ejecutan, no se modifican y no acoplan
+  // esta corrida al pipeline de Hunter: es una foto para un informe neutral.
+  // Si no se pueden leer, la comparacion queda en null en vez de inventarse.
+  const resolveCurrentQueries = options.resolveCurrentQueries
+    || (() => {
+      try {
+        const { getUserConfig } = require('../config/userConfig');
+        const groups = getUserConfig().search.queryGroups;
+        return Array.isArray(groups) ? { queryGroups: groups } : null;
+      } catch (error) {
+        return null;
+      }
+    });
   const explorationBudget = options.explorationBudget;
 
   // Sesion de navegador propia de Market Discovery: UNA sola para toda la corrida.
@@ -261,7 +275,7 @@ function createMarketDiscoveryRunManager(options = {}) {
       const compatible = exploration.postings.filter((posting) => posting.classification === 'COMPATIBLE').length;
       if (compatible > 0) {
         setPhase(PHASES.BUILDING_PORTFOLIO);
-        proposal = buildPortfolio({ exploration, profile });
+        proposal = buildPortfolio({ exploration, profile, currentQueries: resolveCurrentQueries() });
         current.progress.selectedQueries = proposal.selectedQueries.length;
         runStore.writeArtifact(runId, 'proposal', { runId, proposal });
       }

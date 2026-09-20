@@ -54,6 +54,19 @@ const POLICY = Object.freeze({
   // evidencia compatible nueva => saturado.
   saturationOverlapRatio: 0.8,
   saturationConsecutiveSearches: 2,
+  // --- MD7.2: reparto ADAPTATIVO del mismo presupuesto inicial de evaluacion.
+  //
+  // El reparto era round-robin puro, asi que una familia que solo devuelve
+  // ofertas incompatibles gastaba tantos turnos como una que si produce
+  // evidencia. Esto NO cambia ningun presupuesto: cambia a quien se le dan los
+  // turnos que ya existian.
+  //
+  // EXPLORAR: toda familia tiene garantizada esta muestra minima antes de que
+  // nadie reciba un turno extra. Una o dos ofertas malas no descartan a nadie.
+  minFamilyEvaluationSample: 4,
+  // EXPLOTAR: superada la muestra minima, las familias SIN evidencia compatible
+  // solo reciben una sonda cada N rondas, en vez de un turno por ronda.
+  zeroYieldProbeInterval: 3,
   // Un termino necesita evidencia de al menos 2 ofertas distintas...
   minExpansionPostings: 2,
   // ...y de 2 empresas distintas, SOLO si al menos 2 de esas ofertas declaran empresa.

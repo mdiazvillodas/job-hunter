@@ -72,6 +72,8 @@ function createExplorationEngine(options = {}) {
     let detailFetches = 0;
     const detailCounters = { available: 0, unavailable: 0, failed: 0 };
     const detailFailures = [];
+    // MD7.2: por que cada familia recibio los turnos de evaluacion que recibio.
+    const initialAllocation = new Map();
 
     const seedPlan = planSeeds(profile);
     const families = seedPlan.seeds.map((seed, index) => ({
@@ -172,29 +174,99 @@ function createExplorationEngine(options = {}) {
 
     // Evaluacion JUSTA: round-robin por grupo. Un duplicado no gasta evaluacion,
     // solo avanza el cursor, asi que el turno se reparte por EVALUACIONES reales.
-    async function evaluateFairly(groups, allowance) {
+    //
+    // MD7.2: con `adaptive`, el reparto tiene dos fases sobre el MISMO presupuesto:
+    //   EXPLORAR  -> round-robin puro hasta que cada familia alcanza su muestra
+    //                minima (o se queda sin candidatos). Nadie es descartado por
+    //                uno o dos resultados malos.
+    //   EXPLOTAR  -> los turnos restantes van a las familias que YA produjeron
+    //                evidencia compatible; las de rendimiento cero reciben una
+    //                sonda acotada cada N rondas, no un turno por ronda.
+    // ARRANQUE EN FRIO: si NINGUNA familia tiene evidencia compatible no hay nada
+    // que explotar, asi que se sigue repartiendo por igual. La politica nunca
+    // puede impedir encontrar la primera oferta compatible.
+    async function evaluateFairly(groups, allowance, options = {}) {
+      const adaptive = options.adaptive === true && groups.length > 1;
       const cursors = groups.map(() => 0);
+      // Turnos REALMENTE pagados por cada grupo (un duplicado no paga turno).
+      const turns = groups.map(() => 0);
+      const probes = groups.map(() => 0);
+      const phases = groups.map(() => null);
       let used = 0;
+      let exploitRound = 0;
       const unevaluatedRemains = () => groups.some((group) => group.keys.some((key) => {
         const record = postings.get(key);
         return record && !record.evaluated;
       }));
+
+      // Avanza el cursor por encima de lo ya evaluado y DEVUELVE el siguiente
+      // candidato sin consumirlo. Es idempotente: mirar no gasta el turno.
+      function peek(g) {
+        const queue = groups[g].keys;
+        while (cursors[g] < queue.length) {
+          const record = postings.get(queue[cursors[g]]);
+          if (record && !record.evaluated) return record;
+          cursors[g] += 1;
+        }
+        return null;
+      }
+      // Evidencia OBSERVADA por el grupo, la haya pagado el o no: una oferta
+      // compartida entre familias cuenta para ambas (igual que la atribucion del
+      // libro mayor) y no se vuelve a evaluar ni se paga dos veces.
+      function observed(g, predicate) {
+        let n = 0;
+        for (const key of groups[g].keys) {
+          const record = postings.get(key);
+          if (record && record.evaluated && predicate(record)) n += 1;
+        }
+        return n;
+      }
+      const evaluatedIn = (g) => observed(g, () => true);
+      const compatibleIn = (g) => observed(g, (record) => record.classification === 'COMPATIBLE');
+
+      // Orden de grupos elegibles en esta ronda. Determinista: siempre el orden
+      // de las familias (rango de semilla), nunca aleatorio.
+      function allocationOrder() {
+        const all = groups.map((_, index) => index);
+        if (!adaptive) return all;
+        const pending = all.filter((g) => peek(g) !== null);
+        const belowMinimum = pending.filter((g) => evaluatedIn(g) < POLICY.minFamilyEvaluationSample);
+        if (belowMinimum.length) {
+          for (const g of belowMinimum) phases[g] = 'EXPLORE';
+          return belowMinimum;
+        }
+        const productive = pending.filter((g) => compatibleIn(g) > 0);
+        // Arranque en frio: sin evidencia compatible en ninguna familia se
+        // mantiene el reparto equitativo.
+        if (!productive.length) {
+          for (const g of pending) phases[g] = 'EXPLORE';
+          return pending;
+        }
+        for (const g of productive) phases[g] = 'EXPLOIT';
+        const probing = exploitRound % POLICY.zeroYieldProbeInterval === 0
+          ? pending.filter((g) => compatibleIn(g) === 0)
+          : [];
+        for (const g of probing) { phases[g] = 'PROBE'; probes[g] += 1; }
+        exploitRound += 1;
+        return productive.concat(probing);
+      }
+
       while (used < allowance) {
+        let sweep = allocationOrder().filter((g) => peek(g) !== null);
+        // Si la politica no deja a nadie con candidatos, no se desperdicia
+        // presupuesto: se vuelve a abrir a todos los grupos que aun tengan cola.
+        if (!sweep.length) sweep = groups.map((_, index) => index).filter((g) => peek(g) !== null);
+        if (!sweep.length) break;
         let progressed = false;
-        for (let g = 0; g < groups.length; g += 1) {
+        for (const g of sweep) {
           if (used >= allowance) break;
-          if (checkStop()) return { used, exhausted: false };
-          const queue = groups[g].keys;
-          let picked = null;
-          while (cursors[g] < queue.length) {
-            const key = queue[cursors[g]];
-            cursors[g] += 1;
-            const record = postings.get(key);
-            if (record && !record.evaluated) { picked = record; break; }
-          }
+          if (checkStop()) return { used, exhausted: false, allocation: buildAllocation() };
+          const picked = peek(g);
           if (!picked) continue;
+          cursors[g] += 1;
+          turns[g] += 1;
           progressed = true;
-          if (evaluationsUsed >= budget.maxEvaluations) { stop = STOP_REASONS.BUDGET_EXHAUSTED; return { used, exhausted: true }; }
+          if (evaluationsUsed >= budget.maxEvaluations) { stop = STOP_REASONS.BUDGET_EXHAUSTED; return { used, exhausted: true, allocation: buildAllocation() }; }
           picked.evaluated = true;
           used += 1;
           evaluationsUsed += 1;
@@ -206,9 +278,9 @@ function createExplorationEngine(options = {}) {
             picked.detailAttempted = true;
             const enriched = await enrich(picked, { page, signal, owner });
             picked.detailOutcome = enriched ? enriched.outcome : DETAIL_OUTCOMES.DETAIL_FAILED;
-            if (picked.detailOutcome === DETAIL_OUTCOMES.CANCELLED) { stop = STOP_REASONS.CANCELLED; return { used, exhausted: false }; }
-            if (picked.detailOutcome === DETAIL_OUTCOMES.LOGIN_REQUIRED) { stop = STOP_REASONS.LOGIN_REQUIRED; return { used, exhausted: false }; }
-            if (picked.detailOutcome === DETAIL_OUTCOMES.CHECKPOINT_REQUIRED) { stop = STOP_REASONS.CHECKPOINT_REQUIRED; return { used, exhausted: false }; }
+            if (picked.detailOutcome === DETAIL_OUTCOMES.CANCELLED) { stop = STOP_REASONS.CANCELLED; return { used, exhausted: false, allocation: buildAllocation() }; }
+            if (picked.detailOutcome === DETAIL_OUTCOMES.LOGIN_REQUIRED) { stop = STOP_REASONS.LOGIN_REQUIRED; return { used, exhausted: false, allocation: buildAllocation() }; }
+            if (picked.detailOutcome === DETAIL_OUTCOMES.CHECKPOINT_REQUIRED) { stop = STOP_REASONS.CHECKPOINT_REQUIRED; return { used, exhausted: false, allocation: buildAllocation() }; }
             if (picked.detailOutcome === DETAIL_OUTCOMES.DETAIL_AVAILABLE) {
               picked.description = enriched.description;
               picked.descriptionAvailable = true;
@@ -217,9 +289,9 @@ function createExplorationEngine(options = {}) {
               // Sin descripcion se evalua igual, solo con la tarjeta. Nunca se inventa.
               if (picked.detailOutcome === DETAIL_OUTCOMES.DETAIL_UNAVAILABLE) detailCounters.unavailable += 1;
               else { detailCounters.failed += 1; detailFailures.push({ postingKey: picked.key, outcome: picked.detailOutcome }); }
-              if (detailFailures.length >= budget.maxDetailFailures) { stop = STOP_REASONS.DETAIL_FAILED; return { used, exhausted: false }; }
+              if (detailFailures.length >= budget.maxDetailFailures) { stop = STOP_REASONS.DETAIL_FAILED; return { used, exhausted: false, allocation: buildAllocation() }; }
             }
-            if (checkStop()) return { used, exhausted: false };
+            if (checkStop()) return { used, exhausted: false, allocation: buildAllocation() };
           }
 
           let assessment = null;
@@ -243,8 +315,8 @@ function createExplorationEngine(options = {}) {
             const failure = { postingKey: picked.key, searchId: picked.firstSearchId, ...toSafeSemanticDiagnostic(error) };
             semanticFailures.push(failure);
             picked.classification = null;
-            if (isCancelled(signal)) { stop = STOP_REASONS.CANCELLED; return { used, exhausted: false }; }
-            if (semanticFailures.length >= budget.maxSemanticFailures) { stop = STOP_REASONS.SEMANTIC_FAILED; return { used, exhausted: false }; }
+            if (isCancelled(signal)) { stop = STOP_REASONS.CANCELLED; return { used, exhausted: false, allocation: buildAllocation() }; }
+            if (semanticFailures.length >= budget.maxSemanticFailures) { stop = STOP_REASONS.SEMANTIC_FAILED; return { used, exhausted: false, allocation: buildAllocation() }; }
             continue;
           }
           picked.classification = assessment.classification;
@@ -268,7 +340,40 @@ function createExplorationEngine(options = {}) {
         }
         if (!progressed) break;
       }
-      return { used, exhausted: unevaluatedRemains() };
+      return { used, exhausted: unevaluatedRemains(), allocation: buildAllocation() };
+
+      // Por que cada grupo recibio los turnos que recibio. Solo agregados: ni
+      // descripciones, ni salida del modelo, ni texto de oferta.
+      function buildAllocation() {
+        return groups.map((group, g) => {
+          const remaining = group.keys.filter((key) => { const r = postings.get(key); return r && !r.evaluated; }).length;
+          const compatible = compatibleIn(g);
+          const evaluated = evaluatedIn(g);
+          // `state` es UNA sola cosa: la postura de reparto. Que la cola se haya
+          // agotado es un hecho aparte (remainingCandidates) y se anota en el
+          // motivo, para no perder POR QUE la familia recibio esos turnos.
+          let state;
+          let reason;
+          if (!adaptive) {
+            state = 'ROUND_ROBIN';
+            reason = 'single group: no adaptive allocation';
+          } else if (compatible > 0) {
+            state = 'PRIORITIZED';
+            reason = `${compatible} compatible in ${evaluated} evaluated: prioritized for the remaining turns`;
+          } else if (evaluated < POLICY.minFamilyEvaluationSample) {
+            state = 'MINIMUM_PENDING';
+            reason = `budget ended before the minimum sample of ${POLICY.minFamilyEvaluationSample} was completed`;
+          } else if (probes[g] > 0) {
+            state = 'DEPRIORITIZED';
+            reason = `no compatible evidence in ${evaluated} evaluated: probed once every ${POLICY.zeroYieldProbeInterval} rounds`;
+          } else {
+            state = 'MINIMUM_SAMPLE';
+            reason = `no compatible evidence in ${evaluated} evaluated: received the guaranteed minimum sample only`;
+          }
+          if (!remaining) reason += '; queue exhausted';
+          return { key: group.key, evaluationTurns: turns[g], observedEvaluated: evaluated, observedCompatible: compatible, probes: probes[g], remainingCandidates: remaining, minimumSample: POLICY.minFamilyEvaluationSample, minimumSampleMet: evaluated >= POLICY.minFamilyEvaluationSample, phase: phases[g] || 'EXPLORE', state, stateReason: reason };
+        });
+      }
     }
 
     // Saturacion: solo cuentan busquedas COMPLETADAS. Dos consecutivas con
@@ -311,8 +416,13 @@ function createExplorationEngine(options = {}) {
         key: spec.familyId,
         keys: (searches.find((entry) => entry.searchId === spec.searchId) || { resultKeys: [] }).resultKeys,
       }));
-      const pass = await evaluateFairly(groups, Math.min(budget.initialEvaluationReserve, budget.maxEvaluations));
+      const pass = await evaluateFairly(
+        groups,
+        Math.min(budget.initialEvaluationReserve, budget.maxEvaluations),
+        { adaptive: true }
+      );
       if (pass.exhausted) budgetLimited = true;
+      for (const row of pass.allocation || []) initialAllocation.set(row.key, row);
     }
 
     // ---------------- Fase 3: agregacion + elegibilidad de expansion.
@@ -430,6 +540,8 @@ function createExplorationEngine(options = {}) {
           searchIds: familySearches.map((entry) => entry.searchId),
           postingsObserved: [...postings.values()].filter((record) => record.familyIds.includes(family.familyId)).length,
           evaluations: familyEvaluations.length, classifications: tally,
+          // MD7.2: reparto adaptativo del presupuesto inicial de evaluacion.
+          allocation: initialAllocation.get(family.familyId) || null,
         };
       });
       const overlaps = [...postings.values()]
