@@ -21,6 +21,7 @@ const { createSemanticEvaluator } = require('../marketDiscovery/semanticEvaluato
 const { createExplorationEngine } = require('../marketDiscovery/explorationEngine');
 const { buildQueryPortfolio } = require('../marketDiscovery/queryPortfolio');
 const { createMarketDiscoveryRunStore } = require('../marketDiscovery/runStore');
+const { createDetailEnricher, DETAIL_OUTCOMES } = require('../marketDiscovery/detailEnricher');
 
 const STATUSES = Object.freeze({
   IDLE: 'IDLE', STARTING: 'STARTING', RUNNING: 'RUNNING', CANCELLING: 'CANCELLING',
@@ -37,13 +38,16 @@ const OUTCOME = Object.freeze({
   COMPLETED: STATUSES.COMPLETED, SATURATED: STATUSES.COMPLETED, BUDGET_EXHAUSTED: STATUSES.COMPLETED,
   CANCELLED: STATUSES.CANCELLED,
   LOGIN_REQUIRED: STATUSES.INTERRUPTED, CHECKPOINT_REQUIRED: STATUSES.INTERRUPTED, TIME_LIMIT: STATUSES.INTERRUPTED,
-  SOURCE_FAILED: STATUSES.FAILED, SEMANTIC_FAILED: STATUSES.FAILED,
+  SCOPE_NOT_VERIFIED: STATUSES.INTERRUPTED,
+  SOURCE_FAILED: STATUSES.FAILED, SEMANTIC_FAILED: STATUSES.FAILED, DETAIL_FAILED: STATUSES.FAILED,
 });
 
 const EMPTY_PROGRESS = Object.freeze({
   searchesCompleted: 0, searchesMax: null, initialSearches: 0, expansionSearches: 0,
   uniquePostings: 0, evaluationsCompleted: 0, evaluationsMax: null,
   compatible: 0, uncertain: 0, outOfScope: 0, selectedQueries: 0,
+  // MD7.1: detalle de oferta, contadores reales sin porcentajes inventados.
+  detailFetchesAttempted: 0, detailAvailable: 0, detailUnavailable: 0, detailFailed: 0,
 });
 
 // Diagnostico interno acotado: nunca el error crudo del navegador o del proveedor.
@@ -63,7 +67,16 @@ function createMarketDiscoveryRunManager(options = {}) {
   const loadProfile = options.profileLoader || deriveCurrentProfile;
   const planSeeds = options.seedPlanner || generateSeedPlan;
   const buildPortfolio = options.buildPortfolio || buildQueryPortfolio;
-  const filters = options.filters || {};
+  // El alcance externo de Market Discovery es SOLO query + ubicacion configurada.
+  // No hereda datePosted ni employmentType de Hunter (esto es investigacion de
+  // mercado, no caza de ofertas frescas), ni convierte la modalidad en filtro duro.
+  // Se resuelve EN CADA ARRANQUE para no congelar una configuracion obsoleta.
+  const resolveFilters = options.resolveFilters
+    || (options.filters ? () => options.filters : () => {
+      const { getUserConfig } = require('../config/userConfig');
+      const locations = getUserConfig().search.locations;
+      return { location: Array.isArray(locations) && locations[0] ? locations[0] : null };
+    });
   const explorationBudget = options.explorationBudget;
 
   // Sesion de navegador propia de Market Discovery: UNA sola para toda la corrida.
@@ -120,6 +133,21 @@ function createMarketDiscoveryRunManager(options = {}) {
     };
   }
 
+  // Contadores reales del detalle, sin tocar el contrato de MD5.
+  function instrumentEnricher(enricher) {
+    return {
+      enrich: async (posting, context) => {
+        current.progress.detailFetchesAttempted += 1;
+        const result = await enricher.enrich(posting, context);
+        const outcome = result && result.outcome;
+        if (outcome === DETAIL_OUTCOMES.DETAIL_AVAILABLE) current.progress.detailAvailable += 1;
+        else if (outcome === DETAIL_OUTCOMES.DETAIL_UNAVAILABLE) current.progress.detailUnavailable += 1;
+        else if (outcome === DETAIL_OUTCOMES.DETAIL_FAILED) current.progress.detailFailed += 1;
+        return result;
+      },
+    };
+  }
+
   async function start() {
     if (!accepting) throw operationalError('APP_SHUTTING_DOWN', 'Job Hunter se está cerrando.', 503);
     if (ACTIVE.has(current.status)) throw operationalError('MARKET_DISCOVERY_ALREADY_RUNNING', 'Ya hay una exploración de mercado en curso.');
@@ -135,6 +163,13 @@ function createMarketDiscoveryRunManager(options = {}) {
       seedPlan = planSeeds(profile);
     } catch (_) {
       throw operationalError('PROFILE_REQUIRED', 'El perfil necesario para explorar el mercado no está disponible.');
+    }
+    // Sin ubicacion configurada NO se busca: una busqueda sin geografia explora
+    // un mercado cualquiera. Se falla antes de abrir LinkedIn.
+    let filters;
+    try { filters = resolveFilters() || {}; } catch (_) { filters = {}; }
+    if (!filters.location || !String(filters.location).trim()) {
+      throw operationalError('LOCATION_REQUIRED', 'Configurá la ubicación de búsqueda antes de explorar el mercado.');
     }
 
     const runId = makeRunId();
@@ -160,7 +195,7 @@ function createMarketDiscoveryRunManager(options = {}) {
 
     const accepted = snapshot();
     // Arranque ASINCRONO: start() no espera a que termine la exploracion.
-    activePromise = orchestrate({ runId, owner, profile, seedPlan }).catch((error) => {
+    activePromise = orchestrate({ runId, owner, profile, seedPlan, filters }).catch((error) => {
       // Red de seguridad: ninguna rechazo sin manejar puede escapar de aqui.
       current.status = STATUSES.FAILED;
       current.reason = 'INTERNAL_ERROR';
@@ -172,7 +207,7 @@ function createMarketDiscoveryRunManager(options = {}) {
     return accepted;
   }
 
-  async function orchestrate({ runId, owner, profile, seedPlan }) {
+  async function orchestrate({ runId, owner, profile, seedPlan, filters }) {
     let session = null;
     let exploration = null;
     let proposal = null;
@@ -207,8 +242,11 @@ function createMarketDiscoveryRunManager(options = {}) {
         options.source || createLinkedinMarketSource(),
         options.evaluator || createSemanticEvaluator()
       );
+      // El enriquecedor usa la MISMA pagina/sesion y la misma propiedad: no abre
+      // navegadores ni adquiere ni libera nada.
+      const enricher = instrumentEnricher(options.enricher || createDetailEnricher());
       const engine = options.explorationEngine || createExplorationEngine({
-        source: wired.source, evaluator: wired.evaluator, seedPlanner: () => seedPlan, clock,
+        source: wired.source, evaluator: wired.evaluator, enricher, seedPlanner: () => seedPlan, clock,
       });
       exploration = await engine.explore({
         owner, page: session.page, profile, filters, signal: controller.signal, budget: explorationBudget,

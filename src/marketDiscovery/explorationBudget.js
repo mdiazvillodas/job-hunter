@@ -18,6 +18,12 @@ const STOP_REASONS = Object.freeze({
   SOURCE_FAILED: 'SOURCE_FAILED',
   SEMANTIC_FAILED: 'SEMANTIC_FAILED',
   TIME_LIMIT: 'TIME_LIMIT',
+  // La busqueda se ejecuto pero LinkedIn no confirmo la ubicacion pedida: no se
+  // explora un mercado distinto del configurado.
+  SCOPE_NOT_VERIFIED: 'SCOPE_NOT_VERIFIED',
+  // Demasiados detalles de oferta fallaron seguidos: se corta en vez de seguir
+  // evaluando a ciegas solo con titulos.
+  DETAIL_FAILED: 'DETAIL_FAILED',
 });
 // Solo COMPLETED es un final normal; todo lo demas deja evidencia parcial.
 const TERMINAL_OK = Object.freeze([STOP_REASONS.COMPLETED, STOP_REASONS.SATURATED]);
@@ -35,6 +41,9 @@ const HARD_CAPS = Object.freeze({
   maxDurationMs: 45 * 60 * 1000,
   maxSourceFailures: 2,
   maxSemanticFailures: 3,
+  // Un detalle por candidato evaluado como maximo: nunca mas que evaluaciones.
+  maxDetailFetches: 60,
+  maxDetailFailures: 5,
 });
 
 const DEFAULT_BUDGET = Object.freeze({ ...HARD_CAPS });
@@ -60,7 +69,14 @@ function resolveBudget(overrides = {}) {
   for (const key of Object.keys(overrides)) assert(NUMERIC_KEYS.includes(key), `unknown budget key: ${key}`);
   const budget = {};
   for (const key of NUMERIC_KEYS) {
-    const value = overrides[key] === undefined ? DEFAULT_BUDGET[key] : overrides[key];
+    let fallback = DEFAULT_BUDGET[key];
+    // El detalle solo sirve para evaluar: si el llamador baja las evaluaciones,
+    // el tope de detalles baja con ellas sin tener que declararlo.
+    if (key === 'maxDetailFetches') {
+      const evaluations = overrides.maxEvaluations === undefined ? DEFAULT_BUDGET.maxEvaluations : overrides.maxEvaluations;
+      if (Number.isInteger(evaluations)) fallback = Math.min(fallback, evaluations);
+    }
+    const value = overrides[key] === undefined ? fallback : overrides[key];
     assert(Number.isInteger(value) && value >= 0, `${key} must be a non-negative integer`);
     assert(value <= HARD_CAPS[key], `${key} must not exceed ${HARD_CAPS[key]}`);
     budget[key] = value;
@@ -71,6 +87,10 @@ function resolveBudget(overrides = {}) {
     'initial + expansion searches must not exceed maxSearches');
   assert(budget.initialEvaluationReserve + budget.expansionEvaluationReserve <= budget.maxEvaluations,
     'evaluation reserves must not exceed maxEvaluations');
+  // El detalle solo existe para alimentar una evaluacion: no puede haber mas
+  // aperturas de oferta que evaluaciones semanticas.
+  assert(budget.maxDetailFetches <= budget.maxEvaluations,
+    'maxDetailFetches must not exceed maxEvaluations');
   return freeze(budget);
 }
 

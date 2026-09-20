@@ -190,13 +190,24 @@ function createLinkedinMarketSource(options = {}) {
       const scope = await collectSearch(request.page, identity.query, requestedFilters, scopeOptions);
       throwIfCancelled(signal);
       const metadata = (scope && scope.metadata) || {};
+      const observedScope = toObservedScope(requestedFilters, metadata.filtersActive);
+      // FALLA CERRADO: si se pidio una ubicacion y LinkedIn no la confirma, la
+      // busqueda NO devuelve ofertas. Explorar un mercado que no es el
+      // configurado es peor que no explorar.
+      if (requestedFilters.location && observedScope.location !== SCOPE.VERIFIED) {
+        return deepFreeze({
+          ...base, status: STATUS.INTERRUPTED, partial: false, observedScope,
+          results: [], metrics: { rawCards: 0, uniqueResults: 0, duplicatesWithinSearch: 0, pagesVisited: 0, limitReached: false },
+          stopReason: 'scope_not_verified', challenge: null, finishedAt: clock().toISOString(),
+        });
+      }
       const results = toResults(identity, scope && scope.jobs);
       const rawCards = Number.isFinite(metadata.rawResults) ? metadata.rawResults : results.length;
       return deepFreeze({
         ...base,
         status: STATUS.COMPLETED,
         partial: false,
-        observedScope: toObservedScope(requestedFilters, metadata.filtersActive),
+        observedScope,
         results,
         metrics: {
           rawCards,

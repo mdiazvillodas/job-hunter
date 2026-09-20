@@ -241,4 +241,8 @@ async function collectJobDetails(page, listingJobs, options = {}) {
 
 module.exports = {
   collectJobDetails,
+  // Unidad reutilizable de UNA oferta. Ya existia; solo se expone para que
+  // Market Discovery pueda enriquecer un candidato sin pasar por el bucle de
+  // Hunter. El comportamiento de collectJobDetails no cambia.
+  collectJobDetail,
 };

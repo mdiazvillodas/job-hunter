@@ -17,6 +17,7 @@ const { freeze, assert, normalize } = require('./domain');
 const { generateSeedPlan } = require('./seedGenerator');
 const { assertMarketDiscoveryOwner } = require('./linkedinMarketSource');
 const { STOP_REASONS, POLICY, resolveBudget } = require('./explorationBudget');
+const { DETAIL_OUTCOMES } = require('./detailEnricher');
 
 const INITIAL_DEPTH = 0;
 const EXPANSION_DEPTH = 1;
@@ -38,6 +39,11 @@ function createExplorationEngine(options = {}) {
   assert(evaluator && typeof evaluator.evaluatePosting === 'function', 'a semantic evaluator is required');
   const planSeeds = options.seedPlanner || generateSeedPlan;
   const clock = options.clock || (() => new Date());
+  // MD7.1: enriquecedor OPCIONAL e inyectable. Sin el, la exploracion se comporta
+  // exactamente como antes (solo tarjeta), asi que MD5 sigue siendo compatible.
+  const enrich = options.enricher && typeof options.enricher.enrich === 'function'
+    ? (posting, context) => options.enricher.enrich(posting, context)
+    : null;
 
   async function explore(request = {}) {
     const owner = assertMarketDiscoveryOwner(request.owner);
@@ -61,6 +67,10 @@ function createExplorationEngine(options = {}) {
     let stop = null;                // motivo terminal, si se alcanza uno
     let candidates = [];            // terminos agregados, elegibles o no
     const selectedTerms = [];       // los que reciben una busqueda de expansion
+    // MD7.1: contabilidad acotada del detalle de oferta.
+    let detailFetches = 0;
+    const detailCounters = { available: 0, unavailable: 0, failed: 0 };
+    const detailFailures = [];
 
     const seedPlan = planSeeds(profile);
     const families = seedPlan.seeds.map((seed, index) => ({
@@ -110,6 +120,9 @@ function createExplorationEngine(options = {}) {
         resultKeys: [], newPostingKeys: [], overlapRatio: null, newCompatible: 0,
         countedForSaturation: false,
         metrics: outcome.metrics ? { ...outcome.metrics } : null,
+        // Alcance PEDIDO y OBSERVADO: sin esto no se puede auditar despues que
+        // ubicacion se pidio ni si LinkedIn la confirmo.
+        requestedScope: outcome.requestedScope ? { ...outcome.requestedScope } : null,
         observedScope: outcome.observedScope ? { ...outcome.observedScope } : null,
       };
       searches.push(entry);
@@ -119,7 +132,9 @@ function createExplorationEngine(options = {}) {
         const code = outcome.challenge && outcome.challenge.code;
         stop = code === 'LOGIN_REQUIRED' ? STOP_REASONS.LOGIN_REQUIRED
           : code === 'CHECKPOINT_REQUIRED' ? STOP_REASONS.CHECKPOINT_REQUIRED
-            : STOP_REASONS.SOURCE_FAILED;
+            // Ubicacion no confirmada: motivo propio, nunca un fallo generico.
+            : outcome.stopReason === 'scope_not_verified' ? STOP_REASONS.SCOPE_NOT_VERIFIED
+              : STOP_REASONS.SOURCE_FAILED;
         return entry;
       }
       if (outcome.status !== 'COMPLETED') {
@@ -182,6 +197,30 @@ function createExplorationEngine(options = {}) {
           picked.evaluated = true;
           used += 1;
           evaluationsUsed += 1;
+
+          // --- MD7.1: el detalle se busca AQUI, justo antes de evaluar, y solo
+          // para este candidato ya deduplicado. Un unico intento, sin reintentos.
+          if (enrich && detailFetches < budget.maxDetailFetches) {
+            detailFetches += 1;
+            picked.detailAttempted = true;
+            const enriched = await enrich(picked, { page, signal, owner });
+            picked.detailOutcome = enriched ? enriched.outcome : DETAIL_OUTCOMES.DETAIL_FAILED;
+            if (picked.detailOutcome === DETAIL_OUTCOMES.CANCELLED) { stop = STOP_REASONS.CANCELLED; return { used, exhausted: false }; }
+            if (picked.detailOutcome === DETAIL_OUTCOMES.LOGIN_REQUIRED) { stop = STOP_REASONS.LOGIN_REQUIRED; return { used, exhausted: false }; }
+            if (picked.detailOutcome === DETAIL_OUTCOMES.CHECKPOINT_REQUIRED) { stop = STOP_REASONS.CHECKPOINT_REQUIRED; return { used, exhausted: false }; }
+            if (picked.detailOutcome === DETAIL_OUTCOMES.DETAIL_AVAILABLE) {
+              picked.description = enriched.description;
+              picked.descriptionAvailable = true;
+              detailCounters.available += 1;
+            } else {
+              // Sin descripcion se evalua igual, solo con la tarjeta. Nunca se inventa.
+              if (picked.detailOutcome === DETAIL_OUTCOMES.DETAIL_UNAVAILABLE) detailCounters.unavailable += 1;
+              else { detailCounters.failed += 1; detailFailures.push({ postingKey: picked.key, outcome: picked.detailOutcome }); }
+              if (detailFailures.length >= budget.maxDetailFailures) { stop = STOP_REASONS.DETAIL_FAILED; return { used, exhausted: false }; }
+            }
+            if (checkStop()) return { used, exhausted: false };
+          }
+
           let assessment = null;
           try {
             assessment = await evaluator.evaluatePosting({
@@ -416,11 +455,21 @@ function createExplorationEngine(options = {}) {
           countedForSaturation: entry.countedForSaturation === true,
           saturationQualified: entry.saturationQualified === true,
           uniquePostingCapReached: entry.capReached === true,
+          requestedScope: entry.requestedScope, observedScope: entry.observedScope,
+          metrics: entry.metrics,
         })),
+        // Metadatos de tarjeta seguros: suficientes para auditar geografia y
+        // atribucion despues. Sin HTML, sin URLs de tracking, sin sesion.
         postings: [...postings.values()].map((record) => ({
-          postingKey: record.key, postingId: record.postingId, company: record.company,
+          postingKey: record.key, postingId: record.postingId, title: record.title,
+          company: record.company, location: record.location, url: record.url,
           firstSearchId: record.firstSearchId, searchIds: [...record.searchIds], familyIds: [...record.familyIds],
           depth: record.depth, evaluated: record.evaluated, classification: record.classification,
+          // Trazabilidad del detalle SIN guardar la descripcion completa.
+          detailAttempted: record.detailAttempted === true,
+          detailOutcome: record.detailOutcome || null,
+          descriptionAvailable: record.descriptionAvailable === true,
+          descriptionLength: typeof record.description === 'string' ? record.description.length : 0,
         })),
         overlaps,
         evaluations,
@@ -430,7 +479,12 @@ function createExplorationEngine(options = {}) {
           candidates: candidatesSnapshot(),
           selected: selectedTerms.map((candidate) => ({ termId: candidate.termId, expression: candidate.expression, type: candidate.type })),
         },
-        failures: { source: sourceFailures, semantic: semanticFailures },
+        failures: { source: sourceFailures, semantic: semanticFailures, detail: detailFailures },
+        detail: {
+          attempted: detailFetches, available: detailCounters.available,
+          unavailable: detailCounters.unavailable, failed: detailCounters.failed,
+          maxDetailFetches: budget.maxDetailFetches, maxDetailFailures: budget.maxDetailFailures,
+        },
         budget: {
           limits: { ...budget }, policy: { ...POLICY, searchLimits: { ...POLICY.searchLimits } },
           consumed: {

@@ -149,3 +149,157 @@ unchanged.
 session, clock, id generators and persistence root. No LinkedIn, no Chromium, no
 OpenAI, no external network. Includes an end-to-end fake run proving the MD1→MD7
 composition and that Hunter's config file is byte-for-byte unchanged.
+
+---
+
+# MD7.0.1 — strict configured geography
+
+A correction found by the first controlled real run.
+
+## The bug
+
+`createServer` built the run manager without a `filters` option, so
+`options.filters || {}` resolved to `{}`, MD3b normalized `location` to `null`,
+and `initializeSearchWithFilters` skipped `applyLocationFilter` entirely. Every
+search ran as a bare `?keywords=…` with no geographic scope, and LinkedIn
+returned whatever market it chose.
+
+**Run `mdrun_ce229f36dd9d09b3` is therefore INFRASTRUCTURE VALIDATION ONLY and
+INVALID AS GEOGRAPHIC MARKET EVIDENCE.** Its lifecycle, ownership, fairness,
+dedup and persistence findings stand; its market sample, compatibility counts,
+terminology and query-overlap evidence must not be read as Barcelona evidence.
+The artifacts are kept unmodified as diagnostic material; no migration is done.
+
+## Location source
+
+Market Discovery introduces **no second location setting**. It derives the scope
+from the canonical `search.locations[0]` of the user configuration, resolved
+**at run start** — not captured at server startup — so a configuration change
+takes effect on the next run. No hardcoded city, no inference from the LinkedIn
+account, no browser-profile fallback.
+
+With no configured location the run fails with `LOCATION_REQUIRED` **before**
+ownership is taken and before the browser opens. An unscoped search is never
+performed.
+
+## Discovery filter policy
+
+The external scope is **query + configured location, and nothing else**.
+
+| Filter | Market Discovery |
+|---|---|
+| location | **required**, from user config |
+| datePosted | **not inherited** — a 7-day window would starve vocabulary evidence |
+| employmentType | **not inherited** — this is market research, not fresh-job hunting |
+| modality (`hybrid`) | **never a hard LinkedIn filter**; it stays semantic context in the MD1 profile map with `enforcement: 'unspecified'` |
+
+Hunter is unchanged and keeps its own location + `Full-time` + `Past week`.
+
+## Fail closed
+
+When a location is requested and `observedScope.location !== VERIFIED`, MD3b
+returns `INTERRUPTED` / `scope_not_verified` with **zero results**. MD5 maps that
+to the stable reason `SCOPE_NOT_VERIFIED` — deliberately not collapsed into
+`SOURCE_FAILED` — and MD7 reports `INTERRUPTED` / `SCOPE_NOT_VERIFIED`. No
+posting from an unconfirmed market is ever evaluated, no terminology is
+promoted, no expansion happens and no proposal is built.
+
+## Auditability
+
+Persisted search records now carry `requestedScope`, `observedScope` and
+`metrics`, so "what location did this search ask for, and did LinkedIn confirm
+it?" is answerable from artifacts alone. Persisted postings now carry `title`,
+`location` and `url` alongside identity and attribution — the gap that made the
+first geography audit inconclusive. Still no cookies, session, tracking
+parameters or HTML; the verifier's internal LinkedIn URL remains inside the
+LinkedIn layer.
+
+## Tests
+
+`npm run test:market-geography` — 11 deterministic tests, including a production
+regression that drives the real wiring and asserts `filters.location` is the
+configured value and never `null`/`undefined`/`""`, then proves an `UNVERIFIED`
+scope lets **zero** postings reach semantic evaluation.
+
+---
+
+# MD7.1 — detail enrichment
+
+The first real run produced **zero COMPATIBLE** postings because MD3b returns
+card metadata only: MD4 saw `descriptionAvailable: false` everywhere and, per its
+own grounding rule, correctly answered `UNCERTAIN`. MD7.1 supplies the missing
+evidence **without touching MD4's gate**.
+
+## Insertion point
+
+Enrichment happens inside MD5's fair evaluation loop, on the single line where a
+globally deduplicated candidate reaches its turn — after `picked.evaluated = true`
+and immediately before the evaluator call. Never during search collection, never
+for every card, never family-by-family in advance.
+
+Consequences, all tested: a posting seen by three searches is enriched **once**;
+a candidate never selected for evaluation gets **zero** detail fetches; and the
+round-robin order is unchanged (`A,B,C,A,B,A`), so detail latency cannot reorder
+or starve families.
+
+## Reuse
+
+`collectJobDetail` already existed in `src/linkedin/detailCollector.js` as the
+single-posting unit but was not exported. MD7.1 exports it — a four-line additive
+change with no behavioural effect — and `src/marketDiscovery/detailEnricher.js`
+is a thin adapter over it. Hunter's `collectJobDetails` loop is untouched. The
+adapter never imports the job repository, job service, Analyzer, pipeline or run
+manager.
+
+## Contract
+
+`enrich(posting, context) -> { outcome, description, descriptionAvailable, ... }`
+with outcomes `DETAIL_AVAILABLE`, `DETAIL_UNAVAILABLE`, `DETAIL_FAILED`,
+`LOGIN_REQUIRED`, `CHECKPOINT_REQUIRED`, `CANCELLED`. The context carries the
+**shared page**, the existing `MARKET_DISCOVERY` owner and the `AbortSignal`.
+
+The enricher never launches a browser, creates a context, acquires or releases
+ownership, or touches cookies — a structural test forbids those tokens outright.
+
+## Geography stays authoritative
+
+A search that is `SCOPE_NOT_VERIFIED` returns zero results, so no posting from it
+ever enters the pool and therefore none can be enriched: **0 details, 0
+evaluations, 0 expansions, 0 proposal**. The detail page's own location is kept
+as posting data and explicitly never redefines the search scope. A tested
+sequence proves search A → detail → search B still requests *and verifies* the
+configured location on B.
+
+## Budget and failure policy
+
+`maxDetailFetches` defaults to 60 and automatically follows `maxEvaluations`
+downward, so detail can never exceed the semantic budget; setting it higher
+explicitly is rejected. One attempt per candidate, no retry loop. Counters:
+attempted / available / unavailable / failed.
+
+`DETAIL_UNAVAILABLE` and `DETAIL_FAILED` fall back to card-only evaluation —
+nothing is invented — until **5** detail failures, at which point the run stops
+with the stable reason `DETAIL_FAILED`. A challenge or login wall is never
+degraded into a detail failure; both propagate as the existing interruptions.
+
+## Persistence
+
+Full descriptions are **not** persisted. Each posting records `detailAttempted`,
+`detailOutcome`, `descriptionAvailable` and `descriptionLength` — enough to audit
+what happened without storing job text — plus the run-level `detail` counters.
+No HTML, cookies, headers, tracking or secrets, asserted by scanning every
+persisted byte.
+
+## Progress
+
+Adds `detailFetchesAttempted`, `detailAvailable`, `detailUnavailable`,
+`detailFailed` alongside all existing counters. No invented percentages.
+
+## Tests
+
+`npm run test:market-detail` — 17 deterministic tests, including a fixture built
+on vocabulary observed in the first real run (`Project Manager Espacios
+Comerciales`): the card alone stays `UNCERTAIN`, and only the grounded
+description produces `COMPATIBLE`, which then yields promotable terminology, a
+depth-1 expansion whose postings are *also* enriched before evaluation, and an
+MD6 proposal with `applied: false`.

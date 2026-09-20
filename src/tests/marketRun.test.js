@@ -115,6 +115,11 @@ function bench(overrides = {}) {
     setupService: overrides.setupService || { getStatus: () => ({ readyForHunt: true }) },
     profileLoader: overrides.profileLoader || (() => PROFILE),
     seedPlanner: overrides.seedPlanner || (() => SEED_PLAN),
+    // Alcance fijado en el test: nunca depende de la configuracion real de la maquina.
+    resolveFilters: overrides.resolveFilters || (() => ({ location: 'Example region' })),
+    // Sin detalle real: estas pruebas son del ciclo de vida del gestor. MD7.1
+    // tiene su propia suite.
+    enricher: overrides.enricher || { enrich: async () => ({ outcome: 'DETAIL_UNAVAILABLE', description: null, descriptionAvailable: false }) },
     runStore: createMarketDiscoveryRunStore({ dataDir }),
     clock: () => new Date(0),
     makeRunId: overrides.makeRunId || (() => 'mdrun_test1'),
