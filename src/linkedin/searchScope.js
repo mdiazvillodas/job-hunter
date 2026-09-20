@@ -44,6 +44,75 @@ function debugLog(options, event) {
   }
 }
 
+// --- Coincidencia de ubicacion: configurada (humana) vs resuelta (localizada) ---
+//
+// LinkedIn devuelve la ubicacion YA LOCALIZADA al idioma de la cuenta: lo que el
+// usuario configura como "Barcelona, spain" se convierte en "Barcelona, Cataluña,
+// España". Comparar literalmente las dos cadenas no puede funcionar, asi que se
+// compara por TOKENS normalizados.
+//
+// LIMITACIONES DELIBERADAS (no es un traductor):
+//   - Solo se exige el PRIMER token significativo de la ubicacion configurada (la
+//     localidad). El pais no se comprueba, porque "spain" nunca casara con
+//     "España" sin un diccionario de traduccion, y aqui no se quiere uno.
+//   - Si la ubicacion configurada es un pais suelto ("España"), ese pais ES la
+//     localidad y se comprueba como tal.
+//   - La comparacion es por palabra completa, nunca por substring: "Barcelona"
+//     no puede darse por bueno con "Barceloneta".
+function normalizeLocationText(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function locationSegments(value) {
+  return String(value === null || value === undefined ? '' : value)
+    .split(',')
+    .map((segment) => normalizeLocationText(segment))
+    .filter(Boolean);
+}
+
+// El token de localidad es el primer segmento significativo de lo configurado.
+function configuredLocalityToken(location) {
+  const segments = locationSegments(location);
+  return segments.length ? segments[0] : null;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Palabra completa sobre texto ya normalizado: evita falsos positivos por
+// substring (Barceloneta, MadridSomething, ParisSomething...).
+function containsLocalityToken(token, candidate) {
+  const haystack = normalizeLocationText(candidate);
+  if (!token || !haystack) return false;
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(token)}(?![\\p{L}\\p{N}])`, 'u').test(haystack);
+}
+
+// True solo si el valor observado corresponde a la localidad configurada.
+function matchesConfiguredLocality(location, candidate) {
+  return containsLocalityToken(configuredLocalityToken(location), candidate);
+}
+
+// Ranking determinista de una sugerencia del typeahead frente a lo configurado:
+//   0 -> la localidad ES el primer segmento (opcion a nivel de ciudad)
+//   1 -> la localidad aparece como palabra completa mas adelante (p.ej. un codigo
+//        postal: "08001, Barcelona, Catalonia, Spain")
+//   null -> no corresponde a la localidad configurada
+function rankLocationCandidate(location, candidateText) {
+  const token = configuredLocalityToken(location);
+  if (!token) return null;
+  const segments = locationSegments(candidateText);
+  if (!segments.length) return null;
+  if (segments[0] === token) return 0;
+  return containsLocalityToken(token, candidateText) ? 1 : null;
+}
+
 const LOCATION_INPUT_SELECTORS = [
   'input[id^="jobs-search-box-location-id-"][role="combobox"]',
   'input[autocomplete="address-level2"][role="combobox"]',
@@ -73,6 +142,27 @@ const SHOW_RESULTS_BUTTON_SELECTORS = [
   'button:has-text("Show results")',
   'button:has-text("Mostrar resultados")',
 ];
+
+// Opciones del typeahead de ubicacion. Se mantienen ambos selectores: el
+// estructural de LinkedIn y el accesible (role=option), que es el estable.
+const LOCATION_SUGGESTION_SELECTOR = '.basic-typeahead__selectable, [role="option"]';
+// Cota dura: el typeahead devuelve ~5 opciones; nunca se recorre una lista larga.
+const MAX_LOCATION_SUGGESTIONS = 12;
+
+// Como quedo resuelta la ubicacion. Solo una eleccion EXPLICITA de la
+// autocompletacion es evidencia de que LinkedIn resolvio la ubicacion: tras un
+// Enter a ciegas el control conserva el texto que nosotros escribimos, asi que
+// releerlo no probaria nada.
+const LOCATION_RESOLUTION = Object.freeze({
+  AUTOCOMPLETE_SELECTION: 'AUTOCOMPLETE_SELECTION',
+  TYPED_FALLBACK: 'TYPED_FALLBACK',
+});
+
+// Como se resolvio la ubicacion en ESTA pagina. Va en un WeakMap y no en el
+// contrato de las funciones porque la verificacion se repite en cada busqueda
+// (los filtros persisten entre cambios de keyword) y no debe cambiar ninguna
+// firma publica. No retiene la pagina: es debil a proposito.
+const LOCATION_RESOLUTIONS = new WeakMap();
 
 async function resolveSearchInput(page, selectors, description) {
   try {
@@ -139,31 +229,117 @@ async function clickFilterOption(page, inputId) {
   return false;
 }
 
+// LinkedIn colapsa keyword + ubicacion en una sola barra unificada: el combobox
+// de ubicacion SIGUE en el DOM y el selector sigue casando, pero su contenedor
+// (.jobs-search-box__input--location) queda en display:none hasta que la barra se
+// activa. Por eso getLocationInput, que exige un elemento VISIBLE, fallaba.
+//
+// Se expande SOLO si hace falta, y se usa el combobox de keyword -que si esta
+// visible- como disparador, en vez de depender del id efimero de Ember.
+// No se relaja el contrato de resolveSearchInput: se arregla el estado de la
+// pagina antes de pedirle un elemento visible.
+async function ensureSearchBoxExpandedForLocation(page, options) {
+  const location = page.locator(LOCATION_INPUT_SELECTORS.join(', ')).first();
+
+  if (await location.isVisible().catch(() => false)) {
+    debugLog(options, { event: 'search_box_already_expanded' });
+    return { activated: false, visible: true };
+  }
+
+  // Ausente del DOM: no es un problema de barra colapsada. Se deja que
+  // getLocationInput produzca su LinkedInSelectorError estable.
+  if (!(await location.count().catch(() => 0))) {
+    debugLog(options, { event: 'search_box_location_absent' });
+    return { activated: false, visible: false };
+  }
+
+  const keyword = await getKeywordInput(page);
+  await keyword.click();
+  const visible = await location
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+
+  debugLog(options, { event: 'search_box_expanded', visible });
+  return { activated: true, visible };
+}
+
+// Elige la sugerencia del typeahead que corresponde a la localidad configurada.
+// Sustituye al antiguo filtro por texto literal, que no podia casar con la
+// version localizada que devuelve LinkedIn.
+async function pickLocationSuggestion(page, location) {
+  const suggestions = page.locator(LOCATION_SUGGESTION_SELECTOR);
+  const total = await suggestions.count().catch(() => 0);
+  if (!total) return null;
+
+  let best = null;
+  const limit = Math.min(total, MAX_LOCATION_SUGGESTIONS);
+  for (let i = 0; i < limit; i += 1) {
+    const candidate = suggestions.nth(i);
+    if (!(await candidate.isVisible().catch(() => false))) continue;
+    const text = await candidate.innerText().catch(() => '');
+    const rank = rankLocationCandidate(location, text);
+    if (rank === null) continue;
+    if (!best || rank < best.rank) best = { rank, index: i, text, locator: candidate };
+    if (best.rank === 0) break; // ya es la opcion a nivel de ciudad mejor rankeada
+  }
+  return best;
+}
+
+// Relee el valor REAL del control de ubicacion. Se hace por DOM y no con
+// inputValue() porque el control vuelve a quedar oculto cuando la barra se
+// colapsa, y esta lectura tiene que seguir funcionando en cada verificacion.
+async function readSelectedLocationValue(page) {
+  if (!page || typeof page.evaluate !== 'function') return null;
+  return page
+    .evaluate((selector) => {
+      const el = document.querySelector(selector);
+      return el && typeof el.value === 'string' ? el.value : null;
+    }, LOCATION_INPUT_SELECTORS.join(', '))
+    .catch(() => null);
+}
+
 // Aplica la localizacion usando el typeahead del buscador (no se asume geoId ni parametro de URL).
 async function applyLocationFilter(page, location, options) {
+  // Una aplicacion nueva invalida lo que se supiera de la anterior: si esta
+  // falla a medias, no puede quedar viva la evidencia de la busqueda previa.
+  LOCATION_RESOLUTIONS.delete(page);
+
+  await ensureSearchBoxExpandedForLocation(page, options);
+
   const input = await getLocationInput(page);
   await input.click();
   await input.fill('');
   await input.type(location, { delay: 60 });
   await page.waitForTimeout(1500);
 
-  const suggestion = page
-    .locator('.basic-typeahead__selectable, [role="option"]')
-    .filter({ hasText: new RegExp(location, 'i') })
-    .first();
+  const suggestion = await pickLocationSuggestion(page, location);
 
-  let picked = false;
-  if (await suggestion.count()) {
-    await suggestion.click().catch(() => {});
-    picked = true;
+  let resolution = LOCATION_RESOLUTION.TYPED_FALLBACK;
+  if (suggestion) {
+    await suggestion.locator.click();
+    resolution = LOCATION_RESOLUTION.AUTOCOMPLETE_SELECTION;
   } else {
+    // Ultimo recurso conservador: se conserva el Enter para no quedarse sin
+    // ninguna accion, pero por si solo NUNCA da la ubicacion por verificada.
     await input.press('Enter');
   }
+  LOCATION_RESOLUTIONS.set(page, resolution);
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
-  debugLog(options, { event: 'location_applied', location, pickedSuggestion: picked });
+
+  const selectedLocation = await readSelectedLocationValue(page);
+  debugLog(options, {
+    event: 'location_applied',
+    location,
+    resolution,
+    suggestionRank: suggestion ? suggestion.rank : null,
+    selectedMatchesConfigured: matchesConfiguredLocality(location, selectedLocation),
+  });
+
+  return { resolution, selectedLocation };
 }
 
 // Aplica Date posted + Employment type mediante el modal "All filters" (una sola confirmacion).
@@ -206,24 +382,46 @@ async function applyModalFilters(page, filters, options) {
   return { datePostedSelected, employmentSelected };
 }
 
-// Verifica, a partir de la URL real que LinkedIn genera, que los filtros quedaron activos.
+// Verifica que los filtros quedaron activos.
+//
+// Date posted y employment type se leen de la URL, que LinkedIn si codifica.
+//
+// La UBICACION no: LinkedIn no emite ningun parametro `location`, solo un geoId
+// opaco. Y un geoId cualquiera NO prueba nada, porque un ambito de pais entero
+// ("España", que ademas es el valor por defecto del control) tambien tiene
+// geoId valido. Por eso la ubicacion se verifica contra el ESTADO REAL del
+// control, y el geoId queda como evidencia de apoyo, nunca como el verificador.
+//
+// Se exige ademas que la ubicacion se haya resuelto por una eleccion EXPLICITA
+// del typeahead: tras un Enter a ciegas el control conserva el texto que
+// escribimos nosotros, asi que releerlo seria comprobar nuestro propio input.
 async function verifyFiltersActive(page, filters) {
   const url = page.url();
   const datePostedId = DATE_POSTED_IDS[String(filters.datePosted || '').toLowerCase()] || '';
   const tprCode = (datePostedId.match(/timePostedRange-(r\d+)/) || [])[1];
   const jobTypeCode = (JOB_TYPE_IDS[String(filters.employmentType || '').toLowerCase()] || '').split('-').pop();
 
-  // LinkedIn resuelve la localizacion a un geoId (no conserva el texto en la URL),
-  // por eso se considera activa si hay geoId o si el texto aparece en la URL.
-  const locationActive = filters.location
-    ? /[?&]geoId=\d+/.test(url) || new RegExp(filters.location, 'i').test(decodeURIComponent(url))
-    : null;
+  let locationActive = null;
+  let selectedLocation = null;
+  let locationResolution = null;
+  if (filters.location) {
+    selectedLocation = await readSelectedLocationValue(page);
+    locationResolution = LOCATION_RESOLUTIONS.get(page) || null;
+    locationActive =
+      locationResolution === LOCATION_RESOLUTION.AUTOCOMPLETE_SELECTION
+      && matchesConfiguredLocality(filters.location, selectedLocation);
+  }
 
   return {
     url,
     datePostedActive: tprCode ? url.includes(`f_TPR=${tprCode}`) : null,
     employmentTypeActive: jobTypeCode ? new RegExp(`f_JT=[^&]*${jobTypeCode}`).test(url) : null,
     locationActive,
+    // Evidencia observada, no decisoria.
+    selectedLocation,
+    locationResolution,
+    locationGeoId: (url.match(/[?&]geoId=(\d+)/) || [])[1] || null,
+    locationFromAutocompleteOrigin: /origin=JOB_SEARCH_PAGE_LOCATION_AUTOCOMPLETE/.test(url),
   };
 }
 
@@ -490,8 +688,19 @@ module.exports = {
   getKeywordInput,
   applyLocationFilter,
   applyModalFilters,
+  verifyFiltersActive,
+  ensureSearchBoxExpandedForLocation,
+  pickLocationSuggestion,
+  readSelectedLocationValue,
+  normalizeLocationText,
+  locationSegments,
+  configuredLocalityToken,
+  matchesConfiguredLocality,
+  rankLocationCandidate,
   getAllFiltersButton,
   getShowResultsButton,
+  LOCATION_RESOLUTION,
+  LOCATION_SUGGESTION_SELECTOR,
   LOCATION_INPUT_SELECTORS,
   KEYWORD_INPUT_SELECTORS,
   ALL_FILTERS_BUTTON_SELECTORS,
