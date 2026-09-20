@@ -18,6 +18,7 @@ const { generateSeedPlan } = require('./seedGenerator');
 const { assertMarketDiscoveryOwner } = require('./linkedinMarketSource');
 const { STOP_REASONS, POLICY, resolveBudget } = require('./explorationBudget');
 const { DETAIL_OUTCOMES } = require('./detailEnricher');
+const { toSafeSemanticDiagnostic } = require('./semanticContract');
 
 const INITIAL_DEPTH = 0;
 const EXPANSION_DEPTH = 1;
@@ -235,7 +236,11 @@ function createExplorationEngine(options = {}) {
             });
           } catch (error) {
             // Un fallo semantico aislado no corrompe el run: se registra y se sigue.
-            const failure = { postingKey: picked.key, searchId: picked.firstSearchId, name: error && error.name ? String(error.name).slice(0, 64) : 'Error' };
+            // El diagnostico dice QUE regla del contrato se rompio, para que un
+            // fallo futuro sea explicable sin volver a llamar al modelo. Es
+            // deliberadamente pobre: ni respuesta del modelo, ni descripcion,
+            // ni prompt, ni payload de la API.
+            const failure = { postingKey: picked.key, searchId: picked.firstSearchId, ...toSafeSemanticDiagnostic(error) };
             semanticFailures.push(failure);
             picked.classification = null;
             if (isCancelled(signal)) { stop = STOP_REASONS.CANCELLED; return { used, exhausted: false }; }

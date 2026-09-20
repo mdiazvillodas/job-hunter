@@ -16,7 +16,8 @@
 
 const { SCHEMA_VERSION, freeze, validateProfile } = require('./domain');
 const {
-  SEMANTIC_SCHEMA, SemanticContractError, DIMENSIONS, CLASSIFIER_VERSION, PROMPT_VERSION,
+  SEMANTIC_SCHEMA, SemanticContractError, SEMANTIC_RULES, DIMENSIONS, CLASSIFIER_VERSION, PROMPT_VERSION,
+  MAX_EVIDENCE_ITEMS, MAX_TERMINOLOGY_ITEMS, MAX_REASON_ITEMS, boundedDiagnosticMessage,
   normalizePosting, postingPayload, validateModelOutput, applyTerminologyGate, cacheIdentity,
 } = require('./semanticContract');
 
@@ -29,6 +30,8 @@ class MarketSemanticError extends Error {
     super(message);
     this.name = 'MarketSemanticError';
     this.code = code;
+    // Mensaje propio y acotado: nunca lleva cuerpo del proveedor ni de la oferta.
+    this.safeMessage = boundedDiagnosticMessage(message);
   }
 }
 
@@ -81,8 +84,23 @@ function buildSystemPrompt(profile) {
     'DISCRIMINATOR: an expression that identifies the professional context — domain, industry, work type, project type or responsibility context.',
     'Extract what the market actually says in THIS posting. Do not propose preferred, translated or idealised wording.',
     '',
+    '=== HARD VALIDITY RULES (an answer that breaks one is DISCARDED WHOLE) ===',
+    'These are checked after you answer. They are not preferences: satisfy them before answering, or the assessment is lost.',
+    'If exclusions=CONFLICTS then classification MUST be OUT_OF_SCOPE. Never UNCERTAIN, never COMPATIBLE.',
+    'If classification=COMPATIBLE then at least one of capabilities or responsibilities MUST be SUPPORTS.',
+    'If classification=COMPATIBLE then NO dimension may be CONFLICTS. If something genuinely conflicts, the answer is OUT_OF_SCOPE, not COMPATIBLE.',
+    'If classification=COMPATIBLE you MUST supply at least one evidence snippet that is found VERBATIM in the field you name.',
+    'Snippets not found verbatim are silently discarded, so a COMPATIBLE answer whose every snippet was invented or paraphrased ends with zero evidence and is DISCARDED. Copy, never rephrase.',
+    '',
+    '=== OUTPUT LIMITS (these are maxima, never targets) ===',
+    `evidence: at most ${MAX_EVIDENCE_ITEMS} items. Return only the strongest grounded snippets; fewer is better.`,
+    `terminology: at most ${MAX_TERMINOLOGY_ITEMS} items. Only expressions actually present in this posting; fewer is better.`,
+    `uncertaintyReasons: at most ${MAX_REASON_ITEMS} items. Leave it empty when the judgement is not uncertain.`,
+    'Exceeding any of these limits DISCARDS the whole answer. Never pad an array to reach its limit.',
+    '',
     '=== OUTPUT ===',
-    'Return ONLY the JSON required by the schema. Echo postingId exactly as received.',
+    'Return ONLY the JSON required by the schema.',
+    'postingId MUST be returned character-for-character identical to the postingId given in the posting data. Do not reformat, pad, trim, translate or re-derive it.',
     `Dimensions to fill: ${DIMENSIONS.join(', ')}. Each is one of SUPPORTS, NEUTRAL, CONFLICTS, UNKNOWN.`,
   ].join('\n');
 }
@@ -208,7 +226,7 @@ function createSemanticEvaluator(options = {}) {
       parsed = JSON.parse(content);
     } catch (_) {
       // No se parsea texto arbitrario: falla cerrado.
-      throw new SemanticContractError('semantic response is not valid JSON');
+      throw new SemanticContractError('semantic response is not valid JSON', SEMANTIC_RULES.INVALID_JSON);
     }
     const validated = validateModelOutput(parsed, posting, fields);
 

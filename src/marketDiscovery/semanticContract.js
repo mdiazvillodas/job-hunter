@@ -21,7 +21,8 @@ const TERM_TYPES = Object.freeze(['ROLE_TITLE', 'DISCRIMINATOR']);
 const ELIGIBILITY = Object.freeze({ ELIGIBLE: 'ELIGIBLE', REVIEW_ONLY: 'REVIEW_ONLY' });
 
 const CLASSIFIER_VERSION = 1;
-const PROMPT_VERSION = 1;
+// El prompt cambia el juicio del modelo, asi que versiona la identidad de cache.
+const PROMPT_VERSION = 2;
 const MAX_DESCRIPTION_CHARS = 12000;
 const MAX_TITLE_CHARS = 300;
 const MAX_SNIPPET_CHARS = 300;
@@ -31,17 +32,107 @@ const MAX_TERMINOLOGY_ITEMS = 12;
 const MAX_RATIONALE_CHARS = 800;
 const MAX_REASON_ITEMS = 8;
 
+// Diagnostico persistible. Un fallo de contrato tiene que poder explicarse
+// DESPUES, sin volver a llamar al modelo y sin guardar nada del modelo: por eso
+// se persiste un CODIGO DE REGLA estable, no solo prosa.
+const MAX_DIAGNOSTIC_MESSAGE_CHARS = 160;
+const MAX_DIAGNOSTIC_TOKEN_CHARS = 40;
+
+// Identifican QUE regla se rompio. Son nuestros, nunca texto del modelo.
+const SEMANTIC_RULES = Object.freeze({
+  // Forma: el proveedor ya las garantiza con Structured Outputs estricto.
+  OUTPUT_NOT_OBJECT: 'OUTPUT_NOT_OBJECT',
+  UNEXPECTED_FIELD: 'UNEXPECTED_FIELD',
+  MISSING_FIELD: 'MISSING_FIELD',
+  INVALID_CLASSIFICATION: 'INVALID_CLASSIFICATION',
+  INVALID_DIMENSIONS: 'INVALID_DIMENSIONS',
+  UNEXPECTED_DIMENSION: 'UNEXPECTED_DIMENSION',
+  INVALID_DIMENSION_STATE: 'INVALID_DIMENSION_STATE',
+  INVALID_RATIONALE: 'INVALID_RATIONALE',
+  INVALID_EVIDENCE_ITEM: 'INVALID_EVIDENCE_ITEM',
+  INVALID_EVIDENCE_DIMENSION: 'INVALID_EVIDENCE_DIMENSION',
+  INVALID_EVIDENCE_SOURCE_FIELD: 'INVALID_EVIDENCE_SOURCE_FIELD',
+  INVALID_EVIDENCE_SNIPPET: 'INVALID_EVIDENCE_SNIPPET',
+  INVALID_TERMINOLOGY_ITEM: 'INVALID_TERMINOLOGY_ITEM',
+  INVALID_TERMINOLOGY_TYPE: 'INVALID_TERMINOLOGY_TYPE',
+  INVALID_TERMINOLOGY_SOURCE_FIELD: 'INVALID_TERMINOLOGY_SOURCE_FIELD',
+  INVALID_TERMINOLOGY_EXPRESSION: 'INVALID_TERMINOLOGY_EXPRESSION',
+  // Identidad: el schema no puede fijar un VALOR concreto sin volverse dinamico.
+  POSTING_ID_MISMATCH: 'POSTING_ID_MISMATCH',
+  // Cotas de arreglo: declaradas con maxItems en el schema y repetidas en el
+  // prompt. Estos codigos son la defensa en profundidad del validador.
+  REASON_LIMIT_EXCEEDED: 'REASON_LIMIT_EXCEEDED',
+  EVIDENCE_LIMIT_EXCEEDED: 'EVIDENCE_LIMIT_EXCEEDED',
+  TERMINOLOGY_LIMIT_EXCEEDED: 'TERMINOLOGY_LIMIT_EXCEEDED',
+  // Coherencia semantica: ninguna es expresable en JSON Schema.
+  EXCLUSION_CONFLICT_NOT_OUT_OF_SCOPE: 'EXCLUSION_CONFLICT_NOT_OUT_OF_SCOPE',
+  COMPATIBLE_WITHOUT_SUPPORT: 'COMPATIBLE_WITHOUT_SUPPORT',
+  COMPATIBLE_WITH_CONFLICT: 'COMPATIBLE_WITH_CONFLICT',
+  COMPATIBLE_NOT_GROUNDED: 'COMPATIBLE_NOT_GROUNDED',
+  // Transporte/parseo.
+  INVALID_JSON: 'INVALID_JSON',
+});
+const RULE_CODES = new Set(Object.values(SEMANTIC_RULES));
+
+// Mensaje acotado y limpio. Es lo UNICO que puede persistirse como prosa.
+function boundedDiagnosticMessage(message) {
+  if (typeof message !== 'string') return null;
+  const cleaned = message
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return null;
+  return cleaned.length > MAX_DIAGNOSTIC_MESSAGE_CHARS ? cleaned.slice(0, MAX_DIAGNOSTIC_MESSAGE_CHARS) : cleaned;
+}
+
+// Un valor venido del modelo NUNCA se interpola crudo en un mensaje que se
+// persiste: se limpia y se acota primero.
+function diagnosticToken(value) {
+  const bounded = boundedDiagnosticMessage(String(value === undefined ? '' : value));
+  if (!bounded) return '<empty>';
+  return bounded.length > MAX_DIAGNOSTIC_TOKEN_CHARS ? bounded.slice(0, MAX_DIAGNOSTIC_TOKEN_CHARS) : bounded;
+}
+
 class SemanticContractError extends Error {
   constructor(message, code = 'MARKET_SEMANTIC_INVALID') {
     super(message);
     this.name = 'SemanticContractError';
     this.code = code;
+    // Ya acotado y saneado en el origen: quien persista no tiene que acordarse.
+    this.safeMessage = boundedDiagnosticMessage(message);
   }
 }
-function fail(message) { throw new SemanticContractError(message); }
+function fail(message, code) { throw new SemanticContractError(message, code); }
+
+// Diagnostico SEGURO de un fallo semantico, para el ledger de exploracion.
+// Solo sale: nombre de error, codigo de regla estable y un mensaje acotado que
+// NOSOTROS escribimos. Nunca la respuesta del modelo, la descripcion de la
+// oferta, el prompt, el payload de la API ni credenciales: un error ajeno no
+// lleva `safeMessage`, asi que su texto no puede colarse.
+function toSafeSemanticDiagnostic(error) {
+  const source = error && typeof error === 'object' ? error : {};
+  const rawCode = typeof source.code === 'string' ? source.code : null;
+  return {
+    name: typeof source.name === 'string' && source.name ? source.name.slice(0, 64) : 'Error',
+    code: rawCode ? rawCode.slice(0, 64) : 'UNKNOWN',
+    rule: rawCode && RULE_CODES.has(rawCode) ? rawCode : null,
+    message: typeof source.safeMessage === 'string' && source.safeMessage ? source.safeMessage : null,
+  };
+}
 
 // --- JSON Schema (Structured Outputs strict): object/array/string/enum,
 // additionalProperties:false y todas las propiedades en required.
+//
+// COTAS DE ARREGLO: el mismo limite se declara en TRES niveles, y los tres leen
+// la misma constante, asi que no pueden derivar entre si:
+//   1. `maxItems` en el schema  -> lo aplica el proveedor al generar.
+//      Documentado como soportado para arreglos; NO para modelos fine-tuned.
+//      El modelo configurado (gpt-4.1-mini) no es fine-tuned.
+//   2. `description` + prompt   -> el modelo sabe el techo ANTES de responder.
+//   3. validateModelOutput      -> defensa en profundidad. Se mantiene aunque el
+//      proveedor deba impedir el desbordamiento: el contrato no delega en el
+//      proveedor su propia integridad, y una respuesta que llegue fuera de
+//      limites se sigue rechazando con un codigo estable.
 const dimensionProperties = {};
 for (const dimension of DIMENSIONS) dimensionProperties[dimension] = { type: 'string', enum: [...DIMENSION_STATES] };
 
@@ -53,10 +144,16 @@ const SEMANTIC_SCHEMA = {
     classification: { type: 'string', enum: [...CLASSIFICATIONS] },
     dimensions: { type: 'object', additionalProperties: false, properties: dimensionProperties, required: [...DIMENSIONS] },
     rationale: { type: 'string' },
-    uncertaintyReasons: { type: 'array', items: { type: 'string' } },
+    uncertaintyReasons: {
+      type: 'array',
+      maxItems: MAX_REASON_ITEMS,
+      description: `Motivos de incertidumbre. LIMITE: como maximo ${MAX_REASON_ITEMS} elementos; vacio si el juicio no es incierto. Superarlo invalida la respuesta.`,
+      items: { type: 'string' },
+    },
     evidence: {
       type: 'array',
-      description: 'Fragmentos LITERALES de la oferta que sostienen el juicio.',
+      maxItems: MAX_EVIDENCE_ITEMS,
+      description: `Fragmentos LITERALES de la oferta que sostienen el juicio. LIMITE: como maximo ${MAX_EVIDENCE_ITEMS} elementos; solo los mas fuertes, nunca se rellena hasta el limite. Superarlo invalida la respuesta.`,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -70,7 +167,8 @@ const SEMANTIC_SCHEMA = {
     },
     terminology: {
       type: 'array',
-      description: 'Expresiones de mercado observadas LITERALMENTE en la oferta.',
+      maxItems: MAX_TERMINOLOGY_ITEMS,
+      description: `Expresiones de mercado observadas LITERALMENTE en la oferta. LIMITE: como maximo ${MAX_TERMINOLOGY_ITEMS} elementos; solo las realmente presentes, nunca se rellena hasta el limite. Superarlo invalida la respuesta.`,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -156,66 +254,66 @@ function locateLiteral(haystack, needle) {
 }
 
 function validateModelOutput(raw, posting, fields) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('semantic output is not an object');
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('semantic output is not an object', SEMANTIC_RULES.OUTPUT_NOT_OBJECT);
   for (const key of Object.keys(raw)) {
-    if (!SEMANTIC_SCHEMA.required.includes(key)) fail(`unexpected semantic field: ${key}`);
+    if (!SEMANTIC_SCHEMA.required.includes(key)) fail(`unexpected semantic field: ${diagnosticToken(key)}`, SEMANTIC_RULES.UNEXPECTED_FIELD);
   }
   for (const key of SEMANTIC_SCHEMA.required) {
-    if (!(key in raw)) fail(`missing semantic field: ${key}`);
+    if (!(key in raw)) fail(`missing semantic field: ${diagnosticToken(key)}`, SEMANTIC_RULES.MISSING_FIELD);
   }
-  if (raw.postingId !== posting.postingId) fail('semantic output posting identity mismatch');
-  if (!CLASSIFICATIONS.includes(raw.classification)) fail(`invalid classification: ${String(raw.classification)}`);
-  if (!raw.dimensions || typeof raw.dimensions !== 'object' || Array.isArray(raw.dimensions)) fail('dimensions must be an object');
+  if (raw.postingId !== posting.postingId) fail('semantic output posting identity mismatch', SEMANTIC_RULES.POSTING_ID_MISMATCH);
+  if (!CLASSIFICATIONS.includes(raw.classification)) fail(`invalid classification: ${diagnosticToken(raw.classification)}`, SEMANTIC_RULES.INVALID_CLASSIFICATION);
+  if (!raw.dimensions || typeof raw.dimensions !== 'object' || Array.isArray(raw.dimensions)) fail('dimensions must be an object', SEMANTIC_RULES.INVALID_DIMENSIONS);
   for (const key of Object.keys(raw.dimensions)) {
-    if (!DIMENSIONS.includes(key)) fail(`unexpected dimension: ${key}`);
+    if (!DIMENSIONS.includes(key)) fail(`unexpected dimension: ${diagnosticToken(key)}`, SEMANTIC_RULES.UNEXPECTED_DIMENSION);
   }
   const dimensions = {};
   for (const dimension of DIMENSIONS) {
     const state = raw.dimensions[dimension];
-    if (!DIMENSION_STATES.includes(state)) fail(`invalid state for ${dimension}: ${String(state)}`);
+    if (!DIMENSION_STATES.includes(state)) fail(`invalid state for ${dimension}: ${diagnosticToken(state)}`, SEMANTIC_RULES.INVALID_DIMENSION_STATE);
     dimensions[dimension] = state;
   }
-  if (typeof raw.rationale !== 'string') fail('rationale must be a string');
-  if (!Array.isArray(raw.uncertaintyReasons) || raw.uncertaintyReasons.length > MAX_REASON_ITEMS) fail('invalid uncertaintyReasons');
-  if (!Array.isArray(raw.evidence) || raw.evidence.length > MAX_EVIDENCE_ITEMS) fail('invalid evidence');
-  if (!Array.isArray(raw.terminology) || raw.terminology.length > MAX_TERMINOLOGY_ITEMS) fail('invalid terminology');
+  if (typeof raw.rationale !== 'string') fail('rationale must be a string', SEMANTIC_RULES.INVALID_RATIONALE);
+  if (!Array.isArray(raw.uncertaintyReasons) || raw.uncertaintyReasons.length > MAX_REASON_ITEMS) fail('invalid uncertaintyReasons', SEMANTIC_RULES.REASON_LIMIT_EXCEEDED);
+  if (!Array.isArray(raw.evidence) || raw.evidence.length > MAX_EVIDENCE_ITEMS) fail('invalid evidence', SEMANTIC_RULES.EVIDENCE_LIMIT_EXCEEDED);
+  if (!Array.isArray(raw.terminology) || raw.terminology.length > MAX_TERMINOLOGY_ITEMS) fail('invalid terminology', SEMANTIC_RULES.TERMINOLOGY_LIMIT_EXCEEDED);
 
   // Reglas deterministas ANTI-DERIVA. No dependen de que el modelo se porte bien.
   if (dimensions.exclusions === 'CONFLICTS' && raw.classification !== 'OUT_OF_SCOPE') {
-    fail('an explicit exclusion conflict must be OUT_OF_SCOPE');
+    fail('an explicit exclusion conflict must be OUT_OF_SCOPE', SEMANTIC_RULES.EXCLUSION_CONFLICT_NOT_OUT_OF_SCOPE);
   }
   if (raw.classification === 'COMPATIBLE' && dimensions.capabilities !== 'SUPPORTS' && dimensions.responsibilities !== 'SUPPORTS') {
     // Compartir una palabra generica con la semilla no es compatibilidad.
-    fail('COMPATIBLE requires supported capabilities or responsibilities');
+    fail('COMPATIBLE requires supported capabilities or responsibilities', SEMANTIC_RULES.COMPATIBLE_WITHOUT_SUPPORT);
   }
   if (raw.classification === 'COMPATIBLE') {
     for (const dimension of DIMENSIONS) {
-      if (dimensions[dimension] === 'CONFLICTS') fail(`COMPATIBLE cannot conflict on ${dimension}`);
+      if (dimensions[dimension] === 'CONFLICTS') fail(`COMPATIBLE cannot conflict on ${dimension}`, SEMANTIC_RULES.COMPATIBLE_WITH_CONFLICT);
     }
   }
 
   let droppedEvidence = 0;
   const evidence = [];
   for (const item of raw.evidence) {
-    if (!item || typeof item !== 'object') fail('evidence item must be an object');
-    if (!DIMENSIONS.includes(item.dimension)) fail(`invalid evidence dimension: ${String(item.dimension)}`);
-    if (!SOURCE_FIELDS.includes(item.sourceField)) fail(`invalid evidence sourceField: ${String(item.sourceField)}`);
-    if (typeof item.snippet !== 'string') fail('evidence snippet must be a string');
+    if (!item || typeof item !== 'object') fail('evidence item must be an object', SEMANTIC_RULES.INVALID_EVIDENCE_ITEM);
+    if (!DIMENSIONS.includes(item.dimension)) fail(`invalid evidence dimension: ${diagnosticToken(item.dimension)}`, SEMANTIC_RULES.INVALID_EVIDENCE_DIMENSION);
+    if (!SOURCE_FIELDS.includes(item.sourceField)) fail(`invalid evidence sourceField: ${diagnosticToken(item.sourceField)}`, SEMANTIC_RULES.INVALID_EVIDENCE_SOURCE_FIELD);
+    if (typeof item.snippet !== 'string') fail('evidence snippet must be a string', SEMANTIC_RULES.INVALID_EVIDENCE_SNIPPET);
     const located = locateLiteral(fields[item.sourceField], item.snippet.slice(0, MAX_SNIPPET_CHARS));
     // Un fragmento que no esta en la oferta no es evidencia: se descarta.
     if (!located) { droppedEvidence += 1; continue; }
     evidence.push({ dimension: item.dimension, sourceField: item.sourceField, snippet: located.text, offset: located.offset, length: located.length });
   }
-  if (raw.classification === 'COMPATIBLE' && !evidence.length) fail('COMPATIBLE requires at least one grounded evidence snippet');
+  if (raw.classification === 'COMPATIBLE' && !evidence.length) fail('COMPATIBLE requires at least one grounded evidence snippet', SEMANTIC_RULES.COMPATIBLE_NOT_GROUNDED);
 
   let droppedTerminology = 0;
   const terminology = [];
   const seen = new Set();
   for (const item of raw.terminology) {
-    if (!item || typeof item !== 'object') fail('terminology item must be an object');
-    if (!TERM_TYPES.includes(item.type)) fail(`invalid terminology type: ${String(item.type)}`);
-    if (!SOURCE_FIELDS.includes(item.sourceField)) fail(`invalid terminology sourceField: ${String(item.sourceField)}`);
-    if (typeof item.expression !== 'string') fail('terminology expression must be a string');
+    if (!item || typeof item !== 'object') fail('terminology item must be an object', SEMANTIC_RULES.INVALID_TERMINOLOGY_ITEM);
+    if (!TERM_TYPES.includes(item.type)) fail(`invalid terminology type: ${diagnosticToken(item.type)}`, SEMANTIC_RULES.INVALID_TERMINOLOGY_TYPE);
+    if (!SOURCE_FIELDS.includes(item.sourceField)) fail(`invalid terminology sourceField: ${diagnosticToken(item.sourceField)}`, SEMANTIC_RULES.INVALID_TERMINOLOGY_SOURCE_FIELD);
+    if (typeof item.expression !== 'string') fail('terminology expression must be a string', SEMANTIC_RULES.INVALID_TERMINOLOGY_EXPRESSION);
     const located = locateLiteral(fields[item.sourceField], item.expression.slice(0, MAX_TERM_CHARS));
     // Termino inventado o parafraseado: se DESCARTA, nunca se repara.
     if (!located) { droppedTerminology += 1; continue; }
@@ -282,7 +380,9 @@ function cacheIdentity({ posting, profile, model }) {
 
 module.exports = {
   CLASSIFICATIONS, DIMENSION_STATES, DIMENSIONS, SOURCE_FIELDS, TERM_TYPES, ELIGIBILITY,
-  SEMANTIC_SCHEMA, SemanticContractError,
+  SEMANTIC_SCHEMA, SemanticContractError, SEMANTIC_RULES,
+  toSafeSemanticDiagnostic, boundedDiagnosticMessage, diagnosticToken,
+  MAX_DIAGNOSTIC_MESSAGE_CHARS, MAX_EVIDENCE_ITEMS, MAX_TERMINOLOGY_ITEMS, MAX_REASON_ITEMS,
   CLASSIFIER_VERSION, PROMPT_VERSION, MAX_DESCRIPTION_CHARS, MAX_TITLE_CHARS,
   sanitizeText, normalizePosting, postingPayload, locateLiteral,
   validateModelOutput, applyTerminologyGate, cacheIdentity,
