@@ -104,6 +104,15 @@ function createTelegramService(options = {}) {
   const log = typeof options.log === 'function' ? options.log : (m) => console.log('[telegram] ' + m);
   if (!huntRunManager) throw new TypeError('huntRunManager es obligatorio.');
 
+  // Ventana de frescura de los comandos: pertenece a la INSTALACION, no al
+  // objeto listener. Un listener se rehace cada vez que cambia la
+  // configuracion (restart), y si la ventana naciera con el, guardar Ajustes
+  // convertiria en "antiguo" un /hunt enviado un momento antes.
+  // Se fija una sola vez, al crear el servicio (es decir, al arrancar Job
+  // Hunter), que es justo el corte que interesa: lo anterior a este instante
+  // se mando con la PC apagada o con otra ejecucion viva.
+  const sessionStartedAt = Number.isFinite(options.sessionStartedAt) ? options.sessionStartedAt : clock();
+
   // El adaptador se construye cuando hace falta de verdad (al arrancar un
   // listener), no al crear el servicio: crear el servidor de la UI no puede
   // depender de que el control remoto este en condiciones de funcionar.
@@ -162,6 +171,9 @@ function createTelegramService(options = {}) {
       allowedUserId: config.allowedUserId,
       initialOffset: stateStore.getNextUpdateId(),
       persistOffset: (value) => stateStore.setNextUpdateId(value),
+      // Se REUTILIZA en cada arranque, incluidos los de restart(): la ventana
+      // sobrevive a la reconciliacion de configuracion.
+      sessionStartedAt,
       log: (message) => log(message),
     });
     state = STATE_RUNNING;

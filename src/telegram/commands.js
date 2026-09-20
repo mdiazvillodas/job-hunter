@@ -29,6 +29,7 @@ const TEXTS = {
   statusAvailableIdle: '🟢 Job Hunter disponible\nHunt: inactivo',
   statusAvailableRunning: '🟢 Job Hunter disponible\nHunt: ejecutándose',
   statusUnavailable: '🔴 Job Hunter no disponible',
+  staleAction: '⚠️ Ignoré una solicitud antigua de hunt.',
   unknown: 'No entendí. Comandos: /start, /hunt, /status',
 };
 
@@ -41,6 +42,21 @@ const BLOCKED_TEXTS = {
   SETUP_REQUIRED: '⚙️ Job Hunter todavía no está configurado.',
   APP_SHUTTING_DOWN: TEXTS.unavailable,
 };
+
+// Comandos que PROVOCAN UNA ACCION. Solo estos exigen frescura: /start y
+// /status son consultas y no pueden causar daño por llegar tarde.
+const ACTION_COMMANDS = new Set(['hunt']);
+
+// Telegram guarda los updates no entregados ~24h. Si la PC estuvo apagada,
+// al arrancar el listener recibe el /hunt de anoche y, sin esta regla, lo
+// ejecutaria: encender el ordenador no puede lanzar una busqueda que nadie
+// pidio ahora.
+//   1) el mensaje tiene que ser posterior al arranque de ESTA sesion;
+//   2) y ademas no puede ser mas viejo que la ventana maxima, que protege
+//      contra colas largas mientras el listener ya estaba vivo.
+const MAX_COMMAND_AGE_MS = 10 * 60 * 1000;
+// Tolerancia de reloj entre el servidor de Telegram y la PC.
+const SESSION_GRACE_MS = 60 * 1000;
 
 const BUTTON_HUNT = '🔎 Lanzar Hunt';
 const BUTTON_STATUS = '📊 Estado';
@@ -81,6 +97,22 @@ function authorize(message, allowedUserId) {
   const fromId = message && message.from && message.from.id;
   if (fromId == null || String(fromId) !== allowed) return { allowed: false, reason: 'forbidden_user' };
   return { allowed: true, reason: 'ok' };
+}
+
+// Un comando de accion solo se ejecuta si es de AHORA. Sin fecha utilizable se
+// considera viejo: ante la duda no se lanza un hunt.
+function isFreshAction(message, deps = {}) {
+  const now = Number.isFinite(deps.now) ? deps.now : Date.now();
+  const sessionStartedAt = Number.isFinite(deps.sessionStartedAt) ? deps.sessionStartedAt : 0;
+  const maxAgeMs = Number.isFinite(deps.maxCommandAgeMs) ? deps.maxCommandAgeMs : MAX_COMMAND_AGE_MS;
+  const graceMs = Number.isFinite(deps.sessionGraceMs) ? deps.sessionGraceMs : SESSION_GRACE_MS;
+
+  const seconds = message && message.date;
+  if (!Number.isFinite(seconds)) return false;
+  const sentAt = seconds * 1000;
+  if (now - sentAt > maxAgeMs) return false;
+  if (sentAt < sessionStartedAt - graceMs) return false;
+  return true;
 }
 
 async function runHuntCommand(huntControl) {
@@ -129,6 +161,12 @@ async function handleUpdate(update, deps = {}) {
   }
 
   const command = parseCommand(message.text);
+  // Frescura ANTES de ejecutar: el boton recorre este mismo camino, asi que un
+  // "🔎 Lanzar Hunt" viejo queda cubierto igual que un /hunt viejo.
+  if (ACTION_COMMANDS.has(command) && !isFreshAction(message, deps)) {
+    return { chatId, text: TEXTS.staleAction, replyMarkup: REPLY_KEYBOARD, log: 'hunt:stale' };
+  }
+
   let reply;
   if (command === 'start') reply = { text: TEXTS.start, log: 'start' };
   else if (command === 'hunt') reply = await runHuntCommand(deps.huntControl);
@@ -142,6 +180,10 @@ async function handleUpdate(update, deps = {}) {
 
 module.exports = {
   TEXTS,
+  ACTION_COMMANDS,
+  MAX_COMMAND_AGE_MS,
+  SESSION_GRACE_MS,
+  isFreshAction,
   BLOCKED_TEXTS,
   BUTTON_HUNT,
   BUTTON_STATUS,

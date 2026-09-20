@@ -47,6 +47,16 @@ function createListener(options = {}) {
   const sleep = options.sleep || defaultSleep;
   const maxBackoffMs = options.maxBackoffMs || MAX_BACKOFF_MS;
   const allowedUserId = options.allowedUserId;
+  const now = typeof options.now === 'function' ? options.now : () => Date.now();
+  // Origen de la ventana de frescura: un comando de accion anterior a el se
+  // considera una orden vieja que quedo en la cola de Telegram mientras la PC
+  // estaba apagada, y no se ejecuta.
+  //
+  // Normalmente lo INYECTA telegramService, que es su dueño: la ventana es de
+  // la instalacion, no de este objeto, y por eso sobrevive a los restart con
+  // los que se reconcilia la configuracion. El fallback es solo para un
+  // listener suelto (tests, uso directo).
+  const sessionStartedAt = Number.isFinite(options.sessionStartedAt) ? options.sessionStartedAt : now();
   // Persistencia del offset. Inyectable; un fallo suyo nunca detiene el loop.
   const persistOffset = typeof options.persistOffset === 'function' ? options.persistOffset : () => {};
 
@@ -94,7 +104,14 @@ function createListener(options = {}) {
       }
       remember(updateId);
     }
-    const answer = await onUpdate(update, { huntControl, allowedUserId });
+    const answer = await onUpdate(update, {
+      huntControl,
+      allowedUserId,
+      sessionStartedAt,
+      now: now(),
+      maxCommandAgeMs: options.maxCommandAgeMs,
+      sessionGraceMs: options.sessionGraceMs,
+    });
     if (!answer) {
       log('update ignorado');
       return;
@@ -176,6 +193,7 @@ function createListener(options = {}) {
     get offset() { return offset; },
     get failures() { return failures; },
     get running() { return running; },
+    get sessionStartedAt() { return sessionStartedAt; },
   };
 }
 

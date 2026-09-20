@@ -24,11 +24,13 @@ const ALLOWED = '4242';
 let nextUpdateId = 1000;
 function privateMessage(text, fromId = ALLOWED, updateId) {
   const id = Number.isInteger(updateId) ? updateId : (nextUpdateId += 1);
-  return { update_id: id, message: { message_id: id, text, from: { id: Number(fromId), first_name: 'Mariana' }, chat: { id: 555, type: 'private' } } };
+  // Telegram SIEMPRE manda date; sin el, un comando de accion se considera
+  // viejo (ver phase13). Los fixtures representan mensajes recien enviados.
+  return { update_id: id, message: { message_id: id, text, date: Math.floor(Date.now() / 1000), from: { id: Number(fromId), first_name: 'Mariana' }, chat: { id: 555, type: 'private' } } };
 }
 function groupMessage(text, chatType = 'group', updateId) {
   const id = Number.isInteger(updateId) ? updateId : (nextUpdateId += 1);
-  return { update_id: id, message: { message_id: id, text, from: { id: Number(ALLOWED) }, chat: { id: -100, type: chatType } } };
+  return { update_id: id, message: { message_id: id, text, date: Math.floor(Date.now() / 1000), from: { id: Number(ALLOWED) }, chat: { id: -100, type: chatType } } };
 }
 
 function fakeHuntControl(over) {
