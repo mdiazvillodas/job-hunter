@@ -2,6 +2,7 @@
 
 const { BROWSER_PROFILE_DIR } = require('../runtime');
 const { acquireLock, releaseLock } = require('../domain/huntLock');
+const { OPERATION_TYPES, createOwner, newOperationId } = require('../domain/operationOwner');
 const { evaluateChallenge, evaluateLogin } = require('../linkedin/challengeSignals');
 
 const STATES = Object.freeze({
@@ -61,19 +62,24 @@ function createLinkedinSessionService(options = {}) {
     const { getInitialPage } = require('../linkedin/browser');
     return getInitialPage(context);
   });
-  const lock = options.acquireLock || acquireLock;
-  const unlock = options.releaseLock || releaseLock;
+  // El lock del navegador se toma y se libera SIEMPRE con el mismo dueño explicito.
+  const lock = options.acquireLock || ((owner) => acquireLock(undefined, { owner }));
+  const unlock = options.releaseLock || ((owner) => releaseLock(undefined, { owner }));
   let context = null;
   let page = null;
   let state = STATES.NOT_INITIALIZED;
   let lockHeld = false;
+  // Dueño de la ventana manual mientras esta abierta. Solo se libera ESTE dueño:
+  // cerrar la ventana no puede soltar el lock de un hunt ni de otra operacion.
+  let sessionOwner = null;
   let closingContext = null;
   let closePromise = null;
   let unsafeProfile = false;
 
   function releaseSessionLock() {
-    if (lockHeld) unlock();
+    if (lockHeld && sessionOwner) unlock(sessionOwner);
     lockHeld = false;
+    sessionOwner = null;
   }
 
   function clearClosedContext() {
@@ -105,9 +111,11 @@ function createLinkedinSessionService(options = {}) {
   async function open() {
     if (context) throw operationalError('SESSION_WINDOW_OPEN', 'La ventana manual de LinkedIn ya está abierta.');
     if (unsafeProfile) throw operationalError('LINKEDIN_BROWSER_ERROR', 'El perfil de LinkedIn quedó en un estado incierto. Reiniciá Job Hunter.', 503);
+    const owner = createOwner(OPERATION_TYPES.MANUAL_SESSION, newOperationId('session'));
     try {
-      lock();
+      lock(owner);
       lockHeld = true;
+      sessionOwner = owner;
       context = await launch(profileDir);
       page = await initialPage(context);
       if (context.once) context.once('close', handleContextClosed);
@@ -132,8 +140,11 @@ function createLinkedinSessionService(options = {}) {
     let result = null;
     let verificationError = null;
     let cleanupError = null;
+    // La verificacion tiene su propia identidad de operacion, distinta de la del
+    // hunt que la pide y de la ventana manual.
+    const probeOwner = createOwner(OPERATION_TYPES.SESSION_PROBE, newOperationId('probe'));
     try {
-      lock();
+      lock(probeOwner);
       probeLockHeld = true;
       probeContext = await launch(profileDir);
       const probePage = await initialPage(probeContext);
@@ -147,7 +158,7 @@ function createLinkedinSessionService(options = {}) {
       if (probeContext) {
         try { await probeContext.close(); } catch (error) { cleanupError = error; }
       }
-      if (probeLockHeld && !cleanupError) unlock();
+      if (probeLockHeld && !cleanupError) unlock(probeOwner);
     }
     if (cleanupError) {
       unsafeProfile = true;

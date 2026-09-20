@@ -3,6 +3,8 @@ const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectMultipleSearches } = require('./linkedin/multiSearch');
 const { assertAuthenticatedSession } = require('./linkedin/session');
+const { acquireLock, releaseLock } = require('./domain/huntLock');
+const { OPERATION_TYPES, createOwner, newOperationId } = require('./domain/operationOwner');
 
 function parseCliArgs(argv) {
   return {
@@ -10,7 +12,28 @@ function parseCliArgs(argv) {
   };
 }
 
+// Esta herramienta abre el MISMO perfil persistente que el hunt y la ventana
+// manual, asi que toma el lock compartido durante toda la vida del navegador.
 async function main() {
+  const owner = createOwner(OPERATION_TYPES.CLI_TOOL, newOperationId('cli_collect'));
+  try {
+    acquireLock(undefined, { owner });
+  } catch (e) {
+    if (e.code === 'LOCK_HELD') {
+      console.error(`browser_profile_busy: ya hay una operacion usando el navegador (${e.owner && e.owner.operationType}, pid ${e.owner && e.owner.pid}). No se abre otro.`);
+      process.exitCode = 1;
+      return;
+    }
+    throw e;
+  }
+  try {
+    await collect();
+  } finally {
+    releaseLock(undefined, { owner });
+  }
+}
+
+async function collect() {
   const options = parseCliArgs(process.argv.slice(2));
   const BROWSER_PROFILE_DIR = config.BROWSER_PROFILE_DIR;
   const DETAIL_LIMIT = config.DETAIL_LIMIT;

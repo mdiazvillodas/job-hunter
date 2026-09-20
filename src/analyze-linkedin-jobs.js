@@ -18,6 +18,8 @@ const config = require('./config');
 const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectSearchScope } = require('./linkedin/searchScope');
+const { acquireLock, releaseLock } = require('./domain/huntLock');
+const { OPERATION_TYPES, createOwner, newOperationId } = require('./domain/operationOwner');
 const { assertAuthenticatedSession } = require('./linkedin/session');
 const { getProfile, getMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob, MissingApiKeyError, AnalyzerError } = require('./ai/jobAnalyzer');
@@ -122,10 +124,21 @@ function printJobResult(index, totalCount, job, result) {
   console.log(`Summary: ${a.summary}`);
 }
 
+// Esta herramienta abre el MISMO perfil persistente que el hunt y la ventana
+// manual. Toma el lock compartido justo mientras el navegador esta vivo: el
+// analisis posterior con OpenAI ya no lo necesita y no debe bloquear un hunt.
 async function collectJobsWithDetails(options, executionConfig) {
   const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
   const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, activeQueries } = executionConfig;
-  const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
+  const owner = createOwner(OPERATION_TYPES.CLI_TOOL, newOperationId('cli_analyze'));
+  acquireLock(undefined, { owner });
+  let context;
+  try {
+    context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
+  } catch (error) {
+    releaseLock(undefined, { owner });
+    throw error;
+  }
   try {
     const page = await getInitialPage(context);
     await assertAuthenticatedSession(context, page);
@@ -158,6 +171,7 @@ async function collectJobsWithDetails(options, executionConfig) {
   } finally {
     // El navegador ya no es necesario durante el analisis con OpenAI.
     await context.close().catch(() => {});
+    releaseLock(undefined, { owner });
   }
 }
 

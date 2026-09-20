@@ -17,6 +17,7 @@ const { getMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob } = require('./ai/jobAnalyzer');
 const { runPipeline } = require('./pipeline/pipeline');
 const { acquireLock, releaseLock } = require('./domain/huntLock');
+const { OPERATION_TYPES, createOwner, newOperationId } = require('./domain/operationOwner');
 const { getUserConfig, getNotificationSettings } = require('./config/userConfig');
 const { createHighMatchNotifier } = require('./notifications/ntfy');
 
@@ -88,9 +89,12 @@ function printDebugReport(s) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  // Lock compartido: impide dos hunts simultaneos (manual + trigger) sobre el perfil persistente.
+  // Lock compartido: impide dos operaciones simultaneas (hunt manual, trigger,
+  // ventana manual, herramientas CLI) sobre el perfil persistente. El dueño se
+  // fija aqui y es el mismo que se usa para liberar en el finally.
+  const owner = createOwner(OPERATION_TYPES.HUNT, newOperationId('hunt_cli'));
   try {
-    acquireLock();
+    acquireLock(undefined, { owner });
   } catch (e) {
     if (e.code === 'LOCK_HELD') {
       console.error(
@@ -116,7 +120,7 @@ async function main() {
     console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
     process.exitCode = 1;
   } finally {
-    releaseLock();
+    releaseLock(undefined, { owner });
   }
 }
 

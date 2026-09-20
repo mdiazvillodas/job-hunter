@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { acquireLock, releaseLock } = require('../domain/huntLock');
+const { OPERATION_TYPES, createOwner } = require('../domain/operationOwner');
 const { STATES, operationalError } = require('../session/linkedinSessionService');
 const { isKnownStage } = require('../linkedin/challengeSignals');
 
@@ -144,8 +145,9 @@ function createHuntRunManager(options = {}) {
   const notifyRunOutcome = options.notifyRunOutcome || defaultNotifyRunOutcome;
   const setupService = options.setupService;
   const sessionService = options.sessionService;
-  const lock = options.acquireLock || acquireLock;
-  const unlock = options.releaseLock || releaseLock;
+  // El lock del navegador se toma y se libera SIEMPRE con el mismo dueño explicito.
+  const lock = options.acquireLock || ((owner) => acquireLock(undefined, { owner }));
+  const unlock = options.releaseLock || ((owner) => releaseLock(undefined, { owner }));
   const now = options.clock || (() => new Date());
   const makeId = options.makeRunId || (() => `run_${crypto.randomBytes(8).toString('hex')}`);
   let current = { runId: null, status: 'IDLE', startedAt: null, finishedAt: null, summary: null, error: null, progress: safeProgress() };
@@ -175,12 +177,17 @@ function createHuntRunManager(options = {}) {
       const code = linkedIn.state === STATES.CHECKPOINT_REQUIRED ? 'CHECKPOINT_REQUIRED' : 'LOGIN_REQUIRED';
       throw operationalError(code, code === 'CHECKPOINT_REQUIRED' ? 'LinkedIn requiere una verificación manual.' : 'Necesitás iniciar sesión en LinkedIn.');
     }
-    try { lock(); } catch (error) {
+    // La identidad de la operacion se fija ANTES de tomar el lock y se conserva en
+    // el cierre hasta liberarlo: nunca se regenera entre acquire y release, y la
+    // liberacion no depende de `current`, que otro run puede haber reemplazado.
+    const runId = makeId();
+    const owner = createOwner(OPERATION_TYPES.HUNT, runId);
+    try { lock(owner); } catch (error) {
       if (error.code === 'LOCK_HELD') throw operationalError('HUNT_ALREADY_RUNNING', 'Ya hay una búsqueda en curso.');
       throw error;
     }
     activeController = new AbortController();
-    current = { runId: makeId(), status: 'STARTING', startedAt: now().toISOString(), finishedAt: null, summary: null, error: null, progress: safeProgress({ phase: 'starting' }) };
+    current = { runId, status: 'STARTING', startedAt: now().toISOString(), finishedAt: null, summary: null, error: null, progress: safeProgress({ phase: 'starting' }) };
     const response = snapshot();
     activePromise = Promise.resolve().then(async () => {
       current.status = 'RUNNING';
@@ -220,7 +227,7 @@ function createHuntRunManager(options = {}) {
         }
       } finally {
         current.finishedAt = now().toISOString();
-        try { unlock(); } catch (_) { console.error('[hunt-run] no se pudo liberar el lock limpiamente.'); }
+        try { unlock(owner); } catch (_) { console.error('[hunt-run] no se pudo liberar el lock limpiamente.'); }
         // Se captura el desenlace ANTES de ceder el control: a partir de aqui
         // otro run puede empezar y reemplazar `current`, asi que waitForRun
         // debe resolver con ESTE resultado, no con el que este vigente luego.
