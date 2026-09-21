@@ -338,6 +338,9 @@ function createMarketDiscoveryRunManager(options = {}) {
   function stopAccepting() { accepting = false; }
   function waitForIdle() { return activePromise || Promise.resolve(); }
   function getRun(runId) { return runStore.readRun(runId); }
+  // MD8: historial SOLO LECTURA. No cambia getStatus(): una corrida pasada
+  // jamas puede parecer una corrida activa.
+  function listRuns() { return runStore.listRuns(); }
   // MD8: aplicar la propuesta es SIEMPRE una accion explicita del usuario.
   // Semantica de REEMPLAZO; conserva el resto de la configuracion; no arranca
   // hunt, no relanza la exploracion y no notifica.
@@ -350,7 +353,7 @@ function createMarketDiscoveryRunManager(options = {}) {
     return artifact ? artifact.proposal || null : null;
   }
 
-  return { start, cancel, getStatus, stopAccepting, waitForIdle, getRun, getProposal, previewApply, applyProposal, STATUSES, PHASES };
+  return { start, cancel, getStatus, stopAccepting, waitForIdle, getRun, listRuns, getProposal, previewApply, applyProposal, STATUSES, PHASES };
 }
 
 module.exports = { createMarketDiscoveryRunManager, STATUSES, PHASES, PHASE_ORDER: Object.values(PHASES), OUTCOME };

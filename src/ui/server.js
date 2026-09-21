@@ -157,6 +157,11 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
     if (method === 'POST' && parts.length === 3 && parts[2] === 'cancel') {
       return sendJson(res, 202, marketDiscovery.cancel());
     }
+    // Historial acotado y de solo lectura: permite volver a mostrar la ultima
+    // exploracion despues de reiniciar la aplicacion.
+    if (method === 'GET' && parts.length === 3 && parts[2] === 'runs') {
+      return sendJson(res, 200, { runs: marketDiscovery.listRuns() });
+    }
     // GET para leer artefactos; POST solo para aplicar, que es accion explicita.
     if ((method === 'GET' || method === 'POST') && parts[2] === 'runs' && parts[3]) {
       const runId = decodeURIComponent(parts[3]);

@@ -119,6 +119,25 @@ const appJs = fs.readFileSync(path.join(__dirname, '../ui/public/app.js'), 'utf8
     assert.ok(/verificación de seguridad/.test(appJs), 'checkpoint se explica');
   });
 
+  test('6b. los avisos de la propuesta se muestran en español y sin códigos internos', () => {
+    // MD6 genera los avisos en ingles y con el motivo de parada interno. La
+    // pantalla los traduce; uno desconocido se resume en vez de mostrarse crudo.
+    const body = appJs.slice(appJs.indexOf('function marketWarningText'), appJs.indexOf('function marketList'));
+    const outcomes = { BUDGET_EXHAUSTED: 'Exploración terminada al alcanzar el límite de análisis.' };
+    const translate = new Function('MARKET_OUTCOME_TEXT', body + '; return marketWarningText;')(outcomes);
+    const partial = translate('exploration was partial (BUDGET_EXHAUSTED); evidence is incomplete');
+    assert.ok(!/BUDGET_EXHAUSTED/.test(partial), 'no se filtra el codigo interno');
+    assert.ok(/La evidencia está incompleta/.test(partial));
+    assert.equal(translate('only 0 defensible quer(ies); evidence does not support the target of 8'),
+      'La evidencia encontrada no basta para recomendar ninguna búsqueda.');
+    assert.ok(/Solo 3 búsqueda/.test(translate('only 3 defensible quer(ies); evidence does not support the target of 8')));
+    // Un aviso desconocido NUNCA se imprime tal cual.
+    const unknown = translate('some new warning with INTERNAL_CODE inside');
+    assert.ok(!/INTERNAL_CODE/.test(unknown), 'jerga desconocida no llega a pantalla');
+    assert.ok(/limitaciones/.test(unknown));
+    assert.ok(/marketWarningText\(w\)/.test(appJs), 'la pantalla usa el traductor');
+  });
+
   console.log('\n### Endpoints');
 
   await testAsync('7. arrancar, consultar y cancelar', async () => {
@@ -198,6 +217,48 @@ const appJs = fs.readFileSync(path.join(__dirname, '../ui/public/app.js'), 'utf8
         assert.equal(res.json.reason, outcome.reason);
       });
     }
+  });
+
+  console.log('\n### Historial tras reiniciar');
+
+  await testAsync('17. el historial de exploraciones es de solo lectura y viene ordenado', async () => {
+    const runs = [
+      { runId: 'r_old', status: 'COMPLETED', reason: 'COMPLETED', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: null, proposalAvailable: false },
+      { runId: 'r_new', status: 'COMPLETED', reason: 'BUDGET_EXHAUSTED', startedAt: '2026-02-01T00:00:00.000Z', finishedAt: null, proposalAvailable: true },
+    ];
+    const manager = fakeManager();
+    manager.listRuns = () => runs;
+    await withServer(manager, async (server) => {
+      const res = await request(server, 'GET', '/api/market-discovery/runs');
+      assert.equal(res.status, 200);
+      assert.equal(res.json.runs.length, 2);
+      assert.equal(res.json.runs[0].runId, 'r_old', 'el servidor devuelve lo que da el store, sin reordenar');
+    });
+  });
+
+  test('18. el store ordena de la más reciente a la más antigua y acota los campos', () => {
+    const { createMarketDiscoveryRunStore } = require('../marketDiscovery/runStore');
+    const dir = temp();
+    const store = createMarketDiscoveryRunStore({ dataDir: dir });
+    store.createRun('mdrun_aaa', { runId: 'mdrun_aaa', status: 'FAILED', reason: 'SOURCE_FAILED', startedAt: '2026-01-01T00:00:00.000Z' });
+    store.createRun('mdrun_bbb', { runId: 'mdrun_bbb', status: 'COMPLETED', reason: 'COMPLETED', startedAt: '2026-03-01T00:00:00.000Z' });
+    const listed = store.listRuns();
+    assert.equal(listed.length, 2);
+    assert.equal(listed[0].runId, 'mdrun_bbb', 'la mas reciente primero');
+    assert.deepEqual(Object.keys(listed[0]).sort(), ['finishedAt', 'proposalAvailable', 'reason', 'runId', 'startedAt', 'status']);
+    assert.equal(listed[0].proposalAvailable, false);
+    // Una carpeta que no es una corrida valida se ignora en vez de romper.
+    fs.mkdirSync(path.join(dir, 'market-discovery', 'runs', 'not a run id'), { recursive: true });
+    assert.equal(store.listRuns().length, 2);
+  });
+
+  test('19. la pantalla recupera la última exploración cuando el estado en memoria está vacío', () => {
+    assert.ok(/lastPersistedRun/.test(appJs), 'hay recuperacion de la ultima corrida');
+    assert.ok(/'\/api\/market-discovery\/runs'/.test(appJs), 'la pide al historial');
+    // El fallback NO puede hacer que una corrida pasada parezca activa.
+    const marketUi = appJs.slice(appJs.indexOf('Explorar mercado (MD8)'));
+    const fallback = marketUi.slice(marketUi.indexOf('async function refreshMarket'));
+    assert.ok(/!MARKET_ACTIVE\.has\(md\.status\)/.test(fallback), 'solo se recupera si no hay corrida activa');
   });
 
   console.log('\n### Aislamiento');

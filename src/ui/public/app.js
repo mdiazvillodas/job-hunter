@@ -1195,6 +1195,25 @@ function renderMarketStatus(md) {
   }
 }
 
+// Los avisos de la propuesta nacen en ingles y con codigos internos. Aqui se
+// traducen a lenguaje de producto; un aviso que no se reconozca se resume en
+// vez de mostrar su texto crudo, para que nunca se cuele jerga en pantalla.
+function marketWarningText(warning) {
+  const text = String(warning || '');
+  const partial = text.match(/^exploration was partial \(([A-Z_]+)\)/);
+  if (partial) {
+    const why = MARKET_OUTCOME_TEXT[partial[1]] || 'La exploración terminó antes de tiempo.';
+    return why + ' La evidencia está incompleta.';
+  }
+  const few = text.match(/^only (\d+) defensible quer\(ies\); evidence does not support the target of (\d+)/);
+  if (few) {
+    return few[1] === '0'
+      ? 'La evidencia encontrada no basta para recomendar ninguna búsqueda.'
+      : `Solo ${few[1]} búsqueda(s) están respaldadas por la evidencia, de las ${few[2]} deseables.`;
+  }
+  return 'La evidencia de esta exploración tiene limitaciones.';
+}
+
 function marketList(items, className) {
   if (!items.length) return '<p class="muted small">Ninguna.</p>';
   return '<ul class="market-list">' + items.map((i) => '<li class="' + (className || '') + '">' + esc(i) + '</li>').join('') + '</ul>';
@@ -1216,7 +1235,7 @@ async function renderMarketResults(runId) {
     : '';
 
   const warnings = (proposal && proposal.warnings) || [];
-  el('marketWarnings').innerHTML = warnings.map((w) => '<p class="muted small">⚠ ' + esc(w) + '</p>').join('');
+  el('marketWarnings').innerHTML = warnings.map((w) => '<p class="muted small">⚠ ' + esc(marketWarningText(w)) + '</p>').join('');
 
   const vocabulary = (proposal && proposal.vocabulary) || [];
   const compatibleCount = proposal && proposal.evidenceCoverage ? proposal.evidenceCoverage.compatiblePostings : 0;
@@ -1260,14 +1279,35 @@ async function renderMarketResults(runId) {
   marketLastRunId = runId;
 }
 
+// Tras reiniciar la aplicacion el estado en memoria ya no recuerda la ultima
+// exploracion, pero sus resultados siguen en disco. Se recupera la mas reciente
+// para no decirle al usuario "sin exploraciones" cuando si las hay.
+async function lastPersistedRun() {
+  try {
+    const data = await api('/api/market-discovery/runs');
+    const runs = (data && data.runs) || [];
+    return runs.length ? runs[0] : null;
+  } catch (e) { return null; }
+}
+
 async function refreshMarket() {
   const md = await api('/api/market-discovery/status');
-  renderMarketStatus(md);
   if (!MARKET_ACTIVE.has(md.status)) {
     clearInterval(marketPollTimer);
     marketPollTimer = null;
-    if (md.runId) await renderMarketResults(md.runId);
+    if (md.runId) {
+      renderMarketStatus(md);
+      await renderMarketResults(md.runId);
+      return;
+    }
+    const previous = await lastPersistedRun();
+    if (previous) {
+      renderMarketStatus({ ...md, runId: previous.runId, status: previous.status, reason: previous.reason });
+      await renderMarketResults(previous.runId);
+      return;
+    }
   }
+  renderMarketStatus(md);
 }
 
 function pollMarket() {

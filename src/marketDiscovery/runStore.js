@@ -107,7 +107,36 @@ function createMarketDiscoveryRunStore(options = {}) {
 
   function exists(runId) { return fs.existsSync(fileFor(runId, 'manifest')); }
 
-  return { createRun, writeArtifact, readArtifact, readRun, exists, paths: { root }, ARTIFACTS, SCHEMA_VERSION };
+  // Resumen de las corridas persistidas, de la mas reciente a la mas antigua.
+  // SOLO LECTURA y con campos acotados: sirve para que la pantalla pueda volver
+  // a mostrar la ultima exploracion despues de reiniciar la aplicacion, cuando
+  // el estado en memoria ya no la recuerda. Un id que no cumpla el patron, o una
+  // carpeta sin manifiesto legible, simplemente se ignora.
+  function listRuns(limit = 20) {
+    if (!fs.existsSync(root)) return [];
+    let entries;
+    try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch (_) { return []; }
+    const runs = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !RUN_ID_PATTERN.test(entry.name)) continue;
+      const manifest = readArtifact(entry.name, 'manifest');
+      if (!manifest) continue;
+      runs.push({
+        runId: entry.name,
+        status: typeof manifest.status === 'string' ? manifest.status : null,
+        reason: typeof manifest.reason === 'string' ? manifest.reason : null,
+        startedAt: typeof manifest.startedAt === 'string' ? manifest.startedAt : null,
+        finishedAt: typeof manifest.finishedAt === 'string' ? manifest.finishedAt : null,
+        proposalAvailable: readArtifact(entry.name, 'proposal') !== null,
+      });
+    }
+    // Orden determinista: por inicio descendente y, a igualdad, por id.
+    runs.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || ''))
+      || String(b.runId).localeCompare(String(a.runId)));
+    return runs.slice(0, Math.max(0, limit));
+  }
+
+  return { createRun, writeArtifact, readArtifact, readRun, listRuns, exists, paths: { root }, ARTIFACTS, SCHEMA_VERSION };
 }
 
 module.exports = { createMarketDiscoveryRunStore, ARTIFACTS, RUN_ID_PATTERN, SCHEMA_VERSION };
