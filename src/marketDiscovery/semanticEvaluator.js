@@ -16,7 +16,7 @@
 
 const { SCHEMA_VERSION, freeze, validateProfile } = require('./domain');
 const {
-  SEMANTIC_SCHEMA, SemanticContractError, SEMANTIC_RULES, DIMENSIONS, CLASSIFIER_VERSION, PROMPT_VERSION,
+  SEMANTIC_SCHEMA, SemanticContractError, SEMANTIC_RULES, DIMENSIONS, BLOCKING_DIMENSIONS, NON_BLOCKING_DIMENSIONS, CLASSIFIER_VERSION, PROMPT_VERSION,
   MAX_EVIDENCE_ITEMS, MAX_TERMINOLOGY_ITEMS, MAX_REASON_ITEMS, boundedDiagnosticMessage,
   normalizePosting, postingPayload, validateModelOutput, applyTerminologyGate, cacheIdentity,
 } = require('./semanticContract');
@@ -88,7 +88,8 @@ function buildSystemPrompt(profile) {
     'These are checked after you answer. They are not preferences: satisfy them before answering, or the assessment is lost.',
     'If exclusions=CONFLICTS then classification MUST be OUT_OF_SCOPE. Never UNCERTAIN, never COMPATIBLE.',
     'If classification=COMPATIBLE then at least one of capabilities or responsibilities MUST be SUPPORTS.',
-    'If classification=COMPATIBLE then NO dimension may be CONFLICTS. If something genuinely conflicts, the answer is OUT_OF_SCOPE, not COMPATIBLE.',
+    `If classification=COMPATIBLE then NONE of these may be CONFLICTS: ${BLOCKING_DIMENSIONS.join(', ')}. If one of them genuinely conflicts, the answer is OUT_OF_SCOPE, not COMPATIBLE.`,
+    `Exception: ${NON_BLOCKING_DIMENSIONS.join(', ')} may be CONFLICTS and still be COMPATIBLE. Record it honestly — an on-site posting when the profile prefers hybrid is modality=CONFLICTS — but judge membership of the professional market, not whether the person should apply.`,
     'If classification=COMPATIBLE you MUST supply at least one evidence snippet that is found VERBATIM in the field you name.',
     'Snippets not found verbatim are silently discarded, so a COMPATIBLE answer whose every snippet was invented or paraphrased ends with zero evidence and is DISCARDED. Copy, never rephrase.',
     '',

@@ -15,6 +15,25 @@ const { SCHEMA_VERSION, hash, freeze, normalize, assert } = require('./domain');
 const CLASSIFICATIONS = Object.freeze(['COMPATIBLE', 'UNCERTAIN', 'OUT_OF_SCOPE']);
 const DIMENSION_STATES = Object.freeze(['SUPPORTS', 'NEUTRAL', 'CONFLICTS', 'UNKNOWN']);
 const DIMENSIONS = Object.freeze(['capabilities', 'responsibilities', 'domain', 'direction', 'seniority', 'exclusions', 'geography', 'modality']);
+// Dimensiones cuyo CONFLICTS invalida por si solo un COMPATIBLE.
+//
+// `modality` se evalua y se registra igual que las demas, pero NO bloquea:
+// Market Discovery responde "¿esta oferta pertenece al mercado profesional que
+// queremos entender?", no "¿deberia el usuario inscribirse en ESTA oferta?".
+// Que un puesto sea presencial y la preferencia sea hibrida es una restriccion
+// logistica para postular; no cambia como el mercado NOMBRA ese puesto, que es
+// justo lo que esta exploracion busca aprender.
+//
+// Esto ademas resuelve una contradiccion interna real: el mapa de perfil declara
+// workplacePreference.enforcement = "unspecified" y MD7.0.1 ya establece que la
+// modalidad no es filtro duro para Market Discovery, pero esta regla la trataba
+// como descalificatoria absoluta y descartaba assessments fundados enteros.
+//
+// El resto sigue igual de estricto: capacidades, responsabilidades, dominio,
+// direccion, seniority, exclusiones y GEOGRAFIA siguen bloqueando.
+// Esto NO afecta a Hunter: es el contrato semantico de Market Discovery.
+const NON_BLOCKING_DIMENSIONS = Object.freeze(['modality']);
+const BLOCKING_DIMENSIONS = Object.freeze(DIMENSIONS.filter((d) => !NON_BLOCKING_DIMENSIONS.includes(d)));
 const SOURCE_FIELDS = Object.freeze(['title', 'description']);
 const TERM_TYPES = Object.freeze(['ROLE_TITLE', 'DISCRIMINATOR']);
 // Solo una oferta COMPATIBLE puede alimentar el vocabulario futuro.
@@ -22,7 +41,7 @@ const ELIGIBILITY = Object.freeze({ ELIGIBLE: 'ELIGIBLE', REVIEW_ONLY: 'REVIEW_O
 
 const CLASSIFIER_VERSION = 1;
 // El prompt cambia el juicio del modelo, asi que versiona la identidad de cache.
-const PROMPT_VERSION = 2;
+const PROMPT_VERSION = 3;
 const MAX_DESCRIPTION_CHARS = 12000;
 const MAX_TITLE_CHARS = 300;
 const MAX_SNIPPET_CHARS = 300;
@@ -287,7 +306,7 @@ function validateModelOutput(raw, posting, fields) {
     fail('COMPATIBLE requires supported capabilities or responsibilities', SEMANTIC_RULES.COMPATIBLE_WITHOUT_SUPPORT);
   }
   if (raw.classification === 'COMPATIBLE') {
-    for (const dimension of DIMENSIONS) {
+    for (const dimension of BLOCKING_DIMENSIONS) {
       if (dimensions[dimension] === 'CONFLICTS') fail(`COMPATIBLE cannot conflict on ${dimension}`, SEMANTIC_RULES.COMPATIBLE_WITH_CONFLICT);
     }
   }
@@ -379,7 +398,7 @@ function cacheIdentity({ posting, profile, model }) {
 }
 
 module.exports = {
-  CLASSIFICATIONS, DIMENSION_STATES, DIMENSIONS, SOURCE_FIELDS, TERM_TYPES, ELIGIBILITY,
+  CLASSIFICATIONS, DIMENSION_STATES, DIMENSIONS, BLOCKING_DIMENSIONS, NON_BLOCKING_DIMENSIONS, SOURCE_FIELDS, TERM_TYPES, ELIGIBILITY,
   SEMANTIC_SCHEMA, SemanticContractError, SEMANTIC_RULES,
   toSafeSemanticDiagnostic, boundedDiagnosticMessage, diagnosticToken,
   MAX_DIAGNOSTIC_MESSAGE_CHARS, MAX_EVIDENCE_ITEMS, MAX_TERMINOLOGY_ITEMS, MAX_REASON_ITEMS,

@@ -23,7 +23,7 @@ const { createSemanticEvaluator, buildSystemPrompt } = require('../marketDiscove
 const {
   SEMANTIC_SCHEMA, SEMANTIC_RULES, SemanticContractError, toSafeSemanticDiagnostic,
   boundedDiagnosticMessage, MAX_DIAGNOSTIC_MESSAGE_CHARS,
-  MAX_EVIDENCE_ITEMS, MAX_TERMINOLOGY_ITEMS, MAX_REASON_ITEMS, DIMENSIONS,
+  MAX_EVIDENCE_ITEMS, MAX_TERMINOLOGY_ITEMS, MAX_REASON_ITEMS, DIMENSIONS, BLOCKING_DIMENSIONS, NON_BLOCKING_DIMENSIONS,
 } = require('../marketDiscovery/semanticContract');
 const { createExplorationEngine } = require('../marketDiscovery/explorationEngine');
 const { DEFAULT_BUDGET, STOP_REASONS } = require('../marketDiscovery/explorationBudget');
@@ -215,8 +215,43 @@ const reasonItems = (n) => Array.from({ length: n }, (_, i) => 'reason ' + i);
     assert.equal(error.code, SEMANTIC_RULES.COMPATIBLE_WITHOUT_SUPPORT);
   });
 
+  await testAsync('K0. MODALIDAD en CONFLICTS ya NO invalida un COMPATIBLE fundado', async () => {
+    // Decision de producto: Market Discovery responde si la oferta pertenece al
+    // mercado profesional, no si el usuario deberia inscribirse. Una oferta
+    // presencial con preferencia hibrida sigue ensenando vocabulario de mercado.
+    const result = await evaluate(modelPayload({
+      dimensions: allDimensions('NEUTRAL', { capabilities: 'SUPPORTS', responsibilities: 'SUPPORTS', modality: 'CONFLICTS' }),
+    }));
+    assert.equal(result.classification, 'COMPATIBLE');
+    // El conflicto NO se borra: se registra con honestidad.
+    assert.equal(result.dimensions.modality, 'CONFLICTS');
+    assert.equal(result.terminology[0].promotable, true, 'su terminologia si alimenta el vocabulario');
+  });
+
+  test('K0b. el conjunto bloqueante es exactamente el profesional + geografia', () => {
+    assert.deepEqual([...BLOCKING_DIMENSIONS].sort(),
+      ['capabilities', 'direction', 'domain', 'exclusions', 'geography', 'responsibilities', 'seniority']);
+    assert.deepEqual([...NON_BLOCKING_DIMENSIONS], ['modality']);
+    assert.equal(DIMENSIONS.length, 8, 'modality sigue evaluandose y registrandose');
+    assert.ok(DIMENSIONS.includes('modality'));
+  });
+
+  await testAsync('K1. GEOGRAFIA en CONFLICTS sigue rechazando COMPATIBLE', async () => {
+    const error = await contractError(modelPayload({
+      dimensions: allDimensions('NEUTRAL', { capabilities: 'SUPPORTS', geography: 'CONFLICTS' }),
+    }));
+    assert.equal(error.code, SEMANTIC_RULES.COMPATIBLE_WITH_CONFLICT);
+    assert.ok(/cannot conflict on geography/.test(error.message));
+  });
+
+  await testAsync('K2. el prompt declara el conjunto bloqueante y la excepcion', async () => {
+    const prompt = buildSystemPrompt(PROFILE);
+    for (const dimension of BLOCKING_DIMENSIONS) assert.ok(prompt.includes(dimension), 'prompt names ' + dimension);
+    assert.ok(/Exception: modality may be CONFLICTS and still be COMPATIBLE/.test(prompt));
+    assert.ok(/Record it honestly/.test(prompt), 'modality se sigue registrando');
+  });
   await testAsync('K. COMPATIBLE con cualquier dimension en CONFLICTS sigue rechazado', async () => {
-    for (const dimension of DIMENSIONS) {
+    for (const dimension of BLOCKING_DIMENSIONS) {
       if (dimension === 'exclusions') continue; // tiene su propia regla, mas estricta
       // Se sostienen AMBAS dimensiones de apoyo para que la regla que falle sea
       // la del conflicto, tambien cuando la que conflictua es una de ellas.
@@ -246,7 +281,10 @@ const reasonItems = (n) => Array.from({ length: n }, (_, i) => 'reason ' + i);
     const prompt = buildSystemPrompt(PROFILE);
     assert.ok(/If exclusions=CONFLICTS then classification MUST be OUT_OF_SCOPE/.test(prompt));
     assert.ok(/at least one of capabilities or responsibilities MUST be SUPPORTS/.test(prompt));
-    assert.ok(/NO dimension may be CONFLICTS/.test(prompt));
+    // El prompt ya no dice "ninguna dimension": nombra EXACTAMENTE las que
+    // bloquean, que es una afirmacion mas fuerte, no mas debil.
+    assert.ok(/NONE of these may be CONFLICTS/.test(prompt));
+    for (const dimension of BLOCKING_DIMENSIONS) assert.ok(prompt.includes(dimension), 'prompt names ' + dimension);
     assert.ok(/at least one evidence snippet that is found VERBATIM/.test(prompt));
   });
 
