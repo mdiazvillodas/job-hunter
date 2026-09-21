@@ -235,6 +235,10 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
       analyze: analyzeWithStage,
       analyzeLimit: ANALYZE_LIMIT,
       analysisTarget: TARGET_ANALYZED_JOBS,
+      // Vocabulario del dominio del usuario: ordena los candidatos antes de
+      // gastar el presupuesto de analisis. Sale de SU configuracion, no de una
+      // lista global.
+      targetQueries: activeQueries.map((q) => q.query),
       notify: (job) => notifier.notifyHighMatch(job),
       signal: options.signal,
       reportProgress,

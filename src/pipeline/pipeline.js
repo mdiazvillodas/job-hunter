@@ -10,6 +10,7 @@
 // analyze puede ser null: en ese caso NO se analiza nada (los candidatos quedan 'skipped', pending).
 
 const { shouldAnalyzeJob } = require('../domain/jobRecord');
+const { prioritizeCandidates } = require('../domain/candidatePriority');
 const { CHALLENGE_STAGES, isKnownStage } = require('../linkedin/challengeSignals');
 
 function isChallenge(err) {
@@ -65,7 +66,7 @@ function compactJob(job) {
 }
 
 async function runPipeline(deps) {
-  const { jobService, discover, fetchDetails, analyze, analyzeLimit, analysisTarget = 20, signal, log, notify } = deps;
+  const { jobService, discover, fetchDetails, analyze, analyzeLimit, analysisTarget = 20, signal, log, notify, targetQueries } = deps;
   const reportProgress = typeof deps.reportProgress === 'function' ? deps.reportProgress : () => {};
   const say = typeof log === 'function' ? log : () => {};
   const startMs = Date.now();
@@ -109,9 +110,16 @@ async function runPipeline(deps) {
   const persisted = uniqueJobs.map((uj) => jobService.getJob(uj.jobId)).filter(Boolean);
   const analyzable = persisted.filter((j) => shouldAnalyzeJob(j));
   const alreadyAnalyzed = persisted.length - analyzable.length;
+  // El presupuesto de analisis es finito (analysisTarget). Antes de gastarlo se
+  // ORDENA por evidencia de dominio -titulo + queries que encontraron la oferta-
+  // para que una colision semantica ("Solution Architect" en una busqueda de
+  // arquitectura retail) no consuma los slots de un candidato real.
+  // Solo reordena: no descarta nada y no decide fit. Sin targetQueries es un
+  // no-op y se conserva el orden de descubrimiento.
+  const ordered = prioritizeCandidates(analyzable, { queries: targetQueries });
   // Se procesan hasta `limit` candidatos: se les extrae el detalle y, si hay analyzer, se analizan.
   // (Sin analyzer -por falta de key- igual se enriquece la description y quedan 'pending'.)
-  const candidates = analyzable.slice(0, limit);
+  const candidates = ordered.slice(0, limit);
 
   // ---------- DETAILS + ANALYSIS ----------
   const usage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, totalTokens: 0 };
