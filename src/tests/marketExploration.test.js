@@ -176,7 +176,7 @@ const run = (engine, request = {}) => engine.explore({ owner: OWNER, profile: PR
       assert.equal(DEFAULT_BUDGET.expansionEvaluationReserve, 24);
       assert.equal(DEFAULT_BUDGET.maxExpansionDepth, 1);
       assert.equal(DEFAULT_BUDGET.maxDurationMs, 45 * 60 * 1000);
-      assert.deepEqual(POLICY.searchLimits, { maxPages: 1, maxResults: 10 });
+      assert.deepEqual(POLICY.searchLimits, { maxPages: 1, maxResults: 25 });
       for (const key of Object.keys(HARD_CAPS)) {
         assert.throws(() => resolveBudget({ [key]: HARD_CAPS[key] + 1 }), /must not exceed/);
       }
@@ -191,7 +191,7 @@ const run = (engine, request = {}) => engine.explore({ owner: OWNER, profile: PR
       const evaluator = fakeEvaluator(() => ({ classification: 'UNCERTAIN' }));
       const engine = createExplorationEngine({ source: source.source, evaluator: evaluator.evaluator, seedPlanner: seedPlanFor(3), clock: () => new Date(0) });
       const result = await engine.explore({ owner: OWNER, profile: PROFILE, budget: { maxUniquePostings: 4, maxEvaluations: 3, initialEvaluationReserve: 3, expansionEvaluationReserve: 0 } });
-      for (const call of source.calls) assert.deepEqual(call.limits, { maxPages: 1, maxResults: 10 });
+      for (const call of source.calls) assert.deepEqual(call.limits, { maxPages: 1, maxResults: 25 });
       assert.equal(result.postings.length, 4, 'tope global de ofertas unicas');
       assert.equal(evaluator.calls.length, 3, 'tope de evaluaciones semanticas');
       assert.equal(result.budget.consumed.evaluations, 3);

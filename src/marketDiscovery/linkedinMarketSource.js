@@ -19,8 +19,22 @@ const { SCHEMA_VERSION, assert } = require('./domain');
 const { OPERATION_TYPES } = require('../domain/operationOwner');
 
 // Presupuesto de Market Discovery. NO es el de Hunter (25 resultados / 2 paginas).
+//
+// UNA sola pagina por busqueda: la profundidad de paginacion sigue siendo la
+// actividad cara y visible en LinkedIn, y no se toca.
 const MD_MAX_PAGES = 1;
-const MD_MAX_RESULTS = 10;
+// Retencion por busqueda. Era 10, y la auditoria de las corridas 4, 5 y 6 mostro
+// que ESE era el limite que ataba la muestra: las quince busquedas observaron 25
+// tarjetas DISTINTAS en la primera pagina y se quedaron con 10, descartando 15 ya
+// descargadas y ya parseadas (stopReason max_results_reached en las quince).
+// Ningun otro presupuesto se acerco a su tope: la corrida 6 termino con
+// COMPLETED por agotar los candidatos, usando 31 de 60 evaluaciones, 31 de 100
+// ofertas unicas, 5 de 10 busquedas y el 39% del tiempo.
+//
+// Quedarse con la primera pagina ENTERA no anade ni una navegacion de LinkedIn:
+// son las mismas busquedas, la misma pagina y las mismas tarjetas que ya se
+// leyeron. Solo deja de tirar evidencia que ya se tenia.
+const MD_MAX_RESULTS = 25;
 
 const STATUS = Object.freeze({
   COMPLETED: 'COMPLETED',

@@ -86,19 +86,20 @@ const baseRequest = (extra = {}) => ({
     });
 
     // ------------------------------------------------------------- 2-5. presupuesto
-    await testAsync('2+3. defaults are one page and ten results', async () => {
+    await testAsync('2+3. defaults are one page and the full first page of results', async () => {
       const collector = fakeCollector([card('1')]);
       const outcome = await sourceWith(collector).search(baseRequest());
       assert.equal(collector.calls[0].options.maxPages, 1);
-      assert.equal(collector.calls[0].options.maxResults, 10);
+      assert.equal(collector.calls[0].options.maxResults, MD_MAX_RESULTS);
       assert.equal(outcome.requestedScope.maxPages, 1);
-      assert.equal(outcome.requestedScope.maxResults, 10);
-      assert.equal(MD_MAX_PAGES, 1);
-      assert.equal(MD_MAX_RESULTS, 10);
+      assert.equal(outcome.requestedScope.maxResults, MD_MAX_RESULTS);
+      assert.equal(MD_MAX_PAGES, 1, 'la profundidad de paginacion NO cambia');
+      // Se retiene la primera pagina entera: son tarjetas ya descargadas.
+      assert.equal(MD_MAX_RESULTS, 25);
     });
     await testAsync('4+5. limits above the MD3b budget fail closed', async () => {
       const source = sourceWith(fakeCollector([card('1')]));
-      for (const limits of [{ maxPages: 2 }, { maxPages: 99 }, { maxResults: 11 }, { maxResults: 25 }, { maxPages: 2, maxResults: 25 }]) {
+      for (const limits of [{ maxPages: 2 }, { maxPages: 99 }, { maxResults: MD_MAX_RESULTS + 1 }, { maxResults: 99 }, { maxPages: 2, maxResults: 99 }]) {
         await assert.rejects(() => source.search(baseRequest({ limits })), /MARKET_DISCOVERY_INVALID/);
       }
       // Tampoco se aceptan valores no enteros, cero o negativos.
@@ -112,9 +113,9 @@ const baseRequest = (extra = {}) => ({
     await testAsync('24. the adapter never broadens what it asks the collector for', async () => {
       const collector = fakeCollector(Array.from({ length: 40 }, (_, i) => card(String(1000 + i))));
       const outcome = await sourceWith(collector).search(baseRequest());
-      assert.equal(collector.calls[0].options.maxResults, 10);
+      assert.equal(collector.calls[0].options.maxResults, MD_MAX_RESULTS);
       assert.equal(collector.calls[0].options.maxPages, 1);
-      assert.equal(outcome.results.length, 10, 'el presupuesto se respeta aunque haya 40 tarjetas');
+      assert.equal(outcome.results.length, MD_MAX_RESULTS, 'el presupuesto se respeta aunque haya 40 tarjetas');
       assert.equal(outcome.metrics.limitReached, true);
     });
 
@@ -178,7 +179,7 @@ const baseRequest = (extra = {}) => ({
       const outcome = await sourceWith(collector).search(baseRequest({
         filters: { location: 'Example region', datePosted: 'past week', employmentType: 'full-time' },
       }));
-      assert.deepEqual(outcome.requestedScope, { location: 'Example region', employmentType: 'full-time', datePosted: 'past week', maxPages: 1, maxResults: 10 });
+      assert.deepEqual(outcome.requestedScope, { location: 'Example region', employmentType: 'full-time', datePosted: 'past week', maxPages: 1, maxResults: MD_MAX_RESULTS });
       assert.equal(outcome.observedScope.location, SCOPE.VERIFIED);
       assert.equal(outcome.observedScope.datePosted, SCOPE.VERIFIED);
       assert.equal(outcome.observedScope.employmentType, SCOPE.UNVERIFIED, 'pedido pero no confirmado');
