@@ -74,6 +74,28 @@ function createExplorationEngine(options = {}) {
     const detailFailures = [];
     // MD7.2: por que cada familia recibio los turnos de evaluacion que recibio.
     const initialAllocation = new Map();
+    // MD9.1: en que se gasto el presupuesto de evaluacion, por fase.
+    let protectedInitialEvaluations = 0;
+    let expansionEvaluations = 0;
+    let reclaimedEvaluations = 0;
+    let expansionEligible = 0;
+
+    // Una familia puede recibir turnos en DOS pasadas (inicial y reclamo). Los
+    // turnos y las sondas se suman; el resto del estado es el de la ultima.
+    function mergeAllocation(rows, pass) {
+      for (const row of rows || []) {
+        const prior = initialAllocation.get(row.key);
+        const reclaimedTurns = (prior ? prior.reclaimedTurns || 0 : 0) + (pass === 'reclaim' ? row.evaluationTurns : 0);
+        initialAllocation.set(row.key, prior
+          ? {
+            ...row,
+            evaluationTurns: prior.evaluationTurns + row.evaluationTurns,
+            probes: prior.probes + row.probes,
+            reclaimedTurns,
+          }
+          : { ...row, reclaimedTurns });
+      }
+    }
 
     const seedPlan = planSeeds(profile);
     const families = seedPlan.seeds.map((seed, index) => ({
@@ -410,19 +432,23 @@ function createExplorationEngine(options = {}) {
     const initialSearchIndex = 0;
     // Si el presupuesto de busqueda no alcanzo para dar una oportunidad a cada
     // familia, el run esta limitado por presupuesto, no saturado.
-    let budgetLimited = initialSpecs.length < families.length;
+    const familiesNotSearched = initialSpecs.length < families.length;
+    let candidatesRemain = false;
+    // Los grupos iniciales se conservan: la fase de RECLAMO vuelve a repartir
+    // sobre ELLOS, con la misma politica adaptativa y sin nuevas busquedas.
+    const initialGroups = initialSpecs.map((spec) => ({
+      key: spec.familyId,
+      keys: (searches.find((entry) => entry.searchId === spec.searchId) || { resultKeys: [] }).resultKeys,
+    }));
     if (!stop) {
-      const groups = initialSpecs.map((spec) => ({
-        key: spec.familyId,
-        keys: (searches.find((entry) => entry.searchId === spec.searchId) || { resultKeys: [] }).resultKeys,
-      }));
       const pass = await evaluateFairly(
-        groups,
+        initialGroups,
         Math.min(budget.initialEvaluationReserve, budget.maxEvaluations),
         { adaptive: true }
       );
-      if (pass.exhausted) budgetLimited = true;
-      for (const row of pass.allocation || []) initialAllocation.set(row.key, row);
+      protectedInitialEvaluations = pass.used;
+      candidatesRemain = pass.exhausted;
+      mergeAllocation(pass.allocation, 'initial');
     }
 
     // ---------------- Fase 3: agregacion + elegibilidad de expansion.
@@ -458,15 +484,41 @@ function createExplorationEngine(options = {}) {
         if (entry && entry.status === 'COMPLETED') {
           // Toda oferta de expansion vuelve a pasar por la MISMA compuerta MD4
           // contra el perfil original: no se hereda compatibilidad.
-          await evaluateFairly([{ key: candidate.termId, keys: entry.resultKeys }], perTerm);
+          const pass = await evaluateFairly([{ key: candidate.termId, keys: entry.resultKeys }], perTerm);
+          expansionEvaluations += pass.used;
           if (stop) break;
         }
         if (updateSaturation(before)) { stop = STOP_REASONS.SATURATED; break; }
       }
+      expansionEligible = eligible.length;
+    }
+
+    // ---------------- Fase 5: RECLAMO.
+    //
+    // La reserva de expansion existe para GARANTIZAR la oportunidad de expandir,
+    // no para quedarse sin usar. Llegados aqui la expansion ya tuvo su turno
+    // completo (fase 4). Si no pudo consumir su reserva -porque no habia terminos
+    // elegibles, o no los suficientes- esa capacidad vuelve a las familias
+    // iniciales en lugar de quedar varada.
+    //
+    // El tope total NO se mueve: sigue siendo maxEvaluations, y evaluateFairly lo
+    // hace cumplir. No se lanza ninguna busqueda nueva ni se abre ninguna pagina
+    // nueva: se reparte sobre candidatos YA recuperados, con la MISMA politica
+    // adaptativa de MD7.2 (muestra minima, priorizacion por evidencia, sondas).
+    if (!stop && !checkStop()) {
+      const remaining = budget.maxEvaluations - evaluationsUsed;
+      if (remaining > 0 && initialGroups.length) {
+        const pass = await evaluateFairly(initialGroups, remaining, { adaptive: true });
+        reclaimedEvaluations = pass.used;
+        // Tras el reclamo, "quedan candidatos" vuelve a medirse: si se consumieron
+        // todos, la corrida esta COMPLETA, no limitada por presupuesto.
+        candidatesRemain = pass.exhausted;
+        mergeAllocation(pass.allocation, 'reclaim');
+      }
     }
 
     // El agotamiento de presupuesto NUNCA se reporta como saturacion.
-    if (!stop && budgetLimited) stop = STOP_REASONS.BUDGET_EXHAUSTED;
+    if (!stop && (familiesNotSearched || candidatesRemain)) stop = STOP_REASONS.BUDGET_EXHAUSTED;
     return buildResult(stop || STOP_REASONS.COMPLETED);
 
     // --- Agregacion: solo terminologia promocionable de ofertas COMPATIBLE.
@@ -609,6 +661,21 @@ function createExplorationEngine(options = {}) {
             expansionSearches: searches.filter((entry) => entry.depth === EXPANSION_DEPTH).length,
             completedSearches, evaluations: evaluationsUsed, uniquePostings: postings.size,
             sourceFailures: sourceFailures.length, semanticFailures: semanticFailures.length,
+          },
+          // MD9.1: en que fase se gasto cada evaluacion. Permite ver de un
+          // vistazo si la reserva de expansion quedo varada o se reclamo.
+          evaluationPhases: {
+            protectedInitial: protectedInitialEvaluations,
+            expansion: expansionEvaluations,
+            reclaimed: reclaimedEvaluations,
+            total: evaluationsUsed,
+            remaining: Math.max(0, budget.maxEvaluations - evaluationsUsed),
+            expansionEligibleTerms: expansionEligible,
+            reclaimReason: reclaimedEvaluations > 0
+              ? (expansionEligible === 0
+                ? 'no eligible expansion terms: unused expansion capacity returned to the initial families'
+                : 'expansion did not consume its whole reserve: the remainder returned to the initial families')
+              : null,
           },
           remaining: {
             searches: Math.max(0, budget.maxSearches - searches.length),

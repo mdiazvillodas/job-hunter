@@ -135,7 +135,7 @@ const turnsOf = (ledger, n) => alloc(ledger, n).evaluationTurns;
 
   await testAsync('C. una familia productiva recibe MAS turnos que una de rendimiento cero', async () => {
     const { evaluator } = evaluatorFor((id) => (id.startsWith('1') ? 'COMPATIBLE' : 'OUT_OF_SCOPE'));
-    const engine = createExplorationEngine({ source: sourceFor(5, 10), evaluator, seedPlanner: seedPlanFor(5) });
+    const engine = createExplorationEngine({ source: sourceFor(5, 18), evaluator, seedPlanner: seedPlanFor(5) });
     const ledger = await explore(engine, BUDGET);
     const productive = turnsOf(ledger, 1);
     for (let f = 2; f <= 5; f += 1) {
@@ -149,7 +149,7 @@ const turnsOf = (ledger, n) => alloc(ledger, n).evaluationTurns;
 
   await testAsync('D. con UNA sola familia productiva, esa concentra los turnos restantes', async () => {
     const { evaluator } = evaluatorFor((id) => (id.startsWith('3') ? 'COMPATIBLE' : 'OUT_OF_SCOPE'));
-    const engine = createExplorationEngine({ source: sourceFor(5, 10), evaluator, seedPlanner: seedPlanFor(5) });
+    const engine = createExplorationEngine({ source: sourceFor(5, 18), evaluator, seedPlanner: seedPlanFor(5) });
     const ledger = await explore(engine, BUDGET);
     const winner = turnsOf(ledger, 3);
     const others = [1, 2, 4, 5].map((f) => turnsOf(ledger, f));
@@ -160,7 +160,7 @@ const turnsOf = (ledger, n) => alloc(ledger, n).evaluationTurns;
 
   await testAsync('E. con VARIAS familias productivas, todas se priorizan sobre las de cero', async () => {
     const { evaluator } = evaluatorFor((id) => ((id.startsWith('1') || id.startsWith('4')) ? 'COMPATIBLE' : 'OUT_OF_SCOPE'));
-    const engine = createExplorationEngine({ source: sourceFor(5, 10), evaluator, seedPlanner: seedPlanFor(5) });
+    const engine = createExplorationEngine({ source: sourceFor(5, 18), evaluator, seedPlanner: seedPlanFor(5) });
     const ledger = await explore(engine, BUDGET);
     const productive = [turnsOf(ledger, 1), turnsOf(ledger, 4)];
     const zero = [turnsOf(ledger, 2), turnsOf(ledger, 3), turnsOf(ledger, 5)];
@@ -172,13 +172,20 @@ const turnsOf = (ledger, n) => alloc(ledger, n).evaluationTurns;
 
   await testAsync('F. sin ninguna evidencia compatible la exploracion NO se detiene ni se sesga', async () => {
     const { evaluator, seen } = evaluatorFor(() => 'OUT_OF_SCOPE');
-    const engine = createExplorationEngine({ source: sourceFor(5, 10), evaluator, seedPlanner: seedPlanFor(5) });
+    const engine = createExplorationEngine({ source: sourceFor(5, 18), evaluator, seedPlanner: seedPlanFor(5) });
     const ledger = await explore(engine, BUDGET);
-    assert.equal(seen.length, 36, 'the whole initial reserve is still spent');
+    // Sin evidencia compatible no hay expansion elegible, asi que su reserva se
+    // reclama: se gasta el presupuesto ENTERO, no solo la reserva inicial.
+    assert.equal(seen.length, BUDGET.maxEvaluations, 'the whole evaluation budget is spent');
     const turns = [1, 2, 3, 4, 5].map((f) => turnsOf(ledger, f));
-    // Reparto equitativo: ninguna familia puede llevar mas de un turno de ventaja
-    // sobre otra cuando no hay nada que explotar.
-    assert.ok(Math.max(...turns) - Math.min(...turns) <= 1, 'cold start must stay even, got ' + turns.join('/'));
+    // Reparto equitativo: sin nada que explotar nadie puede acaparar. El reparto
+    // ocurre en DOS rondas round-robin (inicial y reclamo), asi que el corte de
+    // cada ronda puede dar un turno de ventaja: la holgura maxima es 2, y cada
+    // familia debe quedar cerca del reparto perfecto de 60/5.
+    assert.ok(Math.max(...turns) - Math.min(...turns) <= 2, 'cold start must stay even, got ' + turns.join('/'));
+    const fairShare = Math.floor(BUDGET.maxEvaluations / 5);
+    for (const t of turns) assert.ok(t >= fairShare - 1, 'no family is starved, got ' + turns.join('/'));
+    assert.equal(turns.reduce((a, b) => a + b, 0), BUDGET.maxEvaluations, 'nothing is left stranded');
   });
 
   await testAsync('F2. una compatible TARDIA en la cola sigue siendo alcanzable', async () => {
@@ -213,8 +220,12 @@ const turnsOf = (ledger, n) => alloc(ledger, n).evaluationTurns;
     const { evaluator, seen } = evaluatorFor((id) => (id.startsWith('1') ? 'COMPATIBLE' : 'OUT_OF_SCOPE'));
     const engine = createExplorationEngine({ source: sourceFor(5, 10), evaluator, seedPlanner: seedPlanFor(5) });
     const ledger = await explore(engine, BUDGET);
-    const initialEvaluations = ledger.evaluations.filter((e) => e.depth === 0).length;
-    assert.ok(initialEvaluations <= BUDGET.initialEvaluationReserve, 'initial reserve respected');
+    const phases = ledger.budget.evaluationPhases;
+    // La FASE PROTEGIDA sigue acotada por la reserva inicial; lo que la supera
+    // es capacidad reclamada, no reserva ensanchada.
+    assert.ok(phases.protectedInitial <= BUDGET.initialEvaluationReserve, 'protected initial phase respected');
+    assert.equal(phases.protectedInitial + phases.expansion + phases.reclaimed, phases.total, 'las fases suman el total');
+    assert.ok(phases.total <= BUDGET.maxEvaluations, 'total evaluations respected');
     assert.ok(seen.length <= BUDGET.maxEvaluations, 'total evaluations respected');
     assert.equal(ledger.budget.limits.initialEvaluationReserve, 36);
     assert.equal(ledger.budget.limits.maxEvaluations, 60);
@@ -227,10 +238,13 @@ const turnsOf = (ledger, n) => alloc(ledger, n).evaluationTurns;
     const { evaluator } = evaluatorFor((id) => (id.startsWith('1') ? 'COMPATIBLE' : 'OUT_OF_SCOPE'));
     const engine = createExplorationEngine({ source: sourceFor(5, 10), evaluator, seedPlanner: seedPlanFor(5) });
     const ledger = await explore(engine, BUDGET);
-    const initial = ledger.evaluations.filter((e) => e.depth === 0).length;
-    assert.ok(initial <= BUDGET.initialEvaluationReserve,
-      'the initial phase can never eat the expansion reserve: ' + initial);
-    assert.ok(BUDGET.maxEvaluations - initial >= 0);
+    const phases = ledger.budget.evaluationPhases;
+    // La fase inicial PROTEGIDA nunca se come la reserva de expansion: solo la
+    // fase de RECLAMO puede usarla, y unicamente DESPUES de que la expansion
+    // haya tenido su oportunidad completa.
+    assert.ok(phases.protectedInitial <= BUDGET.initialEvaluationReserve,
+      'the protected initial phase can never eat the expansion reserve: ' + phases.protectedInitial);
+    assert.ok(phases.total <= BUDGET.maxEvaluations);
   });
 
   console.log('\n### J-L. dedup global y atribucion');
