@@ -204,6 +204,29 @@ const phasesOf = (ledger) => ledger.budget.evaluationPhases;
     assert.equal(phasesOf(ledger2).total, Math.min(BUDGET.maxEvaluations, 5 * 12));
   });
 
+  await testAsync('G2. la evidencia hallada DURANTE el reclamo llega al libro mayor', async () => {
+    // Observado en la corrida 8: las dos ofertas compatibles aparecieron en las
+    // evaluaciones 41 y 42, ya dentro del reclamo. La agregacion de terminos se
+    // hace antes, asi que sin recalcular el libro mayor diria "0 candidatos"
+    // aunque la corrida si produjo terminologia.
+    // Posiciones 10 y 11: fuera del alcance de la fase protegida (~7 por familia)
+    // y dentro del alcance del reclamo.
+    const late = new Set(['1010', '2011']);
+    const { evaluator } = evaluatorFor((id) => (late.has(id) ? 'COMPATIBLE' : 'OUT_OF_SCOPE'));
+    const engine = createExplorationEngine({ source: sourceFor(18).source, evaluator, seedPlanner: seedPlanFor(5) });
+    const ledger = await explore(engine);
+    assert.ok(phasesOf(ledger).reclaimed > 0, 'hubo reclamo');
+    assert.ok(ledger.postings.some((x) => x.classification === 'COMPATIBLE'), 'la evidencia tardia existe');
+    assert.ok(ledger.observations.some((o) => o.promotable), 'la terminologia esta en el libro mayor');
+    assert.ok(ledger.expansion.candidates.length > 0,
+      'los candidatos reflejan la evidencia del reclamo, no solo la previa');
+    // La expansion NO se reabre: no se ejecuta ninguna busqueda tras el reclamo.
+    assert.equal(ledger.searches.filter((x) => x.depth === 1).length, 0, 'el reclamo no reabre la expansion');
+    for (const c of ledger.expansion.candidates) {
+      if (c.eligible && !c.selected) assert.ok(/arrived during the reclaim phase/.test(c.selectionReason), c.selectionReason);
+    }
+  });
+
   console.log('\n### H-I. dedup y atribucion');
 
   await testAsync('H+I. el reclamo no reevalua ni duplica nada', async () => {

@@ -514,6 +514,18 @@ function createExplorationEngine(options = {}) {
         // todos, la corrida esta COMPLETA, no limitada por presupuesto.
         candidatesRemain = pass.exhausted;
         mergeAllocation(pass.allocation, 'reclaim');
+
+        // El reclamo puede descubrir evidencia compatible DESPUES de que la
+        // expansion ya tuvo su turno. La agregacion de terminos se recalcula para
+        // que el libro mayor refleje TODA la evidencia de la corrida y no solo la
+        // anterior al reclamo; la expansion NO se reabre -eso seria otra fase de
+        // busqueda-, asi que un termino que llega tarde se marca como tal en vez
+        // de aparecer como elegible y sin seleccionar, que seria contradictorio.
+        if (reclaimedEvaluations > 0) {
+          candidates = aggregateCandidates().map((candidate) => (candidate.eligible && !candidate.selected
+            ? { ...candidate, selectionReason: 'evidence arrived during the reclaim phase, after the expansion phase had run' }
+            : candidate));
+        }
       }
     }
 
