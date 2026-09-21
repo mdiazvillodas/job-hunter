@@ -57,6 +57,36 @@ function safeChallenge(value) {
   return diagnostic;
 }
 
+// Cota dura: el estado del run es un objeto en memoria que sirve la API, no un
+// log. Una lista de queries es corta por definicion.
+const MAX_SUMMARY_QUERIES = 50;
+
+// El desenlace por query se expone con la MISMA disciplina de lista blanca que
+// el resto del summary: nada que venga del collector pasa sin sanear.
+function safeQueryOutcomes(value) {
+  if (!Array.isArray(value)) return null;
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const str = (v, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : null);
+  return value.slice(0, MAX_SUMMARY_QUERIES).map((entry) => {
+    const item = entry && typeof entry === 'object' ? entry : {};
+    return {
+      query: str(item.query),
+      family: str(item.family, 80),
+      status: str(item.status, 40),
+      rawResults: num(item.rawResults),
+      uniqueResults: num(item.uniqueResults),
+      uniqueContribution: num(item.uniqueContribution),
+      pagesVisited: num(item.pagesVisited),
+      attempts: num(item.attempts),
+      confirmedBy: str(item.confirmedBy, 40),
+      failureReason: str(item.failureReason),
+      stopReason: str(item.stopReason, 60),
+      startedAt: str(item.startedAt, 40),
+      completedAt: str(item.completedAt, 40),
+    };
+  });
+}
+
 function safeSummary(value) {
   if (!value || typeof value !== 'object') return null;
   const discovery = value.discovery || {};
@@ -73,6 +103,7 @@ function safeSummary(value) {
       duplicatesRemoved: discovery.duplicatesRemoved,
       newJobs: discovery.newJobs,
       existingJobs: discovery.existingJobs,
+      perQuery: safeQueryOutcomes(discovery.perQuery),
     },
     analysis: {
       requiringAnalysis: analysis.requiringAnalysis,
@@ -261,4 +292,4 @@ function createHuntRunManager(options = {}) {
   return { start, cancel, getStatus: snapshot, stopAccepting, waitForIdle, waitForRun };
 }
 
-module.exports = { createHuntRunManager, safeSummary, safeChallenge, safeProgress, safeError, safeDiagnostic, isCancellation };
+module.exports = { createHuntRunManager, safeSummary, safeQueryOutcomes, safeChallenge, safeProgress, safeError, safeDiagnostic, isCancellation };

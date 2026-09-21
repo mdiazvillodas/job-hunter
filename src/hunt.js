@@ -189,6 +189,9 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
           queriesExecuted: scope.metadata.searches.completed,
           rawResults: scope.metadata.results.rawResults,
           duplicatesRemoved: scope.metadata.results.duplicatesRemoved,
+          // Desenlace de CADA query intentada. Sin esto, un hunt lanzado por
+          // API solo deja "9 de 14" y no dice cuales fallaron ni por que.
+          perQuery: scope.perQuery,
         },
       };
     };

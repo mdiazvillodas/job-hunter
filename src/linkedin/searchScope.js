@@ -501,52 +501,178 @@ async function initializeSearchWithFilters(page, query, filters, options = {}) {
   return { filtersActive };
 }
 
-// Cambia SOLAMENTE el keyword de busqueda reutilizando el buscador (los filtros activos
-// -location, employment type, date posted- se conservan; verificado contra la UI real).
-// Espera de forma robusta a que LinkedIn refleje el nuevo keyword antes de continuar.
+// --- Cambio de keyword: transicion acotada, determinista y verificable ---
+//
+// Principio que NO se negocia: no se recolecta nada hasta confirmar que la
+// busqueda activa es la que pedimos. Lo que cambia respecto de la version
+// anterior es COMO se llega ahi, no cuando se acepta.
+//
+// La autoridad es el parametro `keywords` de la URL: describe la busqueda que
+// LinkedIn ejecuto de verdad, no el texto que nosotros escribimos en la caja.
+
+const QUERY_CHANGE_MAX_ATTEMPTS = 3;
+const QUERY_CONFIRM_TIMEOUT_MS = 20000;
+const JOBS_SEARCH_URL = 'https://www.linkedin.com/jobs/search/';
+
+const QUERY_CHANGE_FAILURES = Object.freeze({
+  INPUT_NOT_FOUND: 'keyword_input_not_found',
+  NOT_ENTERED: 'keyword_not_entered',
+  NOT_CONFIRMED: 'keyword_not_confirmed',
+  DRIFTED: 'keyword_drifted_after_load',
+});
+
+// Comparacion tolerante a espacios y mayusculas, estricta en el resto: evita
+// falsos negativos por normalizacion de LinkedIn sin aceptar otra busqueda.
+function normalizeKeyword(value) {
+  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function readKeywordFromUrl(href) {
+  try {
+    return new URL(String(href)).searchParams.get('keywords');
+  } catch (_) {
+    return null;
+  }
+}
+
+function keywordMatchesUrl(href, query) {
+  const current = readKeywordFromUrl(href);
+  return current !== null && normalizeKeyword(current) === normalizeKeyword(query);
+}
+
+// La MISMA URL con solo `keywords` reemplazado. Los filtros activos (location,
+// f_TPR, f_JT...) viajan en la URL, asi que la navegacion directa los conserva.
+// Si la pagina ya no es una busqueda de empleo se vuelve a la URL canonica y
+// verifyFiltersActive se encarga de detectar que los filtros no estan.
+function withKeyword(href, query) {
+  let url;
+  try {
+    url = new URL(String(href));
+  } catch (_) {
+    url = new URL(JOBS_SEARCH_URL);
+  }
+  if (!/\/jobs\/search/.test(url.pathname)) url = new URL(JOBS_SEARCH_URL);
+  url.searchParams.set('keywords', query);
+  return url.toString();
+}
+
+// Deja la caja con EXACTAMENTE el texto pedido y el typeahead cerrado.
+// fill() no depende del foco ni de atajos de teclado (Control+a podia actuar
+// sobre el documento si el click abria la lista de sugerencias), y el Escape
+// cierra esa lista: abierta, se come el Enter y lanza la busqueda de una
+// sugerencia en lugar de la nuestra.
+async function setKeywordText(page, keywordInput, query) {
+  const matches = async () => normalizeKeyword(await keywordInput.inputValue()) === normalizeKeyword(query);
+  await keywordInput.click();
+  await page.keyboard.press('Escape').catch(() => {});
+  await keywordInput.fill('');
+  await keywordInput.fill(query);
+  if (!(await matches())) await keywordInput.fill(query);
+  // Cerrar la sugerencia ANTES del Enter. Si el Escape ademas vacia el input,
+  // se vuelve a escribir: nunca se envia una query a medias.
+  await page.keyboard.press('Escape').catch(() => {});
+  if (!(await matches())) await keywordInput.fill(query);
+  return matches();
+}
+
+/**
+ * Cambia SOLAMENTE el keyword reutilizando la busqueda actual (los filtros
+ * activos se conservan). Reintenta un numero ACOTADO de veces y termina en una
+ * navegacion por URL, que es determinista. Nunca devuelve changed=true sin que
+ * la URL confirme la query, ni reutiliza los resultados de la query anterior.
+ *
+ * @returns {Promise<{changed:boolean, attempts:number, failureReason:string|null, confirmedBy:string|null}>}
+ */
 async function changeSearchQuery(page, query, options = {}) {
-  throwIfCancelled(options.signal);
-  const kw = await getKeywordInput(page);
+  const maxAttempts = Number.isFinite(options.maxAttempts) && options.maxAttempts > 0
+    ? options.maxAttempts
+    : QUERY_CHANGE_MAX_ATTEMPTS;
+  const confirmTimeout = Number.isFinite(options.confirmTimeoutMs) && options.confirmTimeoutMs > 0
+    ? options.confirmTimeoutMs
+    : QUERY_CONFIRM_TIMEOUT_MS;
 
-  const prevFirstId = await getFirstCardId(page);
-  await kw.click();
-  await kw.press('Control+a');
-  await kw.press('Delete');
-  await kw.type(query, { delay: 40 });
-  await kw.press('Enter');
+  let failureReason = null;
+  let attempts = 0;
 
-  // Gate principal: el parametro keywords de la URL pasa a ser EXACTAMENTE la nueva query.
-  // (evita falsos positivos por substrings; ademas se acepta cambio de la primera tarjeta)
-  const changed = await page
-    .waitForFunction(
-      ({ qDecoded, prev }) => {
-        const m = location.href.match(/keywords=([^&]*)/);
-        let kwMatch = false;
-        if (m) {
-          try {
-            kwMatch = decodeURIComponent(m[1].replace(/\+/g, '%20')) === qDecoded;
-          } catch (e) {
-            kwMatch = false;
-          }
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    throwIfCancelled(options.signal);
+    attempts = attempt;
+    // La ultima pasada no vuelve a pelear con la caja de busqueda: navega.
+    const viaUrl = attempt >= maxAttempts;
+
+    if (viaUrl) {
+      await page.goto(withKeyword(page.url(), query), { waitUntil: 'domcontentloaded' });
+    } else {
+      let keywordInput;
+      try {
+        keywordInput = await getKeywordInput(page);
+      } catch (error) {
+        // Un selector que no aparece no aborta el hunt: quedan intentos, y el
+        // ultimo no depende del DOM. Cualquier otro error (challenge,
+        // cancelacion) se propaga sin tocarlo.
+        if (error && error.name === 'LinkedInSelectorError') {
+          failureReason = QUERY_CHANGE_FAILURES.INPUT_NOT_FOUND;
+          continue;
         }
-        const first = document.querySelector('li[data-occludable-job-id]')?.getAttribute('data-occludable-job-id') || null;
-        const firstChanged = prev && first && first !== prev;
-        return kwMatch && (firstChanged || true);
-      },
-      { qDecoded: query, prev: prevFirstId },
-      { timeout: 20000 }
-    )
-    .then(() => true)
-    .catch(() => false);
+        throw error;
+      }
+      if (!(await setKeywordText(page, keywordInput, query))) {
+        failureReason = QUERY_CHANGE_FAILURES.NOT_ENTERED;
+        continue;
+      }
+      await keywordInput.press('Enter');
+    }
 
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await waitForJobResults(page).catch(() => {});
-  await page.waitForTimeout(800);
-  await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
-  throwIfCancelled(options.signal);
+    // Gate: el parametro keywords de la URL pasa a ser EXACTAMENTE la query.
+    const confirmed = await page
+      .waitForFunction(
+        (expected) => {
+          const match = location.href.match(/[?&]keywords=([^&]*)/);
+          if (!match) return false;
+          let value;
+          try {
+            value = decodeURIComponent(match[1].replace(/\+/g, '%20'));
+          } catch (e) {
+            return false;
+          }
+          return value.replace(/\s+/g, ' ').trim().toLowerCase() === expected;
+        },
+        normalizeKeyword(query),
+        { timeout: confirmTimeout }
+      )
+      .then(() => true)
+      .catch(() => false);
 
-  debugLog(options, { event: 'query_changed', query, changed });
-  return changed;
+    if (!confirmed) {
+      failureReason = QUERY_CHANGE_FAILURES.NOT_CONFIRMED;
+      continue;
+    }
+
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await waitForJobResults(page).catch(() => {});
+    await detectSecurityChallenge(page, CHALLENGE_CONTEXT);
+    throwIfCancelled(options.signal);
+
+    // Reverificacion DESPUES de cargar resultados: si LinkedIn redirigio o
+    // reescribio el keyword mientras cargaba, lo que hay en pantalla ya no es
+    // lo que pedimos y no se acepta.
+    if (!keywordMatchesUrl(page.url(), query)) {
+      failureReason = QUERY_CHANGE_FAILURES.DRIFTED;
+      continue;
+    }
+
+    const confirmedBy = viaUrl ? 'url_navigation' : 'search_box';
+    debugLog(options, { event: 'query_changed', query, changed: true, attempts: attempt, confirmedBy });
+    return { changed: true, attempts: attempt, failureReason: null, confirmedBy };
+  }
+
+  debugLog(options, { event: 'query_changed', query, changed: false, attempts, failureReason });
+  return {
+    changed: false,
+    attempts,
+    failureReason: failureReason || QUERY_CHANGE_FAILURES.NOT_CONFIRMED,
+    confirmedBy: null,
+  };
 }
 
 // Recorre la paginacion de la busqueda ACTUAL (filtros ya aplicados) y devuelve
@@ -699,6 +825,13 @@ module.exports = {
   rankLocationCandidate,
   getAllFiltersButton,
   getShowResultsButton,
+  normalizeKeyword,
+  readKeywordFromUrl,
+  keywordMatchesUrl,
+  withKeyword,
+  setKeywordText,
+  QUERY_CHANGE_FAILURES,
+  QUERY_CHANGE_MAX_ATTEMPTS,
   LOCATION_RESOLUTION,
   LOCATION_SUGGESTION_SELECTOR,
   LOCATION_INPUT_SELECTORS,

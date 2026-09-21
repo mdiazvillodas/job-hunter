@@ -250,6 +250,9 @@ async function runPipeline(deps) {
       duplicatesRemoved: dstats.duplicatesRemoved ?? null,
       newJobs,
       existingJobs,
+      // Se transporta tal cual lo produjo el collector (opcional: ausente en
+      // los callers que no lo informan).
+      perQuery: Array.isArray(dstats.perQuery) ? dstats.perQuery : null,
     },
     analysis: {
       requiringAnalysis: analyzable.length,

@@ -27,6 +27,36 @@ function throwIfCancelled(signal) {
   throw error;
 }
 
+// Desenlace de CADA query intentada. Se registra siempre, tambien cuando la
+// query no llego a ejecutarse: "9 de 14" sin decir cuales ni por que no es un
+// diagnostico, y era lo unico que sobrevivia fuera del log de debug.
+const QUERY_STATUS = Object.freeze({
+  COMPLETED: 'completed',
+  CHANGE_FAILED: 'query_change_failed',
+  CHALLENGE: 'challenge',
+  FAILED: 'failed',
+});
+
+function queryOutcome(fields) {
+  return {
+    query: fields.query,
+    family: fields.family,
+    status: fields.status,
+    rawResults: fields.rawResults == null ? 0 : fields.rawResults,
+    uniqueResults: fields.uniqueResults == null ? 0 : fields.uniqueResults,
+    // Jobs que ESTA query aporto al conjunto global (no los que ya estaban).
+    uniqueContribution: fields.uniqueContribution == null ? 0 : fields.uniqueContribution,
+    pagesVisited: fields.pagesVisited == null ? 0 : fields.pagesVisited,
+    attempts: fields.attempts == null ? 0 : fields.attempts,
+    confirmedBy: fields.confirmedBy == null ? null : fields.confirmedBy,
+    failureReason: fields.failureReason == null ? null : fields.failureReason,
+    stopReason: fields.stopReason == null ? null : fields.stopReason,
+    filtersActive: fields.filtersActive == null ? null : fields.filtersActive,
+    startedAt: fields.startedAt,
+    completedAt: new Date().toISOString(),
+  };
+}
+
 // Fusiona un job en el mapa global deduplicando por jobId (fallback url).
 // No pierde de que query/familia vino: acumula matchedQueries y matchedFamilies.
 function mergeJob(globalMap, job, query, family) {
@@ -66,6 +96,13 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
   let rawJobsDiscovered = 0;
   let completed = 0;
 
+  // Seams de inyeccion: por defecto son las implementaciones reales. Permiten
+  // testear la orquestacion (reintentos, registro por query, dedup) sin abrir
+  // un navegador ni tocar LinkedIn.
+  const changeQuery = options.changeSearchQueryImpl || changeSearchQuery;
+  const initializeSearch = options.initializeSearchWithFiltersImpl || initializeSearchWithFilters;
+  const collectSearch = options.collectCurrentSearchImpl || collectCurrentSearch;
+
   const total = activeQueries.length;
   const reportProgress = typeof options.reportProgress === 'function' ? options.reportProgress : () => {};
   const runStart = Date.now();
@@ -81,11 +118,18 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
     const { query, family, familyLabel } = activeQueries[i];
     reportProgress({ phase: 'discovery', searchesCompleted: completed, searchesTotal: total, currentQueryIndex: i + 1, currentQueryLabel: familyLabel || family });
     const queryStart = Date.now();
+    const queryStartedAt = new Date().toISOString();
 
     log(debug, `\n=== QUERY ${i + 1}/${total} ===`);
     log(debug, `${query}  [familia: ${family}]`);
     log(debug, '');
 
+    // Resultado de la transicion de keyword, para el registro por query.
+    // Declarados fuera del try: el catch tambien los reporta.
+    let attempts = 1;
+    let confirmedBy = 'initial_navigation';
+
+    try {
     // --- Fase 1: preparar la busqueda ---
     let filtersInitMs = 0;
     let searchExecutionMs = 0;
@@ -93,34 +137,30 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
     if (i === 0) {
       // Los filtros se aplican UNA sola vez, en la primera query.
       const t0 = Date.now();
-      await initializeSearchWithFilters(page, query, filters, scopeOptions);
+      await initializeSearch(page, query, filters, scopeOptions);
       filtersInitMs = Date.now() - t0;
       log(debug, `Filters initialization: ${fmtDuration(filtersInitMs)}`);
       log(debug, `Search execution: included in init`);
     } else {
       // Solo se cambia el keyword; los filtros activos se reutilizan.
+      // El reintento acotado vive dentro de changeSearchQuery, que ademas
+      // termina en una navegacion por URL determinista.
       const t0 = Date.now();
-      let changed = await changeSearchQuery(page, query, scopeOptions);
-      if (!changed) {
-        // Un reintento antes de arriesgar heredar el keyword anterior.
-        changed = await changeSearchQuery(page, query, scopeOptions);
-      }
+      const transition = await changeQuery(page, query, scopeOptions);
       searchExecutionMs = Date.now() - t0;
+      attempts = transition.attempts;
+      confirmedBy = transition.confirmedBy;
       log(debug, `Filters initialization: reused`);
-      log(debug, `Search execution: ${fmtDuration(searchExecutionMs)}${changed ? '' : ' (WARN: keyword no confirmado)'}`);
+      log(debug, `Search execution: ${fmtDuration(searchExecutionMs)} (intentos: ${attempts}${transition.changed ? ', confirmado por ' + confirmedBy : ', WARN: keyword no confirmado'})`);
 
-      if (!changed) {
-        // No se pudo confirmar el nuevo keyword: no recolectamos para no heredar resultados.
-        perQuery.push({
-          query,
-          family,
-          rawResults: 0,
-          uniqueResults: 0,
-          pagesVisited: 0,
-          stopReason: 'query_change_failed',
-          filtersActive: null,
-        });
-        log(debug, `Pagination: skipped`);
+      if (!transition.changed) {
+        // No se pudo confirmar el nuevo keyword: no se recolecta NADA, para no
+        // heredar los resultados de la query anterior.
+        perQuery.push(queryOutcome({
+          query, family, status: QUERY_STATUS.CHANGE_FAILED, startedAt: queryStartedAt,
+          attempts, failureReason: transition.failureReason, stopReason: 'query_change_failed',
+        }));
+        log(debug, `Pagination: skipped (${transition.failureReason})`);
         log(debug, `Total query duration: ${fmtDuration(Date.now() - queryStart)}`);
         continue;
       }
@@ -136,7 +176,7 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
     };
 
     const paginationStart = Date.now();
-    const scope = await collectCurrentSearch(page, query, filters, {
+    const scope = await collectSearch(page, query, filters, {
       ...scopeOptions,
       onPageProcessed,
     });
@@ -144,20 +184,26 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
     const paginationMs = Date.now() - paginationStart;
     rawJobsDiscovered += scope.metadata.rawResults;
 
+    const uniqueBefore = globalMap.size;
     for (const job of scope.jobs) {
       rawResults += 1;
       mergeJob(globalMap, job, query, family);
     }
 
-    perQuery.push({
+    perQuery.push(queryOutcome({
       query,
       family,
+      status: QUERY_STATUS.COMPLETED,
       rawResults: scope.metadata.rawResults,
       uniqueResults: scope.metadata.uniqueResults,
+      uniqueContribution: globalMap.size - uniqueBefore,
       pagesVisited: scope.metadata.pagesVisited,
+      attempts,
+      confirmedBy,
       stopReason: scope.metadata.stopReason,
       filtersActive: scope.metadata.filtersActive,
-    });
+      startedAt: queryStartedAt,
+    }));
     completed += 1;
     reportProgress({
       phase: 'discovery', searchesCompleted: completed, searchesTotal: total,
@@ -171,6 +217,22 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
       debug,
       `-- query ${i + 1}/${total} done: raw=${scope.metadata.rawResults} unique=${scope.metadata.uniqueResults} pages=${scope.metadata.pagesVisited} stop=${scope.metadata.stopReason}`
     );
+    } catch (error) {
+      // Un challenge o un fallo inesperado detienen el run (se relanza tal
+      // cual), pero antes queda registrado EN QUE query ocurrio. La lista
+      // parcial viaja con el error para que el diagnostico no se pierda.
+      if (error && error.name === 'HuntCancelledError') throw error;
+      const isChallenge = error && error.name === 'SecurityChallengeError';
+      perQuery.push(queryOutcome({
+        query, family,
+        status: isChallenge ? QUERY_STATUS.CHALLENGE : QUERY_STATUS.FAILED,
+        attempts, confirmedBy,
+        failureReason: (error && error.message ? String(error.message) : 'unknown').slice(0, 200),
+        startedAt: queryStartedAt,
+      }));
+      error.searches = perQuery;
+      throw error;
+    }
   }
 
   const totalDurationMs = Date.now() - runStart;
