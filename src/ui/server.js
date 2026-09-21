@@ -157,7 +157,8 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
     if (method === 'POST' && parts.length === 3 && parts[2] === 'cancel') {
       return sendJson(res, 202, marketDiscovery.cancel());
     }
-    if (method === 'GET' && parts[2] === 'runs' && parts[3]) {
+    // GET para leer artefactos; POST solo para aplicar, que es accion explicita.
+    if ((method === 'GET' || method === 'POST') && parts[2] === 'runs' && parts[3]) {
       const runId = decodeURIComponent(parts[3]);
       // El id nunca llega al sistema de archivos sin validarse.
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(runId)) return sendJson(res, 400, { error: 'Identificador de exploración inválido.', code: 'INVALID_RUN_ID' });
@@ -165,6 +166,16 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
         const proposal = marketDiscovery.getProposal(runId);
         if (!proposal) return sendJson(res, 404, { error: 'No hay propuesta para esa exploración.', code: 'PROPOSAL_NOT_FOUND' });
         return sendJson(res, 200, proposal);
+      }
+      // Vista previa del reemplazo. NO escribe nada: es lo que el usuario
+      // revisa antes de confirmar.
+      if (method === 'GET' && parts.length === 5 && parts[4] === 'apply') {
+        return sendJson(res, 200, marketDiscovery.previewApply(runId));
+      }
+      // Aplicar SIEMPRE nace de una accion explicita del usuario. Nunca se
+      // dispara solo, no arranca un hunt y no relanza la exploracion.
+      if (method === 'POST' && parts.length === 5 && parts[4] === 'apply') {
+        return sendJson(res, 200, marketDiscovery.applyProposal(runId));
       }
       if (parts.length === 4) {
         const run = marketDiscovery.getRun(runId);

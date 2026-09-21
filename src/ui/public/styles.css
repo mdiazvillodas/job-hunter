@@ -557,3 +557,14 @@ body {
 /* Telegram: lista de cuentas detectadas. Cada una exige un clic explícito. */
 .telegram-candidates { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .telegram-candidate { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+
+/* Explorar mercado: comparacion ACTUALES vs PROPUESTAS, lado a lado. */
+.market-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 10px 0; }
+.market-compare h4 { margin: 0 0 6px; font-size: 13px; }
+.market-list { list-style: none; margin: 0; padding: 0; }
+.market-list li { padding: 4px 8px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; background: var(--panel-2, rgba(127, 127, 127, .08)); }
+.market-list li.removed { text-decoration: line-through; opacity: .65; }
+.market-list li.added { font-weight: 600; }
+.market-item { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: var(--panel-2, rgba(127, 127, 127, .08)); font-size: 13px; }
+.market-item .muted { font-size: 12px; }
+@media (max-width: 720px) { .market-compare { grid-template-columns: 1fr; } }

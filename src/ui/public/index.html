@@ -79,6 +79,7 @@
           <button class="settings-nav-item" type="button" data-section="notifications">Notificaciones</button>
           <button class="settings-nav-item" type="button" data-section="telegram">Telegram</button>
           <button class="settings-nav-item" type="button" data-section="linkedin">LinkedIn y navegador</button>
+          <button class="settings-nav-item" type="button" data-section="market">Explorar mercado</button>
         </nav>
         <div class="settings-panels" id="settingsPanels">
           <section class="settings-panel" data-section="search">
@@ -240,6 +241,62 @@
               </div>
               <div class="settings-actions">
                 <button id="installBrowserBtn" class="btn" type="button">Preparar navegador de LinkedIn</button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-panel" data-section="market" hidden>
+            <h2>Explorar mercado</h2>
+            <p class="settings-hint">Revisa cómo nombra el mercado local los puestos compatibles con tu perfil. Abre LinkedIn, analiza ofertas reales de tu ubicación y propone búsquedas mejores. No cambia nada por su cuenta.</p>
+
+            <div class="settings-group">
+              <div class="settings-row">
+                <label>Estado</label>
+                <span id="marketStatus" class="settings-status">Sin exploraciones todavía</span>
+              </div>
+              <div class="hunt-bar" id="marketBar" hidden><span id="marketBarFill"></span></div>
+              <p class="settings-hint" id="marketProgressDetail" hidden></p>
+              <div class="settings-actions">
+                <button id="marketStartBtn" class="btn primary" type="button">Explorar mercado</button>
+                <button id="marketCancelBtn" class="btn danger small" type="button" hidden>Detener</button>
+              </div>
+            </div>
+
+            <div id="marketResults" hidden>
+              <div class="settings-group">
+                <h3>Qué se encontró</h3>
+                <p class="settings-hint" id="marketSummary"></p>
+                <div id="marketWarnings"></div>
+              </div>
+              <div class="settings-group">
+                <h3>Puestos compatibles</h3>
+                <div id="marketCompatible"></div>
+              </div>
+              <div class="settings-group">
+                <h3>Términos del mercado</h3>
+                <p class="settings-hint">Expresiones tal y como aparecen en las ofertas compatibles.</p>
+                <div id="marketTerms"></div>
+              </div>
+              <div class="settings-group">
+                <h3>Búsquedas probadas</h3>
+                <div id="marketTested"></div>
+              </div>
+              <div class="settings-group">
+                <h3>Búsquedas recomendadas</h3>
+                <p class="settings-hint" id="marketProposalHint"></p>
+                <div class="market-compare">
+                  <div>
+                    <h4>Búsquedas actuales</h4>
+                    <div id="marketCurrentQueries"></div>
+                  </div>
+                  <div>
+                    <h4>Búsquedas propuestas</h4>
+                    <div id="marketProposedQueries"></div>
+                  </div>
+                </div>
+                <div class="settings-actions">
+                  <button id="marketApplyBtn" class="btn primary" type="button" hidden>Revisar y aplicar propuesta</button>
+                  <span id="marketApplyStatus" class="settings-status"></span>
+                </div>
               </div>
             </div>
           </section>

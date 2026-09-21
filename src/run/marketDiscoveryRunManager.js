@@ -22,6 +22,7 @@ const { createExplorationEngine } = require('../marketDiscovery/explorationEngin
 const { buildQueryPortfolio } = require('../marketDiscovery/queryPortfolio');
 const { createMarketDiscoveryRunStore } = require('../marketDiscovery/runStore');
 const { createDetailEnricher, DETAIL_OUTCOMES } = require('../marketDiscovery/detailEnricher');
+const { createProposalApplyService } = require('../marketDiscovery/proposalApply');
 
 const STATUSES = Object.freeze({
   IDLE: 'IDLE', STARTING: 'STARTING', RUNNING: 'RUNNING', CANCELLING: 'CANCELLING',
@@ -337,12 +338,19 @@ function createMarketDiscoveryRunManager(options = {}) {
   function stopAccepting() { accepting = false; }
   function waitForIdle() { return activePromise || Promise.resolve(); }
   function getRun(runId) { return runStore.readRun(runId); }
+  // MD8: aplicar la propuesta es SIEMPRE una accion explicita del usuario.
+  // Semantica de REEMPLAZO; conserva el resto de la configuracion; no arranca
+  // hunt, no relanza la exploracion y no notifica.
+  const applyService = options.proposalApplyService || createProposalApplyService({ runStore });
+  function previewApply(runId) { return applyService.preview(runId); }
+  function applyProposal(runId) { return applyService.apply(runId); }
+
   function getProposal(runId) {
     const artifact = runStore.readArtifact(runId, 'proposal');
     return artifact ? artifact.proposal || null : null;
   }
 
-  return { start, cancel, getStatus, stopAccepting, waitForIdle, getRun, getProposal, STATUSES, PHASES };
+  return { start, cancel, getStatus, stopAccepting, waitForIdle, getRun, getProposal, previewApply, applyProposal, STATUSES, PHASES };
 }
 
 module.exports = { createMarketDiscoveryRunManager, STATUSES, PHASES, PHASE_ORDER: Object.values(PHASES), OUTCOME };

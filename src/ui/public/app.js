@@ -1130,3 +1130,196 @@ function init() {
   loadSearchSettings();
 }
 document.addEventListener('DOMContentLoaded', init);
+
+/* ---------- Explorar mercado (MD8) ---------- */
+// Traduce el estado interno de la exploracion a lenguaje de producto. El usuario
+// no tiene por que saber nada de fases internas ni de presupuestos.
+const MARKET_PHASE_TEXT = {
+  PREPARING: 'Preparando la exploración',
+  OPENING_LINKEDIN: 'Abriendo LinkedIn',
+  INITIAL_SEARCH: 'Buscando puestos',
+  INITIAL_EVALUATION: 'Analizando compatibilidad',
+  EXPANSION: 'Ampliando la búsqueda',
+  BUILDING_PORTFOLIO: 'Preparando recomendaciones',
+  PERSISTING: 'Guardando resultados',
+  CLEANUP: 'Cerrando el navegador',
+  DONE: 'Terminado',
+  IDLE: 'Sin exploraciones todavía',
+};
+// Un final tiene que explicarse solo, sin codigos internos.
+const MARKET_OUTCOME_TEXT = {
+  COMPLETED: 'Exploración terminada.',
+  CANCELLED: 'Exploración detenida.',
+  LOGIN_REQUIRED: 'LinkedIn pidió iniciar sesión. Conecta LinkedIn y vuelve a intentarlo.',
+  CHECKPOINT_REQUIRED: 'LinkedIn pidió una verificación de seguridad. Resuélvela en el navegador y vuelve a intentarlo.',
+  SCOPE_NOT_VERIFIED: 'No se pudo confirmar tu ubicación en LinkedIn, así que no se usó ningún resultado.',
+  TIME_LIMIT: 'Se alcanzó el tiempo máximo de exploración.',
+  BUDGET_EXHAUSTED: 'Exploración terminada al alcanzar el límite de análisis.',
+  SATURATED: 'Exploración terminada: las búsquedas ya no aportaban ofertas nuevas.',
+  SOURCE_FAILED: 'Hubo un problema al leer las ofertas de LinkedIn.',
+  SEMANTIC_FAILED: 'Hubo un problema al analizar las ofertas.',
+  DETAIL_FAILED: 'No se pudieron abrir suficientes ofertas para analizarlas.',
+};
+const MARKET_ACTIVE = new Set(['STARTING', 'RUNNING', 'CANCELLING']);
+let marketPollTimer = null;
+let marketLastRunId = null;
+
+function marketOutcomeText(status, reason) {
+  if (MARKET_OUTCOME_TEXT[reason]) return MARKET_OUTCOME_TEXT[reason];
+  if (status === 'FAILED') return 'La exploración no pudo completarse.';
+  return 'Exploración terminada.';
+}
+
+function renderMarketStatus(md) {
+  const active = MARKET_ACTIVE.has(md.status);
+  el('marketStartBtn').hidden = active;
+  el('marketStartBtn').disabled = active;
+  el('marketCancelBtn').hidden = !active;
+  el('marketBar').hidden = !active;
+  const p = md.progress || {};
+  if (active) {
+    el('marketStatus').textContent = MARKET_PHASE_TEXT[md.phase] || 'Explorando el mercado';
+    const done = p.evaluationsCompleted || 0;
+    const max = p.evaluationsMax || 0;
+    const pct = max ? Math.min(100, Math.round((done / max) * 100)) : 0;
+    el('marketBarFill').style.width = pct + '%';
+    const detail = [];
+    if (p.searchesCompleted) detail.push(p.searchesCompleted + ' búsquedas');
+    if (done) detail.push(done + ' ofertas analizadas');
+    if (p.compatible) detail.push(p.compatible + ' compatibles');
+    el('marketProgressDetail').hidden = !detail.length;
+    el('marketProgressDetail').textContent = detail.join(' · ');
+  } else {
+    el('marketProgressDetail').hidden = true;
+    el('marketStatus').textContent = md.runId ? marketOutcomeText(md.status, md.reason) : 'Sin exploraciones todavía';
+  }
+}
+
+function marketList(items, className) {
+  if (!items.length) return '<p class="muted small">Ninguna.</p>';
+  return '<ul class="market-list">' + items.map((i) => '<li class="' + (className || '') + '">' + esc(i) + '</li>').join('') + '</ul>';
+}
+
+async function renderMarketResults(runId) {
+  if (!runId) { el('marketResults').hidden = true; return; }
+  let proposal = null;
+  try { proposal = await api('/api/market-discovery/runs/' + encodeURIComponent(runId) + '/proposal'); } catch (e) { proposal = null; }
+  let run = null;
+  try { run = await api('/api/market-discovery/runs/' + encodeURIComponent(runId)); } catch (e) { run = null; }
+  const progress = run && run.result && run.result.result ? run.result.result.progress : null;
+  el('marketResults').hidden = !(proposal || progress);
+  if (el('marketResults').hidden) return;
+
+  el('marketSummary').textContent = progress
+    ? progress.uniquePostings + ' ofertas revisadas · ' + progress.evaluationsCompleted
+      + ' analizadas · ' + progress.compatible + ' compatibles'
+    : '';
+
+  const warnings = (proposal && proposal.warnings) || [];
+  el('marketWarnings').innerHTML = warnings.map((w) => '<p class="muted small">⚠ ' + esc(w) + '</p>').join('');
+
+  const vocabulary = (proposal && proposal.vocabulary) || [];
+  const compatibleCount = proposal && proposal.evidenceCoverage ? proposal.evidenceCoverage.compatiblePostings : 0;
+  el('marketCompatible').innerHTML = compatibleCount
+    ? '<p class="muted small">' + compatibleCount + ' oferta(s) compatible(s) sustentan los términos de abajo.</p>'
+    : '<p class="muted small">No se encontraron ofertas compatibles en esta exploración.</p>';
+
+  el('marketTerms').innerHTML = vocabulary.length
+    ? vocabulary.slice(0, 20).map((v) => {
+      const label = v.state === 'PROMOTED' ? 'Confirmado' : v.state === 'WATCH' ? 'En observación' : 'Descartado';
+      return '<div class="market-item">' + esc(v.variants[0] || v.normalized)
+        + '<div class="muted">' + esc(label) + ' · ' + v.distinctPostings + ' oferta(s) · '
+        + v.distinctCompanies + ' empresa(s)</div></div>';
+    }).join('')
+    : '<p class="muted small">Todavía no hay términos de mercado sustentados.</p>';
+
+  const tested = (proposal && proposal.queryCandidates) || [];
+  el('marketTested').innerHTML = tested.length
+    ? tested.map((q) => {
+      const verdict = q.status === 'TESTED_POSITIVE' ? 'Funciona'
+        : q.status === 'TESTED_NEGATIVE' ? 'Poco precisa' : 'Sin datos suficientes';
+      return '<div class="market-item">' + esc(q.expression)
+        + '<div class="muted">' + esc(verdict) + ' · ' + esc(q.statusReason || '') + '</div></div>';
+    }).join('')
+    : '<p class="muted small">No se probó ninguna búsqueda en esta exploración.</p>';
+
+  const selected = (proposal && proposal.selectedQueries) || [];
+  const comparison = (proposal && proposal.currentQueryComparison) || [];
+  el('marketCurrentQueries').innerHTML = marketList(comparison.map((c) => c.query));
+  el('marketProposedQueries').innerHTML = selected.length
+    ? marketList(selected.map((q) => q.expression), 'added')
+    : '<p class="muted small">La evidencia de esta exploración no permite recomendar un conjunto de búsquedas.</p>';
+
+  const applicable = selected.length > 0;
+  const applied = proposal && proposal.applied === true;
+  el('marketProposalHint').textContent = applicable
+    ? 'Aceptar la propuesta REEMPLAZA tus búsquedas actuales por las propuestas.'
+    : 'No hay ninguna propuesta que aplicar.';
+  el('marketApplyBtn').hidden = !applicable || applied;
+  el('marketApplyStatus').textContent = applied ? 'Propuesta aplicada.' : '';
+  marketLastRunId = runId;
+}
+
+async function refreshMarket() {
+  const md = await api('/api/market-discovery/status');
+  renderMarketStatus(md);
+  if (!MARKET_ACTIVE.has(md.status)) {
+    clearInterval(marketPollTimer);
+    marketPollTimer = null;
+    if (md.runId) await renderMarketResults(md.runId);
+  }
+}
+
+function pollMarket() {
+  clearInterval(marketPollTimer);
+  marketPollTimer = setInterval(() => refreshMarket().catch(() => {}), 2000);
+}
+
+async function startMarket() {
+  try {
+    const md = await api('/api/market-discovery/start', 'POST');
+    renderMarketStatus(md);
+    el('marketResults').hidden = true;
+    pollMarket();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function cancelMarket() {
+  try { renderMarketStatus(await api('/api/market-discovery/cancel', 'POST')); } catch (e) { toast(e.message, true); }
+}
+
+// Aplicar NUNCA es automatico: se muestra exactamente que cambia y se pide
+// confirmacion explicita antes de tocar la configuracion.
+async function applyMarketProposal() {
+  if (!marketLastRunId) return;
+  const base = '/api/market-discovery/runs/' + encodeURIComponent(marketLastRunId) + '/apply';
+  let preview;
+  try { preview = await api(base); } catch (e) { toast(e.message, true); return; }
+  const change = preview.change || {};
+  const current = change.current || [];
+  const proposed = change.proposed || [];
+  const removed = change.removed || [];
+  const lines = ['Se van a REEMPLAZAR tus búsquedas actuales.', '', 'Actuales (' + current.length + '):']
+    .concat(current.map((q) => '  - ' + q.query))
+    .concat(['', 'Propuestas (' + proposed.length + '):'])
+    .concat(proposed.map((q) => '  + ' + q.query));
+  if (removed.length) lines.push('', 'Dejarán de usarse: ' + removed.map((q) => q.query).join(', '));
+  lines.push('', '¿Aplicar el reemplazo?');
+  if (!window.confirm(lines.join('\n'))) return;
+  try {
+    const result = await api(base, 'POST');
+    el('marketApplyStatus').textContent = result.changed ? 'Propuesta aplicada.' : 'La propuesta ya estaba aplicada.';
+    el('marketApplyBtn').hidden = true;
+    toast('Búsquedas actualizadas.');
+    if (typeof loadSearchSettings === 'function') { try { await loadSearchSettings(); } catch (e) { /* noop */ } }
+  } catch (e) { toast(e.message, true); }
+}
+
+function initMarketDiscovery() {
+  if (!el('marketStartBtn')) return;
+  el('marketStartBtn').addEventListener('click', startMarket);
+  el('marketCancelBtn').addEventListener('click', cancelMarket);
+  el('marketApplyBtn').addEventListener('click', applyMarketProposal);
+  refreshMarket().catch(() => {});
+}
+initMarketDiscovery();
