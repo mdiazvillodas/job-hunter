@@ -2,6 +2,129 @@
 
 Aplicacion local para automatizar, por etapas, la busqueda laboral. Implementado con Playwright sobre un perfil de Chromium persistente.
 
+## Variables de entorno y archivo .env
+
+Las variables se pueden definir de dos maneras, y se pueden combinar:
+
+1. En el entorno del proceso: `setx NOMBRE "valor"` (usuario de Windows) o
+   `$env:NOMBRE = "valor"` en la sesion de PowerShell.
+2. En un archivo `.env` en la raiz del proyecto (gitignored). Ver `.env.example`.
+
+**El entorno del proceso tiene precedencia**: si una variable ya esta definida
+(por `setx`, por la shell, o porque el trigger se la pasa al hunt que spawnea),
+el valor del `.env` NO la pisa. Si no hay `.env`, el proyecto funciona igual que
+antes leyendo solo `process.env`.
+
+La carga la hace `src/env.js` usando `util.parseEnv` (nativo de Node >= 20.12):
+no se agrego dotenv ni ninguna otra dependencia. Cada entry point (`hunt`,
+`trigger`, `ui`, collectors y CLIs de prueba) lo invoca en su primera linea,
+antes de requerir `src/config.js`, que toma su snapshot del entorno al cargarse.
+Un `.env` ausente o ilegible no tira abajo un hunt: se avisa y se sigue. El
+loader nunca loguea valores, solo nombres de variables.
+
+Test: `npm run test:env`.
+
+## Control remoto por Telegram
+
+Bot privado propio para disparar y consultar el Job Hunter desde el teléfono.
+
+```
+iPhone / Telegram  ->  Telegram Bot API  ->  listener local (long polling)
+                                                  |
+                                          TELEGRAM_ALLOWED_USER_ID
+                                                  |
+                                       trigger local (POST /run)  ->  hunt headless
+```
+
+La PC **solo hace conexiones salientes** a `api.telegram.org`. No hay webhook, no
+se abre ningun puerto, no hace falta dominio, tunel ni exponer nada a Internet.
+
+### Puesta en marcha
+
+1. Crear el bot con [@BotFather](https://t.me/BotFather) y copiar el token a `.env`:
+   `TELEGRAM_BOT_TOKEN=...`
+2. Abrir el bot en Telegram, pulsar **Start** y mandarle un mensaje cualquiera.
+3. `npm run telegram:whoami` -> muestra el Telegram User ID.
+4. Copiar ese id **a mano** al `.env`: `TELEGRAM_ALLOWED_USER_ID=<id>`
+   (`telegram:whoami` nunca escribe el `.env`).
+5. `npm run telegram` deja el listener corriendo (proceso persistente, como la UI
+   y el trigger). Ctrl+C para detenerlo.
+
+En Windows, `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-telegram.ps1`
+lo inicia en segundo plano. Para iniciarlo al entrar a Windows, crear un acceso
+directo a ese comando en `shell:startup`, usando la ruta absoluta del script.
+Los logs quedan en `runs/telegram.stdout.log` y `runs/telegram.stderr.log`.
+El listener debe estar activo ademas del trigger para que los botones respondan.
+
+### Comandos
+
+| Comando | Boton | Que hace |
+| --- | --- | --- |
+| `/start` | — | Saludo + teclado con los dos botones |
+| `/hunt` | 🔎 Lanzar Hunt | `POST /run` al trigger local |
+| `/status` | 📊 Estado | `GET /health` del trigger local |
+
+Los botones son un **reply keyboard** y mandan exactamente el mismo texto que los
+comandos, asi que recorren el mismo camino.
+
+`/hunt` responde al instante (`🚀 Hunt iniciado.`) y no espera a que el hunt
+termine: el resultado llega por ntfy. Si ya hay uno corriendo responde
+`⏳ Ya hay un hunt ejecutándose.`; si el trigger no esta levantado,
+`❌ No pude contactar al Job Hunter en esta PC.`
+
+### Seguridad
+
+- Solo `message.from.id === TELEGRAM_ALLOWED_USER_ID` puede ejecutar comandos.
+  Se autoriza por **user id**, no por chat id.
+- Solo chats privados. Grupos, supergrupos y canales se ignoran **en silencio**.
+- Cualquier otro usuario recibe `⛔ No autorizado.` y nada mas.
+- Sin `TELEGRAM_ALLOWED_USER_ID` configurado, nadie esta autorizado.
+- Las respuestas nunca incluyen ids, tokens, puertos, paths ni stack traces: los
+  problemas locales (por ejemplo un `HUNT_TRIGGER_TOKEN` mal configurado) se
+  loguean en la consola del listener, no se explican por Telegram.
+
+El listener **no ejecuta `src/hunt.js`**: habla con el trigger, que sigue siendo
+el unico dueno del lock compartido, la concurrencia y el historial de runs.
+
+### Reparto de responsabilidades
+
+- **Telegram = control remoto**: `/start`, `/hunt`, `/status` y la confirmacion
+  inmediata de que el hunt arranco.
+- **ntfy = notificacion**: matches >= 90, hunt terminado y hunt interrumpido.
+
+Telegram no espera los 40 minutos del hunt ni avisa cuando termina.
+
+## Notificaciones ntfy
+
+Tres notificaciones, todas gobernadas por `NTFY_ENABLED` (ver `.env.example`):
+
+| Cuando | Titulo | Click |
+| --- | --- | --- |
+| Un job analizado puntua >= 90 | `🔥 Match <score> — <titulo>` | si, a la oferta en LinkedIn |
+| El hunt termina su recorrido | `✅ Job Hunter terminado` | **no** |
+| El hunt se corta (challenge o error) | `❌ Job Hunter interrumpido` | **no** |
+
+Las de high match no cambiaron: mismo umbral, mismo formato, misma Click URL.
+
+La de cierre es puramente informativa (sin Click, no lleva a ningun lado) y usa
+solo metricas reales del summary del run; la que no exista se omite:
+
+```
+109 ofertas encontradas
+34 nuevas
+27 analizadas
+🔥 2 matches ≥90
+Duración: 42 min
+```
+
+### stoppedByChallenge no es "terminado"
+
+Cuando LinkedIn pide una verificacion a mitad del run, el pipeline corta y
+devuelve un summary con `stoppedByChallenge: true`. Para el **trigger** eso sigue
+siendo un run `success` — ese contrato NO cambio. Para la **notificacion** se
+distingue y se envia `❌ Job Hunter interrumpido` con las metricas parciales, para
+no dar por terminado algo que se corto a la mitad.
+
 ## LinkedIn Collector
 
 El collector:

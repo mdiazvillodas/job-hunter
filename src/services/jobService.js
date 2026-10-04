@@ -20,6 +20,7 @@ const {
   setAnalysisFailed,
 } = require('../domain/jobRecord');
 const { computeCalibrationSignal } = require('../domain/calibration');
+const { selectExpiredJobs, protectionReason, TTL_DAYS } = require('../domain/retention');
 
 function createJobService(repository, options = {}) {
   if (!repository || typeof repository.save !== 'function') {
@@ -94,6 +95,54 @@ function createJobService(repository, options = {}) {
   // Marca de notificacion push. Side effect informativo: no toca userState ni feedback.
   const markHighMatchNotified = (jobId) => transition(jobId, applyHighMatchNotified);
 
+  // --- Retencion (TTL) ---
+  // Borra las ofertas que llevan >= 7 dias en el sistema y NUNCA fueron abiertas.
+  // La decision de QUE borrar vive en domain/retention (pura y testeable); aqui solo
+  // se ejecuta el borrado por la capa de persistencia (repository.delete), que es la
+  // unica que sabe como esta guardado un job. Nunca se toca el filesystem a mano.
+  //
+  // opts: { now?: Date|number|string, dryRun?: boolean }
+  // dryRun=true calcula exactamente lo mismo pero NO borra: sirve para auditar antes.
+  function cleanupExpiredJobs(opts = {}) {
+    const now = opts.now !== undefined && opts.now !== null
+      ? opts.now
+      : (clock ? clock() : new Date().toISOString());
+    const dryRun = opts.dryRun === true;
+
+    const all = repository.getAll();
+    const expired = selectExpiredJobs(all, now);
+
+    let deleted = 0;
+    const failed = [];
+    if (!dryRun) {
+      for (const job of expired) {
+        try {
+          if (repository.delete(job.jobId)) deleted += 1;
+        } catch (e) {
+          // Un job que no se puede borrar no debe tumbar la corrida ni el pipeline.
+          failed.push({ jobId: job.jobId, error: e && e.message ? e.message : String(e) });
+        }
+      }
+    }
+
+    return {
+      ttlDays: TTL_DAYS,
+      now: typeof now === 'string' ? now : new Date(now).toISOString(),
+      dryRun,
+      scanned: all.length,
+      eligible: expired.length,
+      deleted,
+      failed,
+      jobIds: expired.map((j) => j.jobId),
+    };
+  }
+
+  // Por que una oferta concreta esta protegida del TTL (o null si no lo esta).
+  // Expuesto para auditoria/diagnostico; no lo usa el pipeline.
+  function retentionProtectionReason(jobId) {
+    return protectionReason(repository.get(jobId));
+  }
+
   function getCalibration(jobId) {
     return computeCalibrationSignal(requireJob(jobId));
   }
@@ -160,6 +209,8 @@ function createJobService(repository, options = {}) {
     applyAnalysisResult,
     applyAnalysisFailure,
     shouldAnalyzeJob,
+    cleanupExpiredJobs,
+    retentionProtectionReason,
   };
 }
 

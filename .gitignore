@@ -43,3 +43,6 @@ scratchpad/
 #   src/data/jobs/.gitkeep      (conserva la carpeta vacía en el clon)
 #   src/ai/*.example.json       (plantillas de perfil sin datos reales)
 # ============================================================================
+
+# --- estado local de runtime (offset de Telegram) ---
+state/

@@ -3,11 +3,19 @@
  * La lógica de lista (filtro/orden/búsqueda) viene de /jobListLogic.js (compartida con los tests). */
 
 const L = window.JobListLogic;
+const P = window.UiPrefs;
+
+// Umbral de puntaje con el que arranca el Inbox. Es SOLO un filtro de visualizacion:
+// las ofertas por debajo se siguen recolectando, analizando y guardando igual, y
+// reaparecen al cambiar el selector a "Todos". La eleccion del usuario se persiste.
+const initialMinScore = P
+  ? P.resolveMinScore(P.readStoredMinScore(window.localStorage))
+  : 0;
 
 const state = {
   jobs: [],
   reasons: [],
-  filters: { status: 'inbox', aiDecision: 'all', easyApply: 'all', minScore: 0, families: [], company: '', matchedQuery: '', search: '' },
+  filters: { status: 'inbox', aiDecision: 'all', easyApply: 'all', minScore: initialMinScore, families: [], company: '', matchedQuery: '', search: '' },
   sort: 'overall',
   selectedId: null,
 };
@@ -38,6 +46,15 @@ const REASON_LABELS = { role_type: 'Tipo de rol', too_commercial: 'Demasiado com
 // Mapea un valor a su etiqueta en castellano. Si no está en el mapa, usa el fallback (o el valor tal cual).
 function lbl(map, key, fb) { if (key != null && map[key]) return map[key]; return fb !== undefined ? fb : (key == null ? '' : String(key)); }
 function reasonLabel(k) { return lbl(REASON_LABELS, k, titleCase(String(k || '').replace(/_/g, ' '))); }
+// Rotulo corto de cada dimension de filtro activa. Solo presentacion.
+const FILTER_CHIP_LABELS = {
+  aiDecision: (f) => 'IA: ' + lbl(DECISION_LABELS, f.aiDecision, f.aiDecision),
+  easyApply: (f) => (f.easyApply === 'yes' ? 'Easy Apply' : 'Sin Easy Apply'),
+  minScore: (f) => f.minScore + '+',
+  matchedQuery: (f) => f.matchedQuery,
+  company: (f) => 'Empresa: ' + f.company,
+  families: (f) => (f.families.length === 1 ? f.families[0] : f.families.length + ' familias'),
+};
 
 /* ---------- LinkedIn de Mariano (URL pública, no es secreto) ---------- */
 const MARIANO_LINKEDIN = 'https://www.linkedin.com/in/mdiazvillodas/';
@@ -150,7 +167,48 @@ function renderFilters() {
   const cur = state.filters.matchedQuery;
   qSel.innerHTML = '<option value="">Todas las búsquedas</option>' + queries.map((q) => `<option value="${esc(q)}">${esc(q)}</option>`).join('');
   qSel.value = cur;
+
+  syncFilterControls();
+  renderFilterState();
 }
+
+// Refleja el estado en los inputs del drawer (necesario tras "Limpiar filtros").
+function syncFilterControls() {
+  const f = state.filters;
+  el('aiDecisionFilter').value = f.aiDecision;
+  el('easyApplyFilter').value = f.easyApply;
+  el('scoreFilter').value = String(f.minScore);
+  el('companyFilter').value = f.company;
+}
+
+// Badge del boton Filtros + chips de lo que esta activo. Presentacion pura.
+function renderFilterState() {
+  const keys = L.activeFilterKeys(state.filters);
+  const badge = el('filterCount');
+  badge.textContent = keys.length;
+  badge.hidden = keys.length === 0;
+  el('clearFiltersBtn').hidden = keys.length === 0;
+
+  const chips = keys.map((k) => `<span class="active-chip" title="${esc(FILTER_CHIP_LABELS[k](state.filters))}">${esc(FILTER_CHIP_LABELS[k](state.filters))}</span>`).join('');
+  el('activeChips').innerHTML = chips
+    ? chips + '<button class="clear-chip" id="clearChipsBtn" type="button" title="Limpiar filtros">Limpiar</button>'
+    : '';
+  const clearChip = el('clearChipsBtn');
+  if (clearChip) clearChip.addEventListener('click', clearFilters);
+}
+
+function clearFilters() {
+  state.filters = L.clearedFilters(state.filters);
+  renderFilters();
+  renderList();
+}
+
+/* ---------- filter drawer ---------- */
+function setDrawer(open) {
+  el('filterDrawer').hidden = !open;
+  el('filtersBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function toggleDrawer() { setDrawer(el('filterDrawer').hidden); }
 
 /* ---------- job list ---------- */
 function jobItemHtml(job) {
@@ -163,14 +221,16 @@ function jobItemHtml(job) {
   return `<li class="job-item${unread}${selected}" data-id="${esc(v.jobId)}">
     <div class="score-badge ${scoreClass(v.overall)}">${sc}</div>
     <div class="job-main">
-      <div class="job-title">${esc(v.title || 'Sin título')}</div>
+      <div class="job-line">
+        <span class="job-title">${esc(v.title || 'Sin título')}</span>
+        <span class="job-date">${fmtDate(v.firstSeenAt)}</span>
+      </div>
       <div class="job-sub">${esc(sub)}</div>
       <div class="job-tags">
-        ${v.analysisStale ? '<span class="badge">IA pendiente de actualización</span>' : ''}
+        ${v.analysisStale ? '<span class="badge ai-none">IA pendiente de actualización</span>' : ''}
         <span class="badge ai-${ai}">${v.aiDecision ? esc(lbl(DECISION_LABELS, v.aiDecision, v.aiDecision)) : 'IA —'}</span>
-        <span class="status-chip st-${v.status}">${esc(lbl(STATUS_LABELS, v.status, titleCase(v.status)))}</span>
+        ${v.status === 'new' ? '' : `<span class="status-chip st-${v.status}">${esc(lbl(STATUS_LABELS, v.status, titleCase(v.status)))}</span>`}
         ${v.easyApply ? '<span class="badge easy">Easy Apply</span>' : ''}
-        <span class="muted small">${fmtDate(v.firstSeenAt)}</span>
       </div>
     </div>
   </li>`;
@@ -179,8 +239,8 @@ function renderList() {
   const list = currentView();
   el('listCount').textContent = list.length;
   const box = el('jobList');
-  if (!state.jobs.length) { box.innerHTML = '<li class="empty" style="padding:24px">No hay ofertas almacenadas todavía.</li>'; return; }
-  if (!list.length) { box.innerHTML = '<li class="empty" style="padding:24px">Ninguna oferta coincide con los filtros.</li>'; return; }
+  if (!state.jobs.length) { box.innerHTML = '<li class="list-empty">No hay ofertas almacenadas todavía.</li>'; return; }
+  if (!list.length) { box.innerHTML = '<li class="list-empty">Ninguna oferta coincide con los filtros.</li>'; return; }
   box.innerHTML = list.map(jobItemHtml).join('');
   box.querySelectorAll('.job-item').forEach((li) => li.addEventListener('click', () => selectJob(li.dataset.id)));
 }
@@ -216,9 +276,9 @@ function listSection(title, arr, opts) {
   return `<div class="section${cls}"><h2>${esc(title)}</h2><ul>${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
 }
 
-function scoreCard(label, val) {
+function scoreCard(label, val, primary) {
   const has = typeof val === 'number';
-  return `<div class="score-card"><div class="val">${has ? val : '—'}</div><div class="lbl">${label}</div><div class="meter"><span style="width:${has ? val : 0}%"></span></div></div>`;
+  return `<div class="score-card${primary ? ' primary' : ''}"><div class="val">${has ? val : '—'}</div><div class="lbl">${label}</div><div class="meter"><span style="width:${has ? val : 0}%"></span></div></div>`;
 }
 
 function disagreementHtml(job, cal) {
@@ -292,17 +352,19 @@ function renderDetail(job, cal) {
 
     <div class="actions">
       <button class="btn primary" data-act="interested">✓ Me interesa</button>
-      <button class="btn danger" data-act="discard">❌ Descartar</button>
-      <button class="btn" data-act="read">👁 Marcar leída</button>
-      <button class="btn" data-act="applied">📩 Apliqué</button>
-      <button class="btn" data-act="priority">⭐ Prioridad</button>
-      <button class="btn" data-act="applications-closed" title="La oferta ya no admite candidaturas. No es un descarte: no genera feedback ni afecta el análisis.">🚫 Ya no acepta postulaciones</button>
+      <button class="btn danger" data-act="discard">✕ Descartar</button>
+      <span class="actions-sep" aria-hidden="true"></span>
+      <button class="btn" data-act="applied">Apliqué</button>
+      <button class="btn" data-act="priority">★ Prioridad</button>
+      <button class="btn" data-act="read">Marcar leída</button>
+      <span class="actions-sep" aria-hidden="true"></span>
+      <button class="btn" data-act="applications-closed" title="La oferta ya no admite candidaturas. No es un descarte: no genera feedback ni afecta el análisis.">Ya no acepta postulaciones</button>
     </div>
 
     ${stale ? '<div class="section"><h2>ANÁLISIS PENDIENTE DE ACTUALIZACIÓN</h2><p>Análisis pendiente de actualización tras recuperar la descripción. El análisis anterior se conserva para auditoría y no se presenta como vigente.</p></div>' : disagreementHtml(job, cal)}
 
     <div class="scores">
-      ${scoreCard('General', a.overallMatchScore)}
+      ${scoreCard('General', a.overallMatchScore, true)}
       ${scoreCard('Profesional', a.professionalFitScore)}
       ${scoreCard('Interés', a.interestFitScore)}
       ${scoreCard('CV', a.cvFitScore)}
@@ -394,11 +456,17 @@ async function openDiagnostics() {
 function init() {
   el('globalSearch').addEventListener('input', (e) => { state.filters.search = e.target.value; renderList(); });
   el('sortSelect').addEventListener('change', (e) => { state.sort = e.target.value; renderList(); });
-  el('aiDecisionFilter').addEventListener('change', (e) => { state.filters.aiDecision = e.target.value; renderList(); });
-  el('easyApplyFilter').addEventListener('change', (e) => { state.filters.easyApply = e.target.value; renderList(); });
-  el('scoreFilter').addEventListener('change', (e) => { state.filters.minScore = Number(e.target.value); renderList(); });
-  el('companyFilter').addEventListener('input', (e) => { state.filters.company = e.target.value; renderList(); });
-  el('queryFilter').addEventListener('change', (e) => { state.filters.matchedQuery = e.target.value; renderList(); });
+  el('aiDecisionFilter').addEventListener('change', (e) => { state.filters.aiDecision = e.target.value; renderList(); renderFilterState(); });
+  el('easyApplyFilter').addEventListener('change', (e) => { state.filters.easyApply = e.target.value; renderList(); renderFilterState(); });
+  el('scoreFilter').addEventListener('change', (e) => {
+    state.filters.minScore = Number(e.target.value);
+    // Preferencia de UI: se recuerda para la proxima visita. No toca el job ni su analisis.
+    if (P) P.storeMinScore(window.localStorage, state.filters.minScore);
+    renderList();
+    renderFilterState();
+  });
+  el('companyFilter').addEventListener('input', (e) => { state.filters.company = e.target.value; renderList(); renderFilterState(); });
+  el('queryFilter').addEventListener('change', (e) => { state.filters.matchedQuery = e.target.value; renderList(); renderFilterState(); });
 
   el('discardCancel').addEventListener('click', closeDiscardModal);
   el('discardConfirm').addEventListener('click', confirmDiscard);
@@ -406,6 +474,37 @@ function init() {
 
   const copyBtn = el('copyLinkedinBtn');
   if (copyBtn) copyBtn.addEventListener('click', () => copyMarianoLink(copyBtn));
+
+  // Filter drawer: superpuesto a la lista; cierra con el boton, Escape o click fuera.
+  el('filtersBtn').addEventListener('click', toggleDrawer);
+  el('closeFiltersBtn').addEventListener('click', () => setDrawer(false));
+  el('clearFiltersBtn').addEventListener('click', clearFilters);
+  document.addEventListener('click', (e) => {
+    const drawer = el('filterDrawer');
+    if (drawer.hidden) return;
+    if (drawer.contains(e.target) || el('filtersBtn').contains(e.target)) return;
+    setDrawer(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!el('filterDrawer').hidden) return setDrawer(false);
+    if (!el('discardModal').hidden) return closeDiscardModal();
+    if (!el('diagPanel').hidden) el('diagPanel').hidden = true;
+  });
+
+  // Tema: la preferencia explicita gana y se guarda en localStorage.
+  const themeBtn = el('themeToggle');
+  if (themeBtn && window.UiPrefs) {
+    themeBtn.addEventListener('click', () => {
+      const P = window.UiPrefs;
+      const next = P.nextTheme(P.currentTheme(document.documentElement));
+      P.applyTheme(document.documentElement, next);
+      P.storeTheme(window.localStorage, next);
+    });
+  }
+
+  const back = el('detailBack');
+  if (back) back.addEventListener('click', () => document.body.classList.remove('detail-open'));
 
   el('diagBtn').addEventListener('click', openDiagnostics);
   el('diagClose').addEventListener('click', () => { el('diagPanel').hidden = true; });

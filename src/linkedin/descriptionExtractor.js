@@ -3,6 +3,7 @@
 const { isDescriptionUsable } = require('../domain/descriptionQuality');
 const { detectSecurityChallenge } = require('./session');
 const { AuthenticationError } = require('./errors');
+const { AUTH_SIGNALS, safeUrl, toAuthDiagnostic } = require('./challengeSignals');
 
 // Funcion autocontenida: se ejecuta en el DOM tanto para inspeccionar como para esperar.
 function inspectDescriptionDOM({ jobId, waitFor, beforeText, beforeHeight, pinnedRoot, control, resolveControl } = {}) {
@@ -111,7 +112,36 @@ function inspectDescriptionDOM({ jobId, waitFor, beforeText, beforeHeight, pinne
 
 async function checkDetailAccess(page, state) {
   await detectSecurityChallenge(page);
-  if (state.auth) throw new AuthenticationError('LinkedIn requiere autenticacion para acceder al detalle.');
+  if (!state.auth) return;
+  // No es un challenge: el detalle pidio sesion. Se deja constancia de eso
+  // mismo, sin deducir por que; la URL saneada es la evidencia que queda.
+  const error = new AuthenticationError('LinkedIn requiere autenticacion para acceder al detalle.');
+  error.challengeDiagnostic = toAuthDiagnostic({
+    signal: AUTH_SIGNALS.DETAIL_REQUIRED,
+    url: page.url(),
+    stage: 'detail_collection',
+  });
+  throw error;
+}
+
+// Diagnostico de un detalle que no se pudo leer por auth o challenge.
+//
+// La URL pasa por safeUrl, la MISMA politica del detector: este objeto se
+// persiste en el job y en el summary del run, y ante un checkpoint real
+// page.url() lleva los tokens de la sesion en la query.
+function toDetailAccessDiagnostics(error, { jobId, url, at } = {}) {
+  const diagnostics = {
+    status: 'auth_or_challenge',
+    jobId,
+    url: safeUrl(url),
+    fetchedAt: at || new Date().toISOString(),
+    error: error.message,
+  };
+  // POR QUE se considero challenge. Sin esto solo quedaba constancia de que
+  // el run se detuvo, no de la regla que lo detuvo, y no se podia separar
+  // un checkpoint real de un falso positivo del detector.
+  if (error.challengeDiagnostic) diagnostics.challenge = error.challengeDiagnostic;
+  return diagnostics;
 }
 
 async function readJobDescription(page, jobId, { detailTimeoutMs = 30000, expansionTimeoutMs = 5000, shortTextWaitMs = 1500 } = {}) {
@@ -220,10 +250,10 @@ async function readJobDescription(page, jobId, { detailTimeoutMs = 30000, expans
     };
   } catch (error) {
     if (['AuthenticationError', 'SecurityChallengeError'].includes(error.name)) {
-      error.detailDiagnostics = { status: 'auth_or_challenge', jobId, url: page.url(), fetchedAt: new Date().toISOString(), error: error.message };
+      error.detailDiagnostics = toDetailAccessDiagnostics(error, { jobId, url: page.url() });
     }
     throw error;
   }
 }
 
-module.exports = { readJobDescription, inspectDescriptionDOM };
+module.exports = { readJobDescription, inspectDescriptionDOM, toDetailAccessDiagnostics };

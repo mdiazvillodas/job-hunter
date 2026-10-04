@@ -6,6 +6,10 @@
 //
 // Reutiliza la arquitectura existente. La UI (npm run ui) ve automaticamente lo persistido.
 
+// Carga el .env local antes que cualquier modulo que lea process.env (config.js
+// toma su snapshot al requerirse). El entorno del proceso tiene precedencia.
+require('./env').loadProjectEnv();
+
 const {
   BROWSER_PROFILE_DIR,
   LINKEDIN_FILTERS,
@@ -27,6 +31,7 @@ const { analyzeJob } = require('./ai/jobAnalyzer');
 const { runPipeline } = require('./pipeline/pipeline');
 const { acquireLock, releaseLock } = require('./domain/huntLock');
 const { createHighMatchNotifier } = require('./notifications/ntfy');
+const { createRunOutcomeNotifier } = require('./notifications/runOutcome');
 
 function parseArgs(argv) {
   return { debug: argv.includes('--debug'), dryRun: argv.includes('--dry-run') };
@@ -152,6 +157,12 @@ async function runHunt(options) {
     console.error('[notify] ntfy habilitado pero mal configurado: ' + notifier.config.configError);
   }
 
+  // Notificacion de CIERRE del hunt (terminado / interrumpido). Mismo contrato
+  // defensivo: nunca rechaza y no cambia el exit code.
+  const runNotifier = createRunOutcomeNotifier({
+    log: (m) => console.error('[notify] ' + m),
+  });
+
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   let summary;
   let searchResultsUrl = null;
@@ -189,6 +200,10 @@ async function runHunt(options) {
       analyze,
       analyzeLimit: ANALYZE_LIMIT,
       notify: (job) => notifier.notifyHighMatch(job),
+      // Retencion: borra ofertas con >= 7 dias en el sistema que nunca se abrieron.
+      // --dry-run la simula (calcula los candidatos pero no borra), igual que hace
+      // con el analisis: una corrida de prueba no debe tener efectos destructivos.
+      cleanupRetention: () => jobService.cleanupExpiredJobs({ dryRun: !!options.dryRun }),
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
     });
   } catch (err) {
@@ -197,12 +212,14 @@ async function runHunt(options) {
       console.error('Pipeline detenido por un desafio de seguridad de LinkedIn. No se intenta evadir.');
       console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
       await context.close().catch(() => {});
+      await runNotifier.notifyRunOutcome({ challenge: true, error: err });
       process.exitCode = 1;
       return;
     }
     console.error('Error en el pipeline: ' + (err.message || err));
     console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
     await context.close().catch(() => {});
+    await runNotifier.notifyRunOutcome({ error: err });
     process.exitCode = 1;
     return;
   }
@@ -210,7 +227,13 @@ async function runHunt(options) {
   await context.close().catch(() => {});
 
   if (options.debug) printDebugReport(summary);
+  // El JSON a stdout es el contrato con el trigger: se emite ANTES de cualquier
+  // side effect de red, para que un fallo de ntfy no pueda perder el summary.
   console.log(JSON.stringify(summary, null, 2));
+
+  // stoppedByChallenge NO se anuncia como 'terminado': el notifier lo clasifica
+  // como interrumpido. El status del trigger para este run no cambia.
+  await runNotifier.notifyRunOutcome({ summary });
 }
 
 main();

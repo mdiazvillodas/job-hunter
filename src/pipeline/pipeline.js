@@ -12,6 +12,8 @@
 const { shouldAnalyzeJob } = require('../domain/jobRecord');
 const { isDescriptionUsable } = require('../domain/descriptionQuality');
 
+const { toStopDiagnostic } = require('../linkedin/challengeSignals');
+
 function isChallenge(err) {
   return !!err && ['SecurityChallengeError', 'AuthenticationError'].includes(err.name);
 }
@@ -38,12 +40,31 @@ function compactJob(job) {
 }
 
 async function runPipeline(deps) {
-  const { jobService, discover, fetchDetails, analyze, analyzeLimit, log, notify } = deps;
+  const { jobService, discover, fetchDetails, analyze, analyzeLimit, log, notify, cleanupRetention } = deps;
   const say = typeof log === 'function' ? log : () => {};
   const startMs = Date.now();
   const runId = newRunId();
   const startedAt = new Date().toISOString();
   const durations = { discoveryMs: 0, detailsMs: 0, analysisMs: 0, totalMs: 0 };
+
+  // ---------- RETENCION (TTL) ----------
+  // Se corre ANTES de discovery: la limpieza mira solo lo ya persistido, por lo que
+  // las ofertas que entran en esta misma corrida nunca pueden ser candidatas.
+  // Es un paso opcional: sin la dependencia el pipeline se comporta igual que antes.
+  // No se crea ningun scheduler propio: se aprovecha la corrida periodica del hunt.
+  let retention = null;
+  if (typeof cleanupRetention === 'function') {
+    try {
+      retention = await cleanupRetention();
+      if (retention) {
+        say(`retention:done eligible=${retention.eligible} deleted=${retention.deleted}${retention.dryRun ? ' (dry-run)' : ''}`);
+      }
+    } catch (err) {
+      // La retencion es housekeeping: si falla, el hunt debe seguir igual.
+      retention = { error: err && err.message ? err.message : String(err) };
+      say('retention:error ' + retention.error);
+    }
+  }
 
   // ---------- DISCOVERY ----------
   say('discovery:start');
@@ -91,6 +112,10 @@ async function runPipeline(deps) {
   let detailsWithoutUsableDescription = 0;
   let skippedDueToMissingDescription = 0;
   let stoppedByChallenge = false;
+  // Diagnostico compacto del challenge que detuvo el run, ademas del detalle
+  // que ya queda en detailDiagnostics. Permite responder "por que se detuvo"
+  // sin recorrer el array entero.
+  let challenge = null;
   const notifications = { eligible: 0, sent: 0, alreadyNotified: 0, failed: 0 };
   const detailDiagnostics = [];
 
@@ -113,7 +138,14 @@ async function runPipeline(deps) {
           detailDiagnostics.push(err.detailDiagnostics);
           jobService.updateDiscovery(cand.jobId, { detailExtraction: err.detailDiagnostics });
         }
-        if (isChallenge(err)) { stoppedByChallenge = true; say('challenge:stop'); break; }
+        if (isChallenge(err)) {
+          stoppedByChallenge = true;
+          // Nunca null: un error sin evidencia produce un diagnostico minimo y
+          // explicito ('*:unspecified'), que es distinto de no haber parado.
+          challenge = toStopDiagnostic(err, { stage: 'detail_collection', jobId: cand.jobId });
+          say('challenge:stop ' + (challenge ? challenge.signal : 'sin_diagnostico'));
+          break;
+        }
         jobService.applyAnalysisFailure(cand.jobId, 'detail: ' + (err.message || err));
         failed += 1;
         say(`detail:failed ${cand.jobId}`);
@@ -184,6 +216,7 @@ async function runPipeline(deps) {
     startedAt,
     finishedAt,
     stoppedByChallenge,
+    challenge,
     discovery: {
       queriesExecuted: dstats.queriesExecuted ?? null,
       rawResults: dstats.rawResults ?? null,
@@ -211,6 +244,7 @@ async function runPipeline(deps) {
       analysisEnabled: !!analyze,
     },
     persistence: { created, updated, unchanged },
+    retention,
     notifications,
     usageTotals: { ...usage, model },
     durations,

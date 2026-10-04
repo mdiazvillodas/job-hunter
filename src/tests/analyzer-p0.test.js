@@ -36,6 +36,53 @@ for (const [name, profile] of [['canonical', full], ['matching', matching]]) {
   ok(`${name}: Agile certification remains absent`, !!agile && /^No formal Agile certification documented/i.test(agile.formalCertification));
 }
 
+console.log('\n### P0 ground truth: education, Spanish, English (matching profile = analyzer input)');
+
+// El analyzer de produccion (hunt.js) pasa SOLO el matching profile, verbatim.
+// Estos hechos objetivos tienen que llegar ahi sin ambiguedad.
+const edu = matching.education || [];
+const sysEng = edu.find((e) => /systems engineering/i.test(e.field || e.credential || ''));
+const frontEnd = edu.find((e) => /front-?end/i.test(e.credential || e.field || ''));
+const spanish = (matching.languages || []).find((x) => x.language === 'Spanish');
+const englishM = (matching.languages || []).find((x) => x.language === 'English');
+
+ok('matching: profile exposes an education section', Array.isArray(matching.education) && matching.education.length >= 2);
+
+ok('matching: Systems Engineering at Universidad Abierta Interamericana', !!sysEng && sysEng.institution === 'Universidad Abierta Interamericana');
+ok('matching: Systems Engineering is studies/incomplete', !!sysEng && /incomplete|studies/i.test(sysEng.status));
+ok('matching: Systems Engineering awarded NO degree', !!sysEng && sysEng.degreeAwarded === false);
+ok('matching: Systems Engineering cannot be read as a completed degree', !!sysEng && /not completed/i.test(sysEng.statement) && /no university degree was awarded/i.test(sysEng.statement));
+ok('matching: Systems Engineering is never labelled bachelor/engineering degree', !!sysEng && !/\b(bachelor'?s degree in|holds a|graduated)\b/i.test(sysEng.statement) && /must NOT be read as a Bachelor/i.test(sysEng.statement));
+
+ok('matching: Front-End diploma at Universidad Tecnologica Nacional', !!frontEnd && frontEnd.institution === 'Universidad Tecnológica Nacional');
+ok('matching: Front-End diploma is completed', !!frontEnd && frontEnd.status === 'completed');
+ok('matching: Front-End diploma is not inflated into a university degree', !!frontEnd && frontEnd.degreeAwarded === false && /not be presented as a university degree/i.test(frontEnd.statement));
+
+ok('matching: Spanish is documented as Native', !!spanish && spanish.level === 'Native');
+ok('matching: Spanish carries no negative boundary or certification claim', !!spanish && !('boundary' in spanish) && !('formalCertification' in spanish));
+
+ok('matching: English level stays C1 (not C2/native)', !!englishM && englishM.level === 'C1' && !/\b(c2|native)\b/i.test(englishM.level + ' ' + englishM.proficiency));
+ok('matching: English proficiency is professional/fluent', !!englishM && /fluent professional working proficiency/i.test(englishM.proficiency));
+const satisfiesText = ((englishM && englishM.satisfiesRequirements) || '').toLowerCase();
+ok('matching: English C1 explicitly satisfies B2/C1/fluent/advanced/high level/professional',
+  ['b2', 'c1', 'fluent', 'advanced', 'high level', 'professional working proficiency'].every((w) => satisfiesText.includes(w)));
+ok('matching: none of those levels may be a gap', !!englishM && /may be classified as NOT_EVIDENCED or as a gap|None of these may be classified/i.test(englishM.satisfiesRequirements));
+ok('matching: missing certification matters ONLY for a named formal certificate', !!englishM && /ONLY when a job explicitly requires a named formal certificate/i.test(englishM.formalCertification));
+ok('matching: missing certification never lowers the C1 level', !!englishM && /never lowers the documented C1 level/i.test(englishM.formalCertification));
+ok('matching: historical usage is subordinated to the level', !!englishM && !('boundary' in englishM) && /does NOT reduce the documented C1 level/i.test(englishM.historicalContext || ''));
+
+ok('matching: learnedPreferences is still empty', Array.isArray(matching.learnedPreferences) && matching.learnedPreferences.length === 0);
+
+console.log('\n### P0 prompt contains the corrected ground truth (built locally, no OpenAI)');
+
+ok('prompt: Systems Engineering studies are present', lower.includes('systems engineering studies, not completed'));
+ok('prompt: no university degree was awarded', lower.includes('no university degree was awarded'));
+ok('prompt: Universidad Abierta Interamericana is present', prompt.includes('Universidad Abierta Interamericana'));
+ok('prompt: Front-End diploma is present and completed', prompt.includes('Front-End Development Diploma') && prompt.includes('Universidad Tecnológica Nacional') && lower.includes('"status":"completed"'));
+ok('prompt: Spanish Native is present', /"language"\s*:\s*"Spanish"[\s\S]{0,80}"level"\s*:\s*"Native"/.test(prompt));
+ok('prompt: English C1 is present', /"language"\s*:\s*"English"[\s\S]{0,60}"level"\s*:\s*"C1"/.test(prompt));
+ok('prompt: proficiency vs formal certification is distinguished', lower.includes('only when a job explicitly requires a named formal certificate'));
+
 console.log('\n### P0 prompt scenarios');
 
 // A. English C1 covers B2/professional/fluent/C1 level requirements.

@@ -14,6 +14,10 @@
 //   $env:OPENAI_API_KEY="..."; $env:ANALYZE_LIMIT=5; npm run analyze:linkedin -- --debug
 //   npm run analyze:linkedin -- --debug --dry-run   (sin API key: usa un mock para validar el pipeline)
 
+// Carga el .env local antes que cualquier modulo que lea process.env (config.js
+// toma su snapshot al requerirse). El entorno del proceso tiene precedencia.
+require('./env').loadProjectEnv();
+
 const {
   BROWSER_PROFILE_DIR,
   LINKEDIN_FILTERS,

@@ -1,5 +1,9 @@
 'use strict';
 
+// Carga el .env local antes que cualquier modulo que lea process.env (config.js
+// toma su snapshot al requerirse). El entorno del proceso tiene precedencia.
+require('./env').loadProjectEnv();
+
 const { createLocalRepository } = require('./data/jobRepository');
 const { createJobService } = require('./services/jobService');
 const { parseReanalysisArgs, reanalyzeRepaired } = require('./repair/repairedAnalysis');

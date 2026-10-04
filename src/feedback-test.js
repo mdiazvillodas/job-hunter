@@ -6,6 +6,10 @@
 // Demuestra: crear job -> read -> interested -> discarded (+ reasons + comment)
 //            -> feedback history -> learned preferences -> AI vs user calibration.
 
+// Carga el .env local antes que cualquier modulo que lea process.env (config.js
+// toma su snapshot al requerirse). El entorno del proceso tiene precedencia.
+require('./env').loadProjectEnv();
+
 const path = require('path');
 const { createLocalRepository } = require('./data/jobRepository');
 const { createJobService } = require('./services/jobService');

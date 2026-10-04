@@ -5,6 +5,10 @@
 // Envia UNA notificacion ficticia usando la configuracion real del entorno.
 // NO toca ningun job, NO llama a OpenAI, NO abre Playwright, NO hace discovery.
 
+// Carga el .env local antes que cualquier modulo que lea process.env (config.js
+// toma su snapshot al requerirse). El entorno del proceso tiene precedencia.
+require('./env').loadProjectEnv();
+
 const { getNtfyConfig, defaultSend } = require('./notifications/ntfy');
 
 async function main() {

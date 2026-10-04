@@ -4,14 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Job Hunter</title>
+    <!-- Tema ANTES de la hoja de estilos: evita el flash de tema incorrecto. -->
+    <script src="/uiPrefs.js"></script>
+    <script>window.UiPrefs && window.UiPrefs.applyStoredTheme();</script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">Job&nbsp;Hunter</div>
-      <input id="globalSearch" class="global-search" type="search" placeholder="Buscar título, empresa, ubicación…" />
-      <label class="sort">
-        Orden
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Job Hunter</span>
+      </div>
+
+      <div class="topbar-spacer"></div>
+
+      <label class="field-inline" for="sortSelect">
+        <span class="field-inline-label">Orden</span>
         <select id="sortSelect">
           <option value="overall">Recomendadas / General</option>
           <option value="newest">Más nuevas</option>
@@ -20,21 +28,63 @@
           <option value="company">Empresa</option>
         </select>
       </label>
+
+      <div class="topbar-divider" aria-hidden="true"></div>
+
       <div class="mariano-linkedin">
         <a class="ml-link" href="https://www.linkedin.com/in/mdiazvillodas/" target="_blank" rel="noopener">LinkedIn de Mariano ↗</a>
         <button id="copyLinkedinBtn" class="btn ghost small" type="button">Copiar enlace</button>
       </div>
-      <button id="diagBtn" class="btn ghost" type="button">Diagnóstico</button>
+
+      <button id="diagBtn" class="btn ghost small" type="button">Diagnóstico</button>
+
+      <button id="themeToggle" class="btn icon ghost" type="button" title="Cambiar tema" aria-label="Cambiar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+          <path d="M12 2.4v2.4M12 19.2v2.4M2.4 12h2.4M19.2 12h2.4M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"
+                fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.2 8.2 0 1 0 10.2 10.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+        </svg>
+      </button>
     </header>
 
     <main class="layout" id="mainLayout">
       <!-- SIDEBAR -->
       <aside class="sidebar" id="sidebar">
-        <section class="filters">
-          <div class="filter-group status-filter" id="statusFilter"></div>
+        <div class="sidebar-toolbar">
+          <div class="search-wrap">
+            <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.8" />
+              <path d="M15.8 15.8L20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <input id="globalSearch" class="global-search" type="search" placeholder="Buscar título, empresa, ubicación…" aria-label="Buscar ofertas" />
+          </div>
+          <button id="filtersBtn" class="btn filters-btn" type="button" aria-expanded="false" aria-controls="filterDrawer">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M3.5 6h17M6.5 12h11M10 18h4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            </svg>
+            <span>Filtros</span>
+            <span id="filterCount" class="filter-count" hidden>0</span>
+          </button>
+        </div>
 
-          <div class="filter-row">
-            <label>Decisión IA
+        <div class="status-tabs-wrap">
+          <nav class="status-tabs" id="statusFilter" aria-label="Vistas por estado"></nav>
+        </div>
+
+        <div class="list-meta">
+          <span class="list-count"><b id="listCount">0</b> ofertas</span>
+          <div class="active-chips" id="activeChips"></div>
+        </div>
+
+        <ul class="job-list" id="jobList"></ul>
+
+        <!-- FILTER DRAWER: se superpone a la lista, no la empuja -->
+        <div class="filter-drawer" id="filterDrawer" hidden role="group" aria-label="Filtros avanzados">
+          <div class="drawer-grid">
+            <label class="field">Decisión IA
               <select id="aiDecisionFilter">
                 <option value="all">Todas</option>
                 <option value="YES">SÍ</option>
@@ -42,47 +92,46 @@
                 <option value="NO">NO</option>
               </select>
             </label>
-            <label>Easy Apply
+            <label class="field">Easy Apply
               <select id="easyApplyFilter">
                 <option value="all">Todas</option>
                 <option value="yes">Easy Apply</option>
                 <option value="no">Sin Easy Apply</option>
               </select>
             </label>
-          </div>
-
-          <div class="filter-row">
-            <label>Puntaje
+            <label class="field">Puntaje
               <select id="scoreFilter">
                 <option value="0">Todos</option>
-                <option value="60">60+</option>
+                <option value="65">65+</option>
                 <option value="70">70+</option>
+                <option value="75">75+</option>
                 <option value="80">80+</option>
+                <option value="90">90+</option>
               </select>
             </label>
-            <label>Búsqueda
+            <label class="field">Búsqueda
               <select id="queryFilter"><option value="">Todas las búsquedas</option></select>
             </label>
-          </div>
-
-          <div class="filter-row">
-            <label class="grow">Empresa
+            <label class="field span-2">Empresa
               <input id="companyFilter" type="search" placeholder="Filtrar por empresa…" />
             </label>
           </div>
 
-          <div class="filter-group">
-            <div class="filter-label">Familias de rol</div>
+          <div class="field span-2">
+            <span class="field-label">Familias de rol</span>
             <div id="familyFilter" class="chips"></div>
           </div>
-        </section>
 
-        <div class="list-meta"><span id="listCount">0</span> ofertas</div>
-        <ul class="job-list" id="jobList"></ul>
+          <div class="drawer-actions">
+            <button class="btn ghost small" id="clearFiltersBtn" type="button" hidden>Limpiar filtros</button>
+            <button class="btn small" id="closeFiltersBtn" type="button">Listo</button>
+          </div>
+        </div>
       </aside>
 
       <!-- DETAIL -->
       <section class="detail" id="detail">
+        <button class="btn small detail-back" id="detailBack" type="button">← Volver</button>
         <div class="empty" id="detailEmpty">
           <p>Seleccioná una oferta para ver el detalle.</p>
         </div>
@@ -110,7 +159,7 @@
       <div class="modal wide" role="dialog" aria-modal="true">
         <div class="modal-head">
           <h3>Diagnóstico</h3>
-          <button class="btn ghost" id="diagClose" type="button">Cerrar</button>
+          <button class="btn ghost small" id="diagClose" type="button">Cerrar</button>
         </div>
         <div class="diag-cols">
           <div>

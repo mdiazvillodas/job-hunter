@@ -4,10 +4,14 @@
 // conexion HTTP larga. POST /run responde 202 al instante; el estado se consulta por GET /run/:runId.
 // Solo modulos nativos. Comando fijo (node src/hunt.js), sin args del request, sin secretos por HTTP.
 //
-//   GET  /health            -> 200 (sin auth)
+//   GET  /health            -> 200 (sin auth)  {huntRunning, lockBusy, currentRunId}
 //   POST /run               -> 202 {runId, status:"started"} | 401 | 409
 //   GET  /run/:runId        -> 200 estado | 404 | 401
 //   GET  /runs              -> 200 historial compacto | 401
+
+// Carga el .env local antes que cualquier modulo que lea process.env (config.js
+// toma su snapshot al requerirse). El entorno del proceso tiene precedencia.
+require('../env').loadProjectEnv();
 
 const http = require('http');
 const fs = require('fs');
@@ -213,7 +217,20 @@ function createServer(options = {}) {
     try {
       if (url.pathname === '/health') {
         if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'method_not_allowed' });
-        return sendJson(res, 200, { ok: true, service: SERVICE, version: VERSION, huntRunning: !!current, currentRunId: current ? current.runId : null });
+        // lockBusy es ADITIVO (no cambia la semantica de huntRunning ni de /run):
+        // refleja el lock COMPARTIDO, asi un `npm run hunt` manual —que no es un run
+        // de este servicio pero igual ocupa el browser-profile— tambien se ve ocupado.
+        let lockBusy = false;
+        try { lockBusy = !!lockInspector().busy; } catch (e) { lockBusy = false; }
+        return sendJson(res, 200, {
+          ok: true,
+          service: SERVICE,
+          version: VERSION,
+          huntRunning: !!current,
+          lockBusy,
+          busy: !!current || lockBusy,
+          currentRunId: current ? current.runId : null,
+        });
       }
       if (url.pathname === '/runs') {
         if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'method_not_allowed' });
