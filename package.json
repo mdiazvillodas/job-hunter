@@ -26,7 +26,7 @@
     "test:detail-extractor": "node --test src/tests/detail-extractor.test.js",
     "test:description-repair": "node --test src/tests/description-repair.test.js",
     "test:repaired-analysis": "node --test src/tests/repaired-analysis.test.js",
-    "test": "npm run test:env && npm run test:feedback && npm run test:ui && npm run test:pipeline && npm run test:trigger && npm run test:analyzer-p0 && npm run test:headless && npm run test:search-controls && npm run test:description-quality && npm run test:detail-extractor && npm run test:description-repair && npm run test:repaired-analysis && npm run test:availability && npm run test:notifications && npm run test:ui-prefs && npm run test:telegram && npm run test:run-notification && npm run test:challenge && npm run test:telegram-freshness && npm run test:score-filter && npm run test:retention",
+    "test": "npm run test:env && npm run test:feedback && npm run test:ui && npm run test:pipeline && npm run test:trigger && npm run test:analyzer-p0 && npm run test:headless && npm run test:search-controls && npm run test:description-quality && npm run test:detail-extractor && npm run test:description-repair && npm run test:repaired-analysis && npm run test:availability && npm run test:notifications && npm run test:ui-prefs && npm run test:telegram && npm run test:run-notification && npm run test:challenge && npm run test:telegram-freshness && npm run test:score-filter && npm run test:retention && npm run test:infojobs && npm run test:infojobs-browser",
     "test:availability": "node --test src/tests/availability.test.js",
     "test:notification": "node src/notify-test.js",
     "test:notifications": "node --test src/tests/notifications.test.js",
@@ -37,7 +37,9 @@
     "test:challenge": "node --test src/tests/challenge-detector.test.js",
     "test:telegram-freshness": "node --test src/tests/telegram-freshness.test.js",
     "test:score-filter": "node --test src/tests/score-filter.test.js",
-    "test:retention": "node --test src/tests/retention.test.js"
+    "test:retention": "node --test src/tests/retention.test.js",
+    "test:infojobs": "node --test src/tests/infojobs.test.js",
+    "test:infojobs-browser": "node --test src/tests/infojobs-browser.test.js"
   },
   "keywords": [],
   "author": "",

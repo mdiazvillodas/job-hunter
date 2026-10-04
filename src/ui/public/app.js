@@ -15,7 +15,7 @@ const initialMinScore = P
 const state = {
   jobs: [],
   reasons: [],
-  filters: { status: 'inbox', aiDecision: 'all', easyApply: 'all', minScore: initialMinScore, families: [], company: '', matchedQuery: '', search: '' },
+  filters: { status: 'inbox', source: 'all', aiDecision: 'all', easyApply: 'all', minScore: initialMinScore, families: [], company: '', matchedQuery: '', search: '' },
   sort: 'overall',
   selectedId: null,
 };
@@ -48,6 +48,7 @@ function lbl(map, key, fb) { if (key != null && map[key]) return map[key]; retur
 function reasonLabel(k) { return lbl(REASON_LABELS, k, titleCase(String(k || '').replace(/_/g, ' '))); }
 // Rotulo corto de cada dimension de filtro activa. Solo presentacion.
 const FILTER_CHIP_LABELS = {
+  source: (f) => 'Plataforma: ' + sourceName(f.source),
   aiDecision: (f) => 'IA: ' + lbl(DECISION_LABELS, f.aiDecision, f.aiDecision),
   easyApply: (f) => (f.easyApply === 'yes' ? 'Easy Apply' : 'Sin Easy Apply'),
   minScore: (f) => f.minScore + '+',
@@ -55,6 +56,19 @@ const FILTER_CHIP_LABELS = {
   company: (f) => 'Empresa: ' + f.company,
   families: (f) => (f.families.length === 1 ? f.families[0] : f.families.length + ' familias'),
 };
+
+/* ---------- plataforma de origen (logo + nombre) ---------- */
+const SOURCE_NAMES = { linkedin: 'LinkedIn', infojobs: 'InfoJobs' };
+function sourceName(id) { return SOURCE_NAMES[id] || SOURCE_NAMES.linkedin; }
+// Marcas simples dibujadas inline (sin cargar imagenes externas).
+const SOURCE_MARKS = {
+  linkedin: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#0A66C2"/><text x="8" y="12" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#fff">in</text></svg>',
+  infojobs: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#167DB7"/><text x="8" y="12" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#fff">iJ</text></svg>',
+};
+function sourceLogo(id, withName) {
+  const name = sourceName(id);
+  return `<span class="src-logo src-${esc(id)}" title="${esc(name)}">${SOURCE_MARKS[id] || SOURCE_MARKS.linkedin}${withName ? `<span class="src-name">${esc(name)}</span>` : ''}</span>`;
+}
 
 /* ---------- LinkedIn de Mariano (URL pública, no es secreto) ---------- */
 const MARIANO_LINKEDIN = 'https://www.linkedin.com/in/mdiazvillodas/';
@@ -168,6 +182,10 @@ function renderFilters() {
   qSel.innerHTML = '<option value="">Todas las búsquedas</option>' + queries.map((q) => `<option value="${esc(q)}">${esc(q)}</option>`).join('');
   qSel.value = cur;
 
+  const sc = L.countBySource(state.jobs);
+  el('sourceFilter').innerHTML = ['all', 'linkedin', 'infojobs']
+    .map((id) => `<option value="${id}">${id === 'all' ? 'Todas' : sourceName(id)} (${sc[id] || 0})</option>`).join('');
+
   syncFilterControls();
   renderFilterState();
 }
@@ -175,6 +193,7 @@ function renderFilters() {
 // Refleja el estado en los inputs del drawer (necesario tras "Limpiar filtros").
 function syncFilterControls() {
   const f = state.filters;
+  el('sourceFilter').value = f.source;
   el('aiDecisionFilter').value = f.aiDecision;
   el('easyApplyFilter').value = f.easyApply;
   el('scoreFilter').value = String(f.minScore);
@@ -222,6 +241,7 @@ function jobItemHtml(job) {
     <div class="score-badge ${scoreClass(v.overall)}">${sc}</div>
     <div class="job-main">
       <div class="job-line">
+        ${sourceLogo(v.source, false)}
         <span class="job-title">${esc(v.title || 'Sin título')}</span>
         <span class="job-date">${fmtDate(v.firstSeenAt)}</span>
       </div>
@@ -331,6 +351,7 @@ function renderDetail(job, cal) {
   const a = L.helpers.ai(job) || {};
   const meta = [job.employmentType, job.workplaceType, job.seniority].filter(Boolean).map((m) => `<span class="dot">${esc(m)}</span>`).join('');
   const easy = job.easyApply ? '<span class="badge easy">Easy Apply</span>' : '';
+  const src = L.source(job);
   const aiBadge = `<span class="badge ai-${a.decision || 'none'}">IA: ${a.decision ? esc(lbl(DECISION_LABELS, a.decision, a.decision)) : '—'}</span>`;
   const closedBadge = job.availability === 'closed'
     ? '<span class="status-chip availability-badge" title="Disponibilidad de la oferta, independiente de tu decisión">🚫 Ya no acepta postulaciones</span>'
@@ -344,9 +365,9 @@ function renderDetail(job, cal) {
     <div class="detail-head">
       <h1>${esc(job.title || 'Sin título')}</h1>
       <div class="detail-company">${esc(job.company || 'Empresa no informada')}</div>
-      <div class="meta-line">${job.location ? `<span>${esc(job.location)}</span>` : ''}${meta}</div>
-      <div class="head-badges">${aiBadge}${stBadge}${closedBadge}${easy}
-        ${job.url ? `<a class="btn small" href="${esc(job.url)}" target="_blank" rel="noopener">Abrir en LinkedIn ↗</a>` : ''}
+      <div class="meta-line">${job.location ? `<span>${esc(job.location)}</span>` : ''}${meta}${job.salary ? `<span class="dot">💶 ${esc(job.salary)}</span>` : ''}${job.experienceMin ? `<span class="dot">Experiencia: ${esc(job.experienceMin)}</span>` : ''}</div>
+      <div class="head-badges">${sourceLogo(src, true)}${aiBadge}${stBadge}${closedBadge}${easy}
+        ${job.url ? `<a class="btn small" href="${esc(job.url)}" target="_blank" rel="noopener">Abrir en ${esc(sourceName(src))} ↗</a>` : ''}
       </div>
     </div>
 
@@ -456,6 +477,7 @@ async function openDiagnostics() {
 function init() {
   el('globalSearch').addEventListener('input', (e) => { state.filters.search = e.target.value; renderList(); });
   el('sortSelect').addEventListener('change', (e) => { state.sort = e.target.value; renderList(); });
+  el('sourceFilter').addEventListener('change', (e) => { state.filters.source = e.target.value; renderList(); renderFilterState(); });
   el('aiDecisionFilter').addEventListener('change', (e) => { state.filters.aiDecision = e.target.value; renderList(); renderFilterState(); });
   el('easyApplyFilter').addEventListener('change', (e) => { state.filters.easyApply = e.target.value; renderList(); renderFilterState(); });
   el('scoreFilter').addEventListener('change', (e) => {

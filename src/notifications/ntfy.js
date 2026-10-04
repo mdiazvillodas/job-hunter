@@ -15,6 +15,8 @@
 // cambio de producto, con su test. Ver README de notificaciones.
 const HIGH_MATCH_THRESHOLD = 90;
 
+const { SOURCES, sourceOf, sourceLabel } = require('../domain/sources');
+
 const DEFAULT_BASE_URL = 'https://ntfy.sh';
 const NTFY_PRIORITY = 'high';
 const REQUEST_TIMEOUT_MS = 10000;
@@ -65,6 +67,19 @@ function wasAlreadyNotified(job) {
 function jobClickUrl(job) {
   if (!job) return null;
   const raw = typeof job.url === 'string' ? job.url.trim() : '';
+  // InfoJobs: solo la URL persistida de la oferta (https, infojobs.net, /of-<id>).
+  // No se reconstruye desde el id: la URL lleva ciudad y slug que el id no tiene.
+  if (sourceOf(job) === SOURCES.INFOJOBS) {
+    try {
+      const u = new URL(raw);
+      if (u.protocol === 'https:' && !u.username && !u.password
+          && /(^|\.)infojobs\.net$/i.test(u.hostname)
+          && /\/of-[a-z0-9]{10,}\/?$/i.test(u.pathname)) {
+        return `${u.origin}${u.pathname}`;
+      }
+    } catch { /* URL invalida: sin Click */ }
+    return null;
+  }
   if (raw) {
     try {
       const u = new URL(raw);
@@ -82,13 +97,15 @@ function jobClickUrl(job) {
 }
 
 // Mensaje compacto para pantalla de iPhone. Sin reasoning ni explicacion.
+// La plataforma va en el titulo (se ve en la notificacion colapsada) y en el body.
 function buildHighMatchNotification(job) {
   const score = scoreOf(job);
   const title = (job && job.title) || 'Oferta sin titulo';
   const company = (job && job.company) || 'Empresa no informada';
+  const platform = sourceLabel(sourceOf(job));
   return {
-    title: `🔥 Match ${score} — ${title}`,
-    body: `${company}\nRating: ${score}/100`,
+    title: `🔥 Match ${score} — [${platform}] ${title}`,
+    body: `${company}\nRating: ${score}/100\nPlataforma: ${platform}`,
     click: jobClickUrl(job),
     priority: NTFY_PRIORITY,
   };

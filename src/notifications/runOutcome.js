@@ -18,6 +18,7 @@
 const path = require('path');
 
 const { getNtfyConfig, defaultSend, HIGH_MATCH_THRESHOLD } = require('./ntfy');
+const { sourceLabel } = require('../domain/sources');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -109,9 +110,44 @@ function metricLines(summary, threshold = HIGH_MATCH_THRESHOLD) {
   return lines;
 }
 
+// Una linea por plataforma cuando el hunt recorrio varias (summary.sources):
+//   "LinkedIn: 109 encontradas · 34 nuevas · 27 analizadas"
+//   "InfoJobs: ❌ interrumpido (verificación de seguridad)"
+function sourceLines(summary) {
+  const sources = summary && summary.sources && typeof summary.sources === 'object' ? summary.sources : null;
+  if (!sources) return [];
+  return Object.entries(sources).map(([id, src]) => {
+    const label = (src && src.label) || sourceLabel(id);
+    if (!src || src.status === 'failed') return `${label}: ⚠️ error, no se completó`;
+    const d = src.discovery || {};
+    const a = src.analysis || {};
+    const parts = [];
+    if (num(d.uniqueResults) !== null) parts.push(`${d.uniqueResults} encontradas`);
+    if (num(d.newJobs) !== null) parts.push(`${d.newJobs} nuevas`);
+    if (num(a.analyzed) !== null) parts.push(`${a.analyzed} analizadas`);
+    const metrics = parts.join(' · ');
+    if (src.status === 'interrupted') return `${label}: ❌ interrumpido (verificación de seguridad)${metrics ? ' · ' + metrics : ''}`;
+    return `${label}: ${metrics || 'sin datos'}`;
+  });
+}
+
+// Lineas globales cuando hay desglose por plataforma: los totales que no se repiten arriba.
+function globalLines(summary, threshold = HIGH_MATCH_THRESHOLD) {
+  return metricLines(summary, threshold).filter((l) => /^(🔥|⚠️|Duración)/.test(l));
+}
+
+function interruptedPlatforms(summary) {
+  const sources = summary && summary.sources ? summary.sources : null;
+  if (!sources) return [];
+  return Object.entries(sources)
+    .filter(([, src]) => src && src.status === 'interrupted')
+    .map(([id, src]) => (src && src.label) || sourceLabel(id));
+}
+
 // Construye el mensaje ntfy de cierre. NUNCA incluye la propiedad `click`.
 function buildRunOutcomeNotification({ outcome, summary = null, error = null, env = process.env } = {}) {
-  const lines = metricLines(summary);
+  const perSource = sourceLines(summary);
+  const lines = perSource.length ? [...perSource, ...globalLines(summary)] : metricLines(summary);
 
   if (outcome === COMPLETED) {
     return {
@@ -121,8 +157,10 @@ function buildRunOutcomeNotification({ outcome, summary = null, error = null, en
     };
   }
 
+  const stopped = interruptedPlatforms(summary);
+  const who = stopped.length ? stopped.join(' y ') : 'LinkedIn';
   const head = outcome === INTERRUPTED
-    ? 'LinkedIn pidió una verificación de seguridad y el hunt se detuvo.'
+    ? `${who} pidió una verificación de seguridad y el hunt se detuvo${stopped.length && perSource.length > stopped.length ? ' en esa plataforma' : ''}.`
     : 'El hunt no pudo completarse.';
   const detail = safeErrorMessage(error, env);
   const body = [head];
@@ -184,6 +222,7 @@ module.exports = {
   safeErrorMessage,
   formatDuration,
   metricLines,
+  sourceLines,
   buildRunOutcomeNotification,
   createRunOutcomeNotifier,
 };

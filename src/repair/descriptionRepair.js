@@ -2,6 +2,7 @@
 
 const { isDescriptionUsable } = require('../domain/descriptionQuality');
 const { markAnalysisStale } = require('../domain/jobRecord');
+const { SOURCES, sourceOf } = require('../domain/sources');
 
 function parseRepairArgs(args) {
   const options = { dryRun: false, limit: null, jobIds: [], analyzedOnly: false };
@@ -26,7 +27,9 @@ function parseRepairArgs(args) {
 
 function selectRepairJobs(jobs, options) {
   const ids = new Set(options.jobIds || []);
-  const eligible = jobs.filter(job => !isDescriptionUsable(job.description)
+  // Reparacion de descripciones de LinkedIn: las de InfoJobs tienen su propio detalle.
+  const eligible = jobs.filter(job => sourceOf(job) === SOURCES.LINKEDIN
+    && !isDescriptionUsable(job.description)
     && (!options.analyzedOnly || !!job.aiAnalysis)
     && (!ids.size || ids.has(job.jobId)))
     .sort((a, b) => a.jobId.localeCompare(b.jobId));

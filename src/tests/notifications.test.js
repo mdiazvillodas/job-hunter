@@ -70,8 +70,8 @@ test('3) score 95 => notification', async () => {
   const h = harness();
   const out = await h.notifier.notifyHighMatch(makeJob('111', 95));
   assert.strictEqual(out.status, 'sent');
-  assert.strictEqual(h.sent[0].message.title, '🔥 Match 95 — Director of Business Operations');
-  assert.strictEqual(h.sent[0].message.body, 'MUI\nRating: 95/100');
+  assert.strictEqual(h.sent[0].message.title, '🔥 Match 95 — [LinkedIn] Director of Business Operations');
+  assert.strictEqual(h.sent[0].message.body, 'MUI\nRating: 95/100\nPlataforma: LinkedIn');
   assert.strictEqual(h.sent[0].message.priority, 'high');
 });
 
@@ -411,6 +411,6 @@ test('un analisis sin score numerico no dispara notificacion', async () => {
 
 test('buildHighMatchNotification tolera title/company ausentes', () => {
   const msg = buildHighMatchNotification({ jobId: '111', aiAnalysis: analysis(90) });
-  assert.strictEqual(msg.title, '🔥 Match 90 — Oferta sin titulo');
-  assert.strictEqual(msg.body, 'Empresa no informada\nRating: 90/100');
+  assert.strictEqual(msg.title, '🔥 Match 90 — [LinkedIn] Oferta sin titulo');
+  assert.strictEqual(msg.body, 'Empresa no informada\nRating: 90/100\nPlataforma: LinkedIn');
 });

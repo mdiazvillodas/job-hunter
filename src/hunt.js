@@ -1,8 +1,9 @@
 'use strict';
 
-// Pipeline end-to-end (Milestone 9):
-//   LinkedIn -> Multi Search + Global Dedup -> Details -> OpenAI Analyzer -> LocalRepository
+// Pipeline end-to-end (Milestone 9), por plataforma (LinkedIn, InfoJobs):
+//   Plataforma -> Multi Search + Global Dedup -> Details -> OpenAI Analyzer -> LocalRepository
 // Un solo comando: npm run hunt  (real).  npm run hunt -- --debug   npm run hunt -- --dry-run
+// Solo una plataforma: npm run hunt -- --source=infojobs   (o SOURCES=linkedin en el entorno)
 //
 // Reutiliza la arquitectura existente. La UI (npm run ui) ve automaticamente lo persistido.
 
@@ -13,8 +14,11 @@ require('./env').loadProjectEnv();
 const {
   BROWSER_PROFILE_DIR,
   LINKEDIN_FILTERS,
+  INFOJOBS_FILTERS,
   OPENAI_MODEL,
   ANALYZE_LIMIT,
+  INFOJOBS_ANALYZE_LIMIT,
+  SOURCES: SOURCES_TO_RUN,
   MAX_PAGES_PER_SEARCH,
   MAX_RESULTS_PER_SEARCH,
   getActiveSearchQueries,
@@ -29,12 +33,22 @@ const { createJobService } = require('./services/jobService');
 const { getMarianoMatchingProfile } = require('./ai/marianoProfile');
 const { analyzeJob } = require('./ai/jobAnalyzer');
 const { runPipeline } = require('./pipeline/pipeline');
+const { combineSummaries } = require('./pipeline/combineSummaries');
+const { collectInfoJobsSearches } = require('./infojobs/collector');
+const { fetchInfoJobsDetail } = require('./infojobs/detail');
+const { SOURCES, sourceLabel, parseSources } = require('./domain/sources');
 const { acquireLock, releaseLock } = require('./domain/huntLock');
 const { createHighMatchNotifier } = require('./notifications/ntfy');
 const { createRunOutcomeNotifier } = require('./notifications/runOutcome');
 
 function parseArgs(argv) {
-  return { debug: argv.includes('--debug'), dryRun: argv.includes('--dry-run') };
+  // --source=infojobs | --source=linkedin,infojobs  (pisa SOURCES del entorno para este run)
+  const sourceArg = argv.find((a) => a.startsWith('--source='));
+  return {
+    debug: argv.includes('--debug'),
+    dryRun: argv.includes('--dry-run'),
+    sources: sourceArg ? parseSources(sourceArg.slice('--source='.length)) : null,
+  };
 }
 
 // Mock transport para --dry-run (no llama a OpenAI). Analisis valido segun schema.
@@ -60,6 +74,11 @@ function printDebugReport(s) {
   L('JOB HUNTER RUN');
   L('========================================');
   L(`runId: ${s.runId} | stoppedByChallenge: ${s.stoppedByChallenge}`);
+  for (const [id, src] of Object.entries(s.sources || {})) {
+    const d = src.discovery || {};
+    const a = src.analysis || {};
+    L(`  [${src.label || id}] ${src.status} | unique=${d.uniqueResults ?? '—'} new=${d.newJobs ?? '—'} analyzed=${a.analyzed ?? '—'}${src.error ? ' | error: ' + src.error : ''}`);
+  }
   L('\nDiscovery:');
   L(`  queries executed: ${s.discovery.queriesExecuted}`);
   L(`  raw jobs:         ${s.discovery.rawResults}`);
@@ -128,12 +147,72 @@ async function main() {
   }
 }
 
+// Construye discover/fetchDetails de UNA plataforma. Cada plataforma usa su propia
+// pestaña del mismo navegador (mismo ./browser-profile, misma sesion).
+async function buildSourceAdapters(source, context, options) {
+  if (source === SOURCES.INFOJOBS) {
+    const page = await context.newPage();
+    const queries = getActiveSearchQueries(undefined, SOURCES.INFOJOBS);
+    return {
+      analyzeLimit: INFOJOBS_ANALYZE_LIMIT,
+      discover: async () => {
+        const scope = await collectInfoJobsSearches(page, queries, INFOJOBS_FILTERS, {
+          debug: options.debug,
+          maxResultsPerSearch: MAX_RESULTS_PER_SEARCH,
+          maxPagesPerSearch: MAX_PAGES_PER_SEARCH,
+        });
+        return {
+          jobs: scope.jobs,
+          discovery: {
+            queriesExecuted: scope.metadata.searches.completed,
+            rawResults: scope.metadata.results.rawResults,
+            duplicatesRemoved: scope.metadata.results.duplicatesRemoved,
+          },
+        };
+      },
+      // Pausa variable entre ofertas: ritmo de lectura humano.
+      fetchDetails: (job) => fetchInfoJobsDetail(page, job, { pauseMs: 1000 + Math.floor(Math.random() * 1500) }),
+    };
+  }
+
+  // LinkedIn: exactamente el flujo de siempre.
+  const page = await getInitialPage(context);
+  await assertAuthenticatedSession(context, page);
+  const queries = getActiveSearchQueries(undefined, SOURCES.LINKEDIN);
+  let searchResultsUrl = null;
+  return {
+    analyzeLimit: ANALYZE_LIMIT,
+    discover: async () => {
+      const scope = await collectMultipleSearches(page, queries, LINKEDIN_FILTERS, {
+        debug: options.debug,
+        maxResultsPerSearch: MAX_RESULTS_PER_SEARCH,
+        maxPagesPerSearch: MAX_PAGES_PER_SEARCH,
+      });
+      searchResultsUrl = page.url();
+      return {
+        jobs: scope.jobs,
+        discovery: {
+          queriesExecuted: scope.metadata.searches.completed,
+          rawResults: scope.metadata.results.rawResults,
+          duplicatesRemoved: scope.metadata.results.duplicatesRemoved,
+        },
+      };
+    },
+    fetchDetails: async (job) => {
+      const r = await collectJobDetails(page, [job], { limit: 1, searchResultsUrl, debug: options.debug });
+      if (!r.details.length) throw new Error('no detail extracted');
+      return r.details[0];
+    },
+  };
+}
+
 async function runHunt(options) {
   const repository = createLocalRepository(); // src/data/jobs
   const jobService = createJobService(repository);
-
-  const activeQueries = getActiveSearchQueries();
   const matchingProfile = getMarianoMatchingProfile();
+  const sources = options.sources || SOURCES_TO_RUN;
+  const startMs = Date.now();
+  const startedAt = new Date().toISOString();
 
   // Decidir el modo de analisis.
   let analyze = null;
@@ -164,76 +243,62 @@ async function runHunt(options) {
   });
 
   const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
-  let summary;
-  let searchResultsUrl = null;
-  try {
-    const page = await getInitialPage(context);
-    await assertAuthenticatedSession(context, page);
+  const results = [];
+  let retentionDone = false;
 
-    const discover = async () => {
-      const scope = await collectMultipleSearches(page, activeQueries, LINKEDIN_FILTERS, {
-        debug: options.debug,
-        maxResultsPerSearch: MAX_RESULTS_PER_SEARCH,
-        maxPagesPerSearch: MAX_PAGES_PER_SEARCH,
+  // Cada plataforma corre aislada: un challenge o un error en una NO impide la otra.
+  for (const source of sources) {
+    const label = sourceLabel(source);
+    if (options.debug) console.error(`\n######## ${label.toUpperCase()} ########`);
+    try {
+      const adapters = await buildSourceAdapters(source, context, options);
+      const summary = await runPipeline({
+        jobService,
+        discover: adapters.discover,
+        fetchDetails: adapters.fetchDetails,
+        analyze,
+        analyzeLimit: adapters.analyzeLimit,
+        notify: (job) => notifier.notifyHighMatch(job),
+        // Retencion: borra ofertas con >= 7 dias en el sistema que nunca se abrieron.
+        // Se corre UNA vez por hunt (con la primera plataforma), sobre todo el repositorio.
+        // --dry-run la simula (calcula los candidatos pero no borra), igual que hace
+        // con el analisis: una corrida de prueba no debe tener efectos destructivos.
+        cleanupRetention: retentionDone ? undefined : () => jobService.cleanupExpiredJobs({ dryRun: !!options.dryRun }),
+        log: options.debug ? (m) => console.error(`[hunt:${source}] ` + m) : null,
       });
-      searchResultsUrl = page.url();
-      return {
-        jobs: scope.jobs,
-        discovery: {
-          queriesExecuted: scope.metadata.searches.completed,
-          rawResults: scope.metadata.results.rawResults,
-          duplicatesRemoved: scope.metadata.results.duplicatesRemoved,
-        },
-      };
-    };
-
-    const fetchDetails = async (job) => {
-      const r = await collectJobDetails(page, [job], { limit: 1, searchResultsUrl, debug: options.debug });
-      if (!r.details.length) throw new Error('no detail extracted');
-      return r.details[0];
-    };
-
-    summary = await runPipeline({
-      jobService,
-      discover,
-      fetchDetails,
-      analyze,
-      analyzeLimit: ANALYZE_LIMIT,
-      notify: (job) => notifier.notifyHighMatch(job),
-      // Retencion: borra ofertas con >= 7 dias en el sistema que nunca se abrieron.
-      // --dry-run la simula (calcula los candidatos pero no borra), igual que hace
-      // con el analisis: una corrida de prueba no debe tener efectos destructivos.
-      cleanupRetention: () => jobService.cleanupExpiredJobs({ dryRun: !!options.dryRun }),
-      log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
-    });
-  } catch (err) {
-    if (err instanceof SecurityChallengeError) {
-      console.error(err.message);
-      console.error('Pipeline detenido por un desafio de seguridad de LinkedIn. No se intenta evadir.');
-      console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
-      await context.close().catch(() => {});
-      await runNotifier.notifyRunOutcome({ challenge: true, error: err });
-      process.exitCode = 1;
-      return;
+      retentionDone = true;
+      results.push({ source, summary });
+    } catch (err) {
+      const challenge = err instanceof SecurityChallengeError || (err && err.name === 'AuthenticationError');
+      console.error(`[${label}] ` + (err.message || err));
+      console.error(challenge
+        ? `[${label}] Detenido por un desafio de seguridad o de sesion. No se intenta evadir.`
+        : `[${label}] Error en el pipeline.`);
+      console.error(`[${label}] Los jobs ya persistidos se conservan en el LocalRepository.`);
+      results.push({ source, error: err, challenge, challengeDiagnostic: err && err.challengeDiagnostic ? { platform: source, ...err.challengeDiagnostic } : null });
     }
-    console.error('Error en el pipeline: ' + (err.message || err));
-    console.error('Los jobs ya persistidos se conservan en el LocalRepository.');
-    await context.close().catch(() => {});
-    await runNotifier.notifyRunOutcome({ error: err });
-    process.exitCode = 1;
-    return;
   }
 
   await context.close().catch(() => {});
 
-  if (options.debug) printDebugReport(summary);
+  const combined = combineSummaries(results, { startedAt, totalMs: Date.now() - startMs });
+
+  // Ninguna plataforma produjo summary: mismo contrato de siempre (exit 1, sin JSON).
+  if (!results.some((r) => r.summary)) {
+    const allChallenged = results.length > 0 && results.every((r) => r.challenge);
+    await runNotifier.notifyRunOutcome({ challenge: allChallenged, error: results[0] && results[0].error, summary: combined });
+    process.exitCode = 1;
+    return;
+  }
+
+  if (options.debug) printDebugReport(combined);
   // El JSON a stdout es el contrato con el trigger: se emite ANTES de cualquier
   // side effect de red, para que un fallo de ntfy no pueda perder el summary.
-  console.log(JSON.stringify(summary, null, 2));
+  console.log(JSON.stringify(combined, null, 2));
 
   // stoppedByChallenge NO se anuncia como 'terminado': el notifier lo clasifica
   // como interrumpido. El status del trigger para este run no cambia.
-  await runNotifier.notifyRunOutcome({ summary });
+  await runNotifier.notifyRunOutcome({ summary: combined });
 }
 
 main();

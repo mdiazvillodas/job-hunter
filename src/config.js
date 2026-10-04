@@ -1,4 +1,5 @@
 const path = require('path');
+const { parseSources } = require('./domain/sources');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
@@ -26,7 +27,10 @@ function readNonNegativeIntegerEnv(name, fallback) {
 // Estructura pensada para poder, mas adelante:
 //  - activar/desactivar familias (family.enabled);
 //  - activar/desactivar queries individuales (query.enabled);
-//  - asignar prioridades (family.priority; menor = antes).
+//  - asignar prioridades (family.priority; menor = antes);
+//  - limitar una query a ciertas plataformas (query.sources). Sin `sources` la
+//    query corre en TODAS. Las queries en castellano solo tienen sentido en
+//    InfoJobs, donde la mayoria de ofertas estan redactadas en castellano.
 const SEARCH_QUERIES = [
   {
     family: 'operations',
@@ -39,6 +43,10 @@ const SEARCH_QUERIES = [
       { query: 'Business Operations', enabled: true },
       { query: 'Business Operations Lead', enabled: true },
       { query: 'Operations Manager', enabled: true },
+      { query: 'Director de Operaciones', enabled: true, sources: ['infojobs'] },
+      { query: 'Responsable de Operaciones', enabled: true, sources: ['infojobs'] },
+      { query: 'Jefe de Operaciones', enabled: true, sources: ['infojobs'] },
+      { query: 'Gerente de Operaciones', enabled: true, sources: ['infojobs'] },
     ],
   },
   {
@@ -50,6 +58,8 @@ const SEARCH_QUERIES = [
       { query: 'Head of Delivery', enabled: true },
       { query: 'Delivery Lead', enabled: true },
       { query: 'Delivery Manager', enabled: true },
+      { query: 'Director de Proyectos', enabled: true, sources: ['infojobs'] },
+      { query: 'Responsable de Proyectos', enabled: true, sources: ['infojobs'] },
     ],
   },
   {
@@ -61,6 +71,8 @@ const SEARCH_QUERIES = [
       { query: 'Strategy & Operations', enabled: true },
       { query: 'Business Transformation', enabled: true },
       { query: 'Digital Transformation', enabled: true },
+      { query: 'Transformación Digital', enabled: true, sources: ['infojobs'] },
+      { query: 'Estrategia y Operaciones', enabled: true, sources: ['infojobs'] },
     ],
   },
   {
@@ -78,15 +90,19 @@ const SEARCH_QUERIES = [
 
 // Aplana SEARCH_QUERIES a una lista ordenada por prioridad de familia,
 // respetando los flags enabled de familia y de query.
+// Con `source`, ademas descarta las queries restringidas a otras plataformas.
+// Sin `source` (compatibilidad) solo devuelve las queries sin restriccion, que
+// son exactamente las de LinkedIn de siempre.
 // Devuelve: [{ query, family, familyLabel, priority }]
-function getActiveSearchQueries(groups = SEARCH_QUERIES) {
+function getActiveSearchQueries(groups = SEARCH_QUERIES, source = null) {
+  const runsOn = (q) => (Array.isArray(q.sources) ? !!source && q.sources.includes(source) : true);
   return groups
     .filter((g) => g.enabled)
     .slice()
     .sort((a, b) => (a.priority || 0) - (b.priority || 0))
     .flatMap((g) =>
       g.queries
-        .filter((q) => q.enabled)
+        .filter((q) => q.enabled && runsOn(q))
         .map((q) => ({
           query: q.query,
           family: g.family,
@@ -106,8 +122,22 @@ module.exports = {
     datePosted: 'Past week',
   },
 
+  // Mismos filtros que LinkedIn, expresados como los entiende InfoJobs. Se aplican
+  // por parametros de la URL de busqueda de la propia web (ver src/infojobs/urls.js).
+  // provinceId 9 = Barcelona en el filtro de provincias de InfoJobs.
+  INFOJOBS_FILTERS: {
+    location: 'Barcelona',
+    provinceId: process.env.INFOJOBS_PROVINCE_ID || '9',
+    employmentType: 'Full-time',
+    datePosted: 'Past week',
+  },
+
   SEARCH_QUERIES,
   getActiveSearchQueries,
+
+  // Plataformas que recorre `npm run hunt`, en orden. Ausente = todas.
+  // Ej.: SOURCES=linkedin  (solo LinkedIn)  |  SOURCES=infojobs  (solo InfoJobs).
+  SOURCES: parseSources(process.env.SOURCES),
 
   // Limite de JOBS UNICOS por busqueda individual. 0 => sin limite. (Milestone 4)
   MAX_RESULTS_PER_SEARCH: readNonNegativeIntegerEnv('MAX_RESULTS_PER_SEARCH', 25),
@@ -129,6 +159,9 @@ module.exports = {
   //   N>0 => como maximo N.
   // (Distinto de MAX_*_PER_SEARCH, donde 0 = sin limite: aqui 0 = ninguno, por seguridad de gasto.)
   ANALYZE_LIMIT: readNonNegativeIntegerEnv('ANALYZE_LIMIT', 50),
+  // Mismo gate de costo, para InfoJobs. Cada plataforma tiene su propio cupo por run,
+  // asi una no le quita analisis a la otra. Ausente = mismo valor que ANALYZE_LIMIT.
+  INFOJOBS_ANALYZE_LIMIT: readNonNegativeIntegerEnv('INFOJOBS_ANALYZE_LIMIT', readNonNegativeIntegerEnv('ANALYZE_LIMIT', 50)),
 
   // --- Notificaciones push (ntfy) ---
   // Side effect informativo. Si NTFY_ENABLED no es 'true' el hunt corre igual,

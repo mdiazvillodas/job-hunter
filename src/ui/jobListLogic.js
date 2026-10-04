@@ -29,6 +29,14 @@
   function isClosed(job) {
     return availability(job) === 'closed';
   }
+  // Plataforma de origen. Mismo criterio que src/domain/sources.js (aqui duplicado
+  // porque este archivo tambien corre en el navegador): ausente = 'linkedin'.
+  var SOURCE_IDS = ['linkedin', 'infojobs'];
+  function source(job) {
+    if (job && SOURCE_IDS.indexOf(job.source) >= 0) return job.source;
+    if (job && typeof job.jobId === 'string' && job.jobId.indexOf('ij_') === 0) return 'infojobs';
+    return 'linkedin';
+  }
 
   // Estados que representan una DECISION definitiva del usuario: sacan la oferta del Inbox.
   const DECIDED_STATUSES = ['interested', 'applied', 'discarded'];
@@ -44,6 +52,7 @@
   function listItemView(job) {
     return {
       jobId: job.jobId,
+      source: source(job),
       title: job.title || null,
       company: job.company || null,
       location: job.location || null,
@@ -68,8 +77,8 @@
     return jobs.filter((j) => matchesSearch(j, term));
   }
 
-  // filters: { status, aiDecision, easyApply('all'|'yes'|'no'), families:[], minScore:Number,
-  //            company:String, matchedQuery:String, search:String }
+  // filters: { status, source('all'|'linkedin'|'infojobs'), aiDecision, easyApply('all'|'yes'|'no'),
+  //            families:[], minScore:Number, company:String, matchedQuery:String, search:String }
   function filterJobs(jobs, filters) {
     const f = filters || {};
     return jobs.filter((job) => {
@@ -86,6 +95,7 @@
           if (!isPending(job)) return false;
         } else if (status(job) !== f.status) return false;
       }
+      if (f.source && f.source !== 'all' && source(job) !== f.source) return false;
       if (f.aiDecision && f.aiDecision !== 'all' && decision(job) !== f.aiDecision) return false;
       if (f.easyApply === 'yes' && job.easyApply !== true) return false;
       if (f.easyApply === 'no' && job.easyApply === true) return false;
@@ -150,10 +160,11 @@
   // defecto. Solo cubre los filtros del panel desplegable: el estado (tabs) y la
   // busqueda libre viven fuera y tienen su propia presentacion.
   // Es presentacion pura: no altera como se filtra.
-  var FILTER_DEFAULTS = { aiDecision: 'all', easyApply: 'all', minScore: 0, company: '', matchedQuery: '' };
+  var FILTER_DEFAULTS = { source: 'all', aiDecision: 'all', easyApply: 'all', minScore: 0, company: '', matchedQuery: '' };
   function activeFilterKeys(filters) {
     var f = filters || {};
     var keys = [];
+    if (f.source && f.source !== FILTER_DEFAULTS.source) keys.push('source');
     if (f.aiDecision && f.aiDecision !== FILTER_DEFAULTS.aiDecision) keys.push('aiDecision');
     if (f.easyApply && f.easyApply !== FILTER_DEFAULTS.easyApply) keys.push('easyApply');
     if (Number(f.minScore) > 0) keys.push('minScore');
@@ -170,10 +181,22 @@
     var f = filters || {};
     return {
       status: f.status, search: f.search,
+      source: FILTER_DEFAULTS.source,
       aiDecision: FILTER_DEFAULTS.aiDecision, easyApply: FILTER_DEFAULTS.easyApply,
       minScore: FILTER_DEFAULTS.minScore, company: FILTER_DEFAULTS.company,
       matchedQuery: FILTER_DEFAULTS.matchedQuery, families: [],
     };
+  }
+
+  // Ofertas activas (no cerradas) por plataforma, para los contadores del filtro.
+  function countBySource(jobs) {
+    var counts = { all: 0, linkedin: 0, infojobs: 0 };
+    for (var i = 0; i < jobs.length; i += 1) {
+      if (isClosed(jobs[i])) continue;
+      counts.all += 1;
+      counts[source(jobs[i])] += 1;
+    }
+    return counts;
   }
 
   function deriveFamilies(jobs) {
@@ -195,6 +218,7 @@
     filterJobs,
     sortJobs,
     countByStatus,
+    countBySource,
     deriveFamilies,
     deriveQueries,
     isPending,
@@ -204,6 +228,7 @@
     countActiveFilters,
     clearedFilters,
     FILTER_DEFAULTS: FILTER_DEFAULTS,
-    helpers: { overall, decision, status, isPending, ai, availability, isClosed },
+    source,
+    helpers: { overall, decision, status, isPending, ai, availability, isClosed, source },
   };
 });

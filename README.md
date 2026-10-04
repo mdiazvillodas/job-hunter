@@ -1,6 +1,48 @@
 # Job Hunter
 
 Aplicacion local para automatizar, por etapas, la busqueda laboral. Implementado con Playwright sobre un perfil de Chromium persistente.
+Busca en **LinkedIn** y en **InfoJobs** con el mismo flujo (ver [InfoJobs](#infojobs)).
+
+## InfoJobs
+
+InfoJobs se recorre **exactamente igual que LinkedIn**: mismo navegador y perfil
+(`./browser-profile`), mismas familias de busqueda, mismos filtros, mismo pipeline
+(detalle -> OpenAI -> repositorio), misma UI, mismas notificaciones.
+
+```
+npm run hunt                         ->  LinkedIn  ->  InfoJobs   (cada uno aislado)
+npm run hunt -- --source=infojobs    ->  solo InfoJobs
+npm run hunt -- --source=linkedin    ->  solo LinkedIn   (o SOURCES=linkedin en .env)
+```
+
+- **Aislamiento:** si una plataforma pide CAPTCHA o falla, la otra corre igual. El
+  summary combinado trae `sources.linkedin` / `sources.infojobs` con el estado de cada una.
+  Solo si **ninguna** termina, el hunt sale con exit 1 (mismo contrato de siempre).
+- **Busquedas:** las 14 queries de LinkedIn + equivalentes en castellano solo para
+  InfoJobs (`sources: ['infojobs']` en `SEARCH_QUERIES`, `src/config.js`).
+- **Filtros:** Barcelona (`provinceIds=9`), ultima semana (`sinceDate=_7_DAYS`) y jornada
+  completa (se descartan las tarjetas que dicen jornada parcial). Se verifican en la URL real.
+- **Detalle:** se lee el JSON-LD `JobPosting` de la oferta (descripcion, empresa, salario);
+  si falta, el bloque de descripcion del DOM. InfoJobs aporta **salario** y **experiencia
+  minima**, que se guardan, se muestran en la UI y se envian al analizador.
+- **Identidad:** los jobs de InfoJobs se guardan como `ij_<id>` con `source: "infojobs"`;
+  los de LinkedIn conservan su id. Los registros viejos sin `source` son de LinkedIn.
+- **Limites:** `MAX_RESULTS_PER_SEARCH` / `MAX_PAGES_PER_SEARCH` aplican igual;
+  `INFOJOBS_ANALYZE_LIMIT` da a InfoJobs su propio cupo de OpenAI por run.
+- **CAPTCHA / anti-bot:** se detecta y se detiene InfoJobs. No se resuelve ni se evade.
+  Llega `❌ Job Hunter interrumpido` indicando la plataforma.
+- **UI:** cada oferta muestra el logo de su plataforma, hay filtro *Plataforma* y el boton
+  dice *Abrir en InfoJobs ↗* o *Abrir en LinkedIn ↗*.
+- **ntfy:** `🔥 Match 92 — [InfoJobs] Director de Operaciones`, body con `Plataforma: InfoJobs`
+  y Click a la oferta en InfoJobs. El cierre desglosa por plataforma.
+
+### Reconocimiento (`npm run recon:infojobs`)
+
+Script de un solo uso para ajustar los selectores a la web real: abre Chromium visible,
+hace una busqueda, abre 2 ofertas y guarda HTML/capturas/JSON en `recon/infojobs/<fecha>/`
+(gitignored). Si aparece un CAPTCHA, hay que resolverlo a mano en la ventana.
+
+Tests: `npm run test:infojobs` (puros) y `npm run test:infojobs-browser` (web simulada, sin red).
 
 ## Variables de entorno y archivo .env
 
