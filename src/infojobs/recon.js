@@ -57,7 +57,7 @@ async function challengeSignals(page) {
       if (/captcha|datadome|geetest|hcaptcha|recaptcha|challenge/.test(src)) found.push('iframe:' + src.slice(0, 120));
     }
     const text = (document.body && document.body.innerText || '').slice(0, 5000);
-    const m = text.match(/(verifica que eres humano|no soy un robot|i'?m not a robot|verify you are human|acceso bloqueado|access denied|unusual traffic|tr[aá]fico inusual|press (?:&|and) hold|mant[eé]n pulsado)/i);
+    const m = text.match(/(eres humano o un robot|actividad poco habitual|hacer clic para comprobar|verifica que eres humano|no soy un robot|i'?m not a robot|verify you are human|acceso bloqueado|access denied|unusual traffic|tr[aá]fico inusual|press (?:&|and) hold|mant[eé]n pulsado)/i);
     if (m) found.push('text:' + m[0]);
     return found;
   }).catch(() => []);

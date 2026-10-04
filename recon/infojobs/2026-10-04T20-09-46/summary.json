@@ -1,0 +1,437 @@
+{
+  "keyword": "Operations Manager",
+  "requestedUrl": "https://www.infojobs.net/jobsearch/search-results/list.xhtml?keyword=Operations+Manager&provinceIds=9&sinceDate=_7_DAYS",
+  "startedAt": "2026-10-04T20:09:46.997Z",
+  "search": {
+    "finalUrl": "https://www.infojobs.net/jobsearch/search-results/list.xhtml?keyword=Operations+Manager&provinceIds=9&sinceDate=_7_DAYS",
+    "title": "Trabajo de Operations Manager en Barcelona - InfoJobs",
+    "offerLinkCount": 16,
+    "uniqueOfferUrls": [
+      "https://www.infojobs.net/barcelona/technical-service-manager-refining-catalysts-europe/of-i2f70e2f3b3404397b85e4d5a24d737",
+      "https://www.infojobs.net/barcelona/regional-operations-manager-seguridad-electronica/of-i9b7a2cde4e457b8c771d4db5c7392b",
+      "https://www.infojobs.net/granollers/supervisor-operaciones/of-if23ff1cceb4679bcbc9c0d893766cb",
+      "https://www.infojobs.net/sant-feliu-de-llobregat/gerente-delegacion-san-feliu-barcelona-liderazgo-equipos-coche-empresa-desarrollo-viernes-verano-intensivos/of-ie4b5b5020646838557c7d866266e89",
+      "https://www.infojobs.net/sant-boi-de-llobregat/director-oficina-sant-boi-llobregat/of-icd87cd8bf64e0eaa3beaac3f5c2984",
+      "https://www.infojobs.net/barcelona/director-oficina-b2b/of-i76a60dc04042ef9f6cf0f115f18434",
+      "https://www.infojobs.net/barcelona/hard-services-manager/of-idf5e87ee3649d987d347c1de2ad8b5",
+      "https://www.infojobs.net/barcelona/store-manager-barcelona-k-way/of-ie1074c7aa04ec3ab381fdda93325e9",
+      "https://www.infojobs.net/manresa/it-business-unit-manager-dynamics-365-implementation/of-i2849fc2a664928b22ce15d0f442ad0",
+      "https://www.infojobs.net/santa-margarida-i-els-monjos/jefe-almacen/of-i74349a063b4960997dc7d096137ff8",
+      "https://www.infojobs.net/barcelona/data-analyst/of-i6aeb5e2a8e497fbf94eb6fa8cce7e5",
+      "https://www.infojobs.net/barcelona/group-purchasing-analyst/of-ic9962f99394dffb9eabd772265d9d2",
+      "https://www.infojobs.net/barcelona/team-lead-inside-sales-uk-market/of-i40b3759ec9462585e97c6d2f8880f9",
+      "https://www.infojobs.net/cornella-de-llobregat/director-proyectos/of-ib1650f20764bdeb726ce3011f8a9e2",
+      "https://www.infojobs.net/cornella-de-llobregat/tecnico-garantia-calidad-qa/of-idd93d2f48b4d8ba22aa5b10d701f24"
+    ],
+    "samples": [
+      {
+        "href": "https://www.infojobs.net/barcelona/technical-service-manager-refining-catalysts-europe/of-i2f70e2f3b3404397b85e4d5a24d737?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "text": "Technical Service Manager, Refining Catalysts (Europe)",
+        "ancestry": [
+          "a.ij-OfferCardContent-description-link.sui-PrimitiveLinkBoxLink",
+          "h2#job-title-2f70e2f3b3404397b85e4d5a24d737.ij-OfferCardContent-description-title",
+          "div.ij-OfferCardContent-description-head-left",
+          "div.ij-OfferCardContent-description-head",
+          "div.ij-OfferCardContent-description",
+          "div.ij-OfferCardContent-info"
+        ],
+        "cardText": "Technical Service Manager, Refining Catalysts (Europe)"
+      },
+      {
+        "href": "https://www.infojobs.net/barcelona/regional-operations-manager-seguridad-electronica/of-i9b7a2cde4e457b8c771d4db5c7392b?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "text": "Regional Operations Manager | Seguridad Electrónica",
+        "ancestry": [
+          "a.ij-OfferCardContent-description-link.sui-PrimitiveLinkBoxLink",
+          "h2#job-title-9b7a2cde4e457b8c771d4db5c7392b.ij-OfferCardContent-description-title",
+          "div.ij-OfferCardContent-description-head-left",
+          "div.ij-OfferCardContent-description-head",
+          "div.ij-OfferCardContent-description",
+          "div.ij-OfferCardContent-info"
+        ],
+        "cardText": "Regional Operations Manager | Seguridad Electrónica"
+      },
+      {
+        "href": "https://www.infojobs.net/granollers/supervisor-operaciones/of-if23ff1cceb4679bcbc9c0d893766cb?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "text": "Supervisor de Operaciones",
+        "ancestry": [
+          "a.ij-OfferCardContent-description-link.sui-PrimitiveLinkBoxLink",
+          "h2#job-title-f23ff1cceb4679bcbc9c0d893766cb.ij-OfferCardContent-description-title",
+          "div.ij-OfferCardContent-description-head-left",
+          "div.ij-OfferCardContent-description-head",
+          "div.ij-OfferCardContent-description",
+          "div.ij-OfferCardContent-info"
+        ],
+        "cardText": "Supervisor de Operaciones"
+      }
+    ],
+    "pagination": [
+      {
+        "tag": "a",
+        "text": "Technical Service Manager, Ref",
+        "href": "//www.infojobs.net/barcelona/technical-service-manager-refining-catalysts-europe/of-i2f70e2f3b3404397b85e4d5a24d737?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Technical Service Manager, Refining Catalysts (Europe)",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Regional Operations Manager | ",
+        "href": "//www.infojobs.net/barcelona/regional-operations-manager-seguridad-electronica/of-i9b7a2cde4e457b8c771d4db5c7392b?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Regional Operations Manager | Seguridad Electrónica",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Supervisor de Operaciones",
+        "href": "//www.infojobs.net/granollers/supervisor-operaciones/of-if23ff1cceb4679bcbc9c0d893766cb?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Supervisor de Operaciones",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Gerente de Delegación San Feli",
+        "href": "//www.infojobs.net/sant-feliu-de-llobregat/gerente-delegacion-san-feliu-barcelona-liderazgo-equipos-coche-empresa-desarrollo-viernes-verano-intensivos/of-ie4b5b5020646838557c7d866266e89?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Gerente de Delegación San Feliú (Barcelona) | Liderazgo de Equipos | Coche de Empresa + Desarrollo + Viernes y Verano Intensivos",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Director/a Oficina Sant Boi de",
+        "href": "//www.infojobs.net/sant-boi-de-llobregat/director-oficina-sant-boi-llobregat/of-icd87cd8bf64e0eaa3beaac3f5c2984?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Director/a Oficina Sant Boi de LLobregat",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "DIRECTOR/A OFICINA B2B",
+        "href": "//www.infojobs.net/barcelona/director-oficina-b2b/of-i76a60dc04042ef9f6cf0f115f18434?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "DIRECTOR/A OFICINA B2B",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Hard Services Manager",
+        "href": "//www.infojobs.net/barcelona/hard-services-manager/of-idf5e87ee3649d987d347c1de2ad8b5?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Hard Services Manager",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Store Manager (Barcelona) K-WA",
+        "href": "//www.infojobs.net/barcelona/store-manager-barcelona-k-way/of-ie1074c7aa04ec3ab381fdda93325e9?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Store Manager (Barcelona) K-WAY",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Technical Service Manager, Ref",
+        "href": "//www.infojobs.net/barcelona/technical-service-manager-refining-catalysts-europe/of-i2f70e2f3b3404397b85e4d5a24d737?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Technical Service Manager, Refining Catalysts (Europe)",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "IT BUSINESS UNIT MANAGER – DYN",
+        "href": "//www.infojobs.net/manresa/it-business-unit-manager-dynamics-365-implementation/of-i2849fc2a664928b22ce15d0f442ad0?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "IT BUSINESS UNIT MANAGER – DYNAMICS 365 IMPLEMENTATION",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Jefe/a de almacén",
+        "href": "//www.infojobs.net/santa-margarida-i-els-monjos/jefe-almacen/of-i74349a063b4960997dc7d096137ff8?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Jefe/a de almacén",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Data analyst",
+        "href": "//www.infojobs.net/barcelona/data-analyst/of-i6aeb5e2a8e497fbf94eb6fa8cce7e5?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Data analyst",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Group Purchasing Analyst",
+        "href": "//www.infojobs.net/barcelona/group-purchasing-analyst/of-ic9962f99394dffb9eabd772265d9d2?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Group Purchasing Analyst",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "team lead Inside Sales UK Mark",
+        "href": "//www.infojobs.net/barcelona/team-lead-inside-sales-uk-market/of-i40b3759ec9462585e97c6d2f8880f9?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "team lead Inside Sales UK Market",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      },
+      {
+        "tag": "a",
+        "text": "Director/a de Proyectos",
+        "href": "//www.infojobs.net/cornella-de-llobregat/director-proyectos/of-ib1650f20764bdeb726ce3011f8a9e2?applicationOrigin=search-new&page=1&sortBy=RELEVANCE",
+        "aria": "Director/a de Proyectos",
+        "cls": "ij-OfferCardContent-description-link sui-PrimitiveLinkBoxLink"
+      }
+    ],
+    "resultCountText": "15 ofertas de Operations Manager en Barcelona",
+    "filterTexts": [
+      "Activar alerta\nRecibe ofertas de esta búsqueda. Gestiona en Ajustes\nPalabra clave\nOK\nFecha\nCualquier fecha\nÚltimas24 horas\nÚltimos 7 días\nÚltimos 15 días\nProvincia\nBarcelona(15)\nMadrid(21)\nIslas Balea",
+      "Palabra clave\nOK\nFecha\nCualquier fecha\nÚltimas24 horas\nÚltimos 7 días\nÚltimos 15 días\nProvincia\nBarcelona(15)\nMadrid(21)\nIslas Baleares/Illes Balears(4)\nMálaga(3)\nVizcaya/Bizkaia(3)\nCórdoba(2)\nGuipúzc",
+      "Palabra clave\nOK\nFecha\nCualquier fecha\nÚltimas24 horas\nÚltimos 7 días\nÚltimos 15 días\nProvincia\nBarcelona(15)\nMadrid(21)\nIslas Baleares/Illes Balears(4)\nMálaga(3)\nVizcaya/Bizkaia(3)\nCórdoba(2)\nGuipúzc",
+      "Cualquier fecha",
+      "Últimas24 horas",
+      "Últimas24 horas",
+      "24 horas",
+      "Últimos 7 días",
+      "Últimos 15 días",
+      "Barcelona"
+    ],
+    "dataScripts": [
+      {
+        "id": "spcloader",
+        "type": "text/javascript",
+        "length": 0
+      }
+    ]
+  },
+  "offers": [
+    {
+      "url": "https://www.infojobs.net/barcelona/technical-service-manager-refining-catalysts-europe/of-i2f70e2f3b3404397b85e4d5a24d737",
+      "title": "Oferta de empleo: Technical Service Manager, Refining Catalysts (Europe) en Barcelona - Bolsa trabajo InfoJobs",
+      "jsonLd": [],
+      "headings": [
+        {
+          "tag": "h1",
+          "text": "Technical Service Manager, Refining Catalysts (Europe)",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title1"
+        },
+        {
+          "tag": "h3",
+          "text": "Requisitos",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title2 mb-xl"
+        },
+        {
+          "tag": "h3",
+          "text": "Descripción",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title2 mb-xl"
+        },
+        {
+          "tag": "h3",
+          "text": "32 inscritos a esta oferta",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline2"
+        },
+        {
+          "tag": "h3",
+          "text": "Comparte esta oferta",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline2"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Subcategorías",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Búsquedas",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Puestos",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Empresas",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Nosotros",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Sobre InfoJobs",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h3",
+          "text": "+ Infojobs",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Prensa",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        }
+      ],
+      "descriptionCandidate": {
+        "length": 4512,
+        "id": null,
+        "cls": "ij-Box ij-OfferDetailPage-mainContent",
+        "preview": "Requisitos\nEstudios mínimos\n\nGrado\n\nExperiencia mínima\n\nMás de 5 años\n\nIdiomas requeridos\n\nInglés - Avanzado\n\nConocimientos necesarios\nFCC\nCatalysts\nTechnical Service\nRefinery\nSector\n\nIndustria química\n\nDescripción\n\nThe world needs innovations, and our team needs you! \n\nBASF is the world's leading chemical company #WeCreateChemistry and one of the best places to work and develop your career. We ar"
+      }
+    },
+    {
+      "url": "https://www.infojobs.net/barcelona/regional-operations-manager-seguridad-electronica/of-i9b7a2cde4e457b8c771d4db5c7392b",
+      "title": "Oferta de empleo: Regional Operations Manager | Seguridad Electrónica en Barcelona - Bolsa trabajo InfoJobs",
+      "jsonLd": [],
+      "headings": [
+        {
+          "tag": "h1",
+          "text": "Regional Operations Manager | Seguridad Electrónica",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title1"
+        },
+        {
+          "tag": "h3",
+          "text": "Requisitos",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title2 mb-xl"
+        },
+        {
+          "tag": "h3",
+          "text": "Descripción",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title2 mb-xl"
+        },
+        {
+          "tag": "h3",
+          "text": "3 inscritos a esta oferta",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline2"
+        },
+        {
+          "tag": "h3",
+          "text": "Ofertas similares",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-title3"
+        },
+        {
+          "tag": "h2",
+          "text": "Category Manager",
+          "cls": "ij-Box ij-OfferCardContent2-titleContainer"
+        },
+        {
+          "tag": "h2",
+          "text": "Gestor/a de Operaciones",
+          "cls": "ij-Box ij-OfferCardContent2-titleContainer"
+        },
+        {
+          "tag": "h3",
+          "text": "Comparte esta oferta",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline2"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Subcategorías",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Búsquedas",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Puestos",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Top Empresas",
+          "cls": "ij-SeoTopsearches-column-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Nosotros",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Sobre InfoJobs",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h3",
+          "text": "+ Infojobs",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h3",
+          "text": "Prensa",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline1 ij-Footer-navigation-title"
+        },
+        {
+          "tag": "h2",
+          "text": "Información de utilidad",
+          "cls": "ij-BaseTypography ij-Heading ij-Heading-headline2"
+        }
+      ],
+      "descriptionCandidate": {
+        "length": 3504,
+        "id": null,
+        "cls": "ij-Box ij-OfferDetailPage-mainContent",
+        "preview": "Requisitos\nEstudios mínimos\n\nCiclo Formativo Grado Superior\n\nExperiencia mínima\n\nAl menos 3 años\n\nConocimientos necesarios\nGestión de operaciones\nLiderazgo de equipos multidisciplinarios\nOptimización de procesos\nMejora continua\nControl de producción\nPlanificación operativa\nGestión de proveedores\nExcelencia operativa\nSector\n\nSeguridad privada, sistemas de seguridad e investigación\n\nDescripción\n\n¿Te"
+      }
+    }
+  ],
+  "challenges": [
+    "text:Eres humano o un robot",
+    "iframe:https://www.google.com/recaptcha/api2/aframe",
+    "iframe:https://www.google.com/recaptcha/api2/aframe"
+  ],
+  "network": [
+    {
+      "file": "01.json",
+      "url": "https://www.infojobs.net/ijlibrarym.js?d=www.infojobs.net",
+      "status": 200,
+      "bytes": 659
+    },
+    {
+      "file": "02.json",
+      "url": "https://candidate-web.gw.infojobs.net/1/location/ij-home/next?portalId=0&amount=6&algorithm=DEFAULT",
+      "status": 200,
+      "bytes": 3299
+    },
+    {
+      "file": "03.json",
+      "url": "https://www.infojobs.net/ijlibrarym.js?d=www.infojobs.net",
+      "status": 200,
+      "bytes": 671
+    },
+    {
+      "file": "04.json",
+      "url": "https://www.infojobs.net/ijlibrarym.js?d=www.infojobs.net",
+      "status": 200,
+      "bytes": 671
+    },
+    {
+      "file": "05.json",
+      "url": "https://adit.gw.infojobs.net/saitama/v2/display/advertised-page/site/ij/device/wde",
+      "status": 200,
+      "bytes": 749
+    },
+    {
+      "file": "06.json",
+      "url": "https://candidate-web.gw.infojobs.net/1/location/ij-search-results/next?algorithm=SEGMENTED_RANDOM&amount=4&portalId=0",
+      "status": 200,
+      "bytes": 1436
+    },
+    {
+      "file": "07.json",
+      "url": "https://www.infojobs.net/ijlibrarym.js?d=www.infojobs.net",
+      "status": 200,
+      "bytes": 671
+    },
+    {
+      "file": "08.json",
+      "url": "https://www.infojobs.net/ijlibrarym.js?d=www.infojobs.net",
+      "status": 200,
+      "bytes": 671
+    },
+    {
+      "file": "09.json",
+      "url": "https://adit.gw.infojobs.net/saitama/v2/display/advertised-page/site/ij/device/wde",
+      "status": 200,
+      "bytes": 938
+    }
+  ],
+  "cookieButton": null,
+  "loggedInHint": false,
+  "finishedAt": "2026-10-04T20:17:25.137Z"
+}
