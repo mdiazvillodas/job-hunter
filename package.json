@@ -10,6 +10,7 @@
     "trigger": "node src/trigger/server.js",
     "collect:linkedin": "node src/collect-linkedin-jobs.js",
     "analyze:linkedin": "node src/analyze-linkedin-jobs.js",
+    "recon:infojobs": "node src/infojobs/recon.js",
     "feedback:test": "node src/feedback-test.js",
     "test:feedback": "node src/tests/feedback.test.js",
     "ui": "node src/ui/server.js",

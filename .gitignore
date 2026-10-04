@@ -46,3 +46,6 @@ scratchpad/
 
 # --- estado local de runtime (offset de Telegram) ---
 state/
+
+# --- capturas de reconocimiento de InfoJobs (pueden incluir datos de sesion) ---
+recon/
