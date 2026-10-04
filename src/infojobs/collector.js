@@ -100,6 +100,7 @@ async function collectQuery(page, query, filters, options = {}) {
         title: card.title,
         company: card.company,
         location: card.location,
+        workplaceType: card.workplaceType || null,
         url: canonicalOfferUrl(card.href),
         easyApply: null, // concepto de LinkedIn: en InfoJobs no existe.
       });
@@ -131,7 +132,7 @@ function mergeJob(globalMap, job, query, family) {
   const record = globalMap.get(job.jobId);
   record.matchedQueries.add(query);
   record.matchedFamilies.add(family);
-  for (const field of ['title', 'company', 'location', 'url']) {
+  for (const field of ['title', 'company', 'location', 'workplaceType', 'url']) {
     if (!record[field] && job[field]) record[field] = job[field];
   }
 }

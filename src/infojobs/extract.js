@@ -82,12 +82,14 @@ function extractSearchCardsDom() {
     if (!location) reasons.push('missing_location');
     if (reasons.length) diagnostics.push({ offerId: id, reasons, textPreview: text.slice(0, 240) });
 
+    const workplace = lines.find((l) => /^(?:solo teletrabajo|teletrabajo|h[ií]brido|presencial)$/i.test(l)) || null;
     jobs.push({
       offerId: id,
       href,
       title,
       company,
       location,
+      workplaceType: workplace,
       // Jornada parcial explicita en la tarjeta: no es "jornada completa".
       partTime: /jornada parcial|media jornada|part[- ]time/i.test(text),
       text: text.slice(0, 600),
@@ -135,6 +137,9 @@ function extractOfferDetailDom() {
     salary: null,
     datePosted: null,
     expired: false,
+    workplaceType: null,
+    contractType: null,
+    experienceMin: null,
   };
 
   if (posting) {
@@ -160,32 +165,81 @@ function extractOfferDetailDom() {
     result.datePosted = posting.datePosted || null;
   }
 
-  // Fallback / complemento desde el DOM.
-  if (!result.description) {
-    const selectors = ['#prefijoDescripcion1', '[class*="offer-description" i]', '[class*="OfferDescription"]', '[class*="description" i]', '[itemprop="description"]'];
-    let best = null;
-    for (const sel of selectors) {
-      for (const e of Array.from(document.querySelectorAll(sel))) {
-        if (!e.getClientRects().length) continue;
-        const t = norm(e.innerText);
-        if (t && (!best || t.length > best.length)) best = t;
+  // DOM de la oferta (estructura real, verificada con `npm run recon:infojobs`):
+  //   cabecera: .ij-OfferDetailHeader-companyLogo-companyName a  -> empresa
+  //             .ij-OfferDetailHeader-detailsList-item           -> ubicacion, modalidad,
+  //                                                                 salario, experiencia, contrato
+  //   cuerpo:   <article><h3>Requisitos</h3><dl><dt/><dd/>...</dl></article>
+  //             <article><h3>Descripción</h3>...</article>
+  // La descripcion que se guarda = Descripcion + Requisitos (estudios, idiomas,
+  // conocimientos): el analizador necesita ambos para evaluar el encaje.
+  const textOf = (e) => norm(e && (e.innerText || e.textContent));
+  const companyEl = document.querySelector('.ij-OfferDetailHeader-companyLogo-companyName a, [class*="OfferDetailHeader-companyLogo-companyName"] a');
+  if (!result.company) result.company = textOf(companyEl);
+
+  const headerItems = Array.from(document.querySelectorAll('.ij-OfferDetailHeader-detailsList-item, [class*="OfferDetailHeader-detailsList-item"]'))
+    .map(textOf).filter(Boolean);
+  for (const item of headerItems) {
+    const exp = item.match(/^Experiencia m[ií]nima\s*:?\s*(.+)$/i);
+    if (exp) { result.experienceMin = exp[1]; continue; }
+    if (/^(?:solo teletrabajo|teletrabajo|h[ií]brido|presencial)/i.test(item)) { result.workplaceType = result.workplaceType || item; continue; }
+    if (/salario|€|eur\b|bruto|neto/i.test(item)) {
+      if (!/no disponible/i.test(item) && !result.salary) result.salary = item;
+      continue;
+    }
+    if (/contrato|jornada/i.test(item)) {
+      result.contractType = item;
+      if (!result.employmentType) {
+        if (/jornada completa/i.test(item)) result.employmentType = 'Full-time';
+        else if (/jornada parcial|media jornada/i.test(item)) result.employmentType = 'Part-time';
       }
+      continue;
+    }
+    // "Barcelona (Barcelona)" = ciudad (provincia); si coinciden, una sola vez.
+    if (!result.location) result.location = item.replace(/^(.+?)\s*\(\s*\1\s*\)$/i, '$1');
+  }
+
+  const sectionByHeading = (re) => {
+    const h = Array.from(document.querySelectorAll('h2, h3')).find((x) => re.test(textOf(x) || ''));
+    return h ? (h.closest('article, section') || h.parentElement) : null;
+  };
+  const descSection = sectionByHeading(/^Descripci[oó]n(?: de la oferta)?$/i);
+  const descText = descSection ? norm((descSection.innerText || '').replace(/^\s*Descripci[oó]n(?: de la oferta)?\s*/i, '')) : null;
+  const reqSection = sectionByHeading(/^Requisitos$/i);
+  let reqText = null;
+  if (reqSection) {
+    const lines = [];
+    for (const dt of Array.from(reqSection.querySelectorAll('dt'))) {
+      const dd = dt.nextElementSibling;
+      if (!dd || dd.tagName !== 'DD') continue;
+      const tags = Array.from(dd.querySelectorAll('.sui-AtomTag-label, [class*="Tag-label"]')).map(textOf).filter(Boolean);
+      const value = tags.length ? tags.join(', ') : textOf(dd);
+      if (value) lines.push(`${textOf(dt)}: ${value}`);
+    }
+    reqText = lines.length ? lines.join('\n') : norm((reqSection.innerText || '').replace(/^\s*Requisitos\s*/i, ''));
+  }
+  if (!result.description && (descText || reqText)) {
+    result.description = [descText, reqText ? 'Requisitos:\n' + reqText : null].filter(Boolean).join('\n\n');
+    result.method = result.method ? result.method + '+dom' : 'dom';
+  }
+
+  // Ultimo recurso: bloque de descripcion por id/clase conocida.
+  if (!result.description) {
+    let best = null;
+    for (const e of Array.from(document.querySelectorAll('#prefijoDescripcion1, [class*="OfferDetailPage-mainContent"]'))) {
+      if (!e.getClientRects().length) continue;
+      const t = textOf(e);
+      if (t && (!best || t.length > best.length)) best = t;
     }
     if (best) {
       result.description = best;
-      result.method = result.method ? result.method + '+dom' : 'dom';
+      result.method = result.method ? result.method + '+dom_block' : 'dom_block';
     }
   }
-  if (!result.title) result.title = norm(document.querySelector('h1') && document.querySelector('h1').innerText);
+  if (!result.title) result.title = textOf(document.querySelector('h1'));
 
   const bodyText = (document.body && document.body.innerText) || '';
   result.expired = /esta oferta (?:ya )?no est[aá] disponible|oferta (?:ha )?caducad[ao]|ya no acepta inscripciones|proceso de selecci[oó]n (?:ha )?finalizado/i.test(bodyText.slice(0, 4000));
-  if (!result.salary) {
-    const m = bodyText.match(/Salario\s*:?\s*\n?\s*([^\n]{3,80})/i);
-    if (m && /\d/.test(m[1])) result.salary = norm(m[1]);
-  }
-  const exp = bodyText.match(/Experiencia m[ií]nima\s*:?\s*\n?\s*([^\n]{2,60})/i);
-  result.experienceMin = exp ? norm(exp[1]) : null;
   return result;
 }
 

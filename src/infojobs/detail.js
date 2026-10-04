@@ -32,7 +32,7 @@ async function fetchInfoJobsDetail(page, job, options = {}) {
     detailed.description = d.description;
     detailed.descriptionLength = d.description.length;
   }
-  for (const field of ['title', 'company', 'location', 'employmentType', 'salary', 'experienceMin']) {
+  for (const field of ['title', 'company', 'location', 'employmentType', 'workplaceType', 'contractType', 'salary', 'experienceMin']) {
     if (d[field]) detailed[field] = d[field];
   }
   return detailed;

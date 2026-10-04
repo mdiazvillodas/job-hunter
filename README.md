@@ -22,15 +22,20 @@ npm run hunt -- --source=linkedin    ->  solo LinkedIn   (o SOURCES=linkedin en 
   InfoJobs (`sources: ['infojobs']` en `SEARCH_QUERIES`, `src/config.js`).
 - **Filtros:** Barcelona (`provinceIds=9`), ultima semana (`sinceDate=_7_DAYS`) y jornada
   completa (se descartan las tarjetas que dicen jornada parcial). Se verifican en la URL real.
-- **Detalle:** se lee el JSON-LD `JobPosting` de la oferta (descripcion, empresa, salario);
-  si falta, el bloque de descripcion del DOM. InfoJobs aporta **salario** y **experiencia
-  minima**, que se guardan, se muestran en la UI y se envian al analizador.
+- **Detalle:** se lee la cabecera de la oferta (empresa, ubicacion, modalidad, salario,
+  experiencia minima, contrato/jornada) y como descripcion se guarda la seccion
+  *Descripción* + *Requisitos* (estudios, idiomas, conocimientos, sector). Estructura
+  verificada contra la web real con el recon. Si una oferta trajera JSON-LD `JobPosting`,
+  se usa primero. El salario y la experiencia se muestran en la UI y van al analizador.
 - **Identidad:** los jobs de InfoJobs se guardan como `ij_<id>` con `source: "infojobs"`;
   los de LinkedIn conservan su id. Los registros viejos sin `source` son de LinkedIn.
 - **Limites:** `MAX_RESULTS_PER_SEARCH` / `MAX_PAGES_PER_SEARCH` aplican igual;
   `INFOJOBS_ANALYZE_LIMIT` da a InfoJobs su propio cupo de OpenAI por run.
-- **CAPTCHA / anti-bot:** se detecta y se detiene InfoJobs. No se resuelve ni se evade.
-  Llega `❌ Job Hunter interrumpido` indicando la plataforma.
+- **CAPTCHA / anti-bot:** InfoJobs puede mostrar *"¿Eres humano o un robot?"* (reCAPTCHA).
+  Se detecta y se detiene InfoJobs (LinkedIn sigue). No se resuelve ni se evade.
+  Llega `❌ Job Hunter interrumpido` indicando la plataforma. Para desbloquear: correr
+  `npm run recon:infojobs` (navegador visible), resolver el CAPTCHA a mano y listo: la
+  sesion queda guardada en `./browser-profile` para los siguientes hunts.
 - **UI:** cada oferta muestra el logo de su plataforma, hay filtro *Plataforma* y el boton
   dice *Abrir en InfoJobs ↗* o *Abrir en LinkedIn ↗*.
 - **ntfy:** `🔥 Match 92 — [InfoJobs] Director de Operaciones`, body con `Plataforma: InfoJobs`

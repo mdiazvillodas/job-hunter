@@ -29,6 +29,8 @@ const DOM_SIGNALS = [
 
 // Frases completas de pantallas de bloqueo, ademas de las genericas de LinkedIn.
 const EXTRA_TEXT_SIGNALS = [
+  // Pantalla real de InfoJobs (vista en el recon): "¿Eres humano o un robot?" + reCAPTCHA.
+  { id: 'text:human_or_robot', pattern: /eres (?:un )?humano o (?:un )?robot|are you (?:a )?human or (?:a )?robot/i },
   { id: 'text:access_blocked', pattern: /acceso (?:ha sido )?bloqueado|tu acceso ha sido bloqueado|access to this page has been denied/i },
   { id: 'text:unusual_traffic', pattern: /tr[aá]fico inusual desde tu red|unusual traffic from your (?:computer )?network/i },
   { id: 'text:press_and_hold', pattern: /press (?:&|and) hold|mant[eé]n pulsado el bot[oó]n/i },

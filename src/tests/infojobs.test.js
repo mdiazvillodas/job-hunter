@@ -79,6 +79,7 @@ test('challenge: CAPTCHA concluyente si; vocabulario de una oferta no', () => {
   assert.equal(evaluateInfoJobsChallenge({ url: OFFER, domSignals: ['dom:datadome'] }).signal, 'dom:datadome');
   assert.equal(evaluateInfoJobsChallenge({ url: OFFER, text: 'Tu acceso ha sido bloqueado' }).signal, 'text:access_blocked');
   assert.equal(evaluateInfoJobsChallenge({ url: OFFER, text: 'Mantén pulsado el botón para continuar' }).signal, 'text:press_and_hold');
+  assert.equal(evaluateInfoJobsChallenge({ url: OFFER, text: '¿Eres humano o un robot?' }).signal, 'text:human_or_robot');
   assert.equal(evaluateInfoJobsChallenge({
     url: OFFER,
     text: 'Gestionarás checkpoints de proyecto, controles de seguridad y la verificación de entregables. Captcha no.',

@@ -49,8 +49,27 @@ function offerPage(withJsonLd) {
     employmentType: 'FULL_TIME', datePosted: '2026-10-01',
     baseSalary: { '@type': 'MonetaryAmount', currency: 'EUR', value: { '@type': 'QuantitativeValue', minValue: 40000, maxValue: 50000, unitText: 'YEAR' } },
   })}</script>` : '';
-  const body = withJsonLd ? '<h1>Director de Operaciones</h1>'
-    : `<h1>Responsable de Operaciones</h1><div id="prefijoDescripcion1">${DESC}</div><dl><dt>Experiencia mínima</dt><dd>Al menos 5 años</dd></dl>`;
+  // Sin JSON-LD = estructura REAL de InfoJobs (capturada con npm run recon:infojobs).
+  const body = withJsonLd ? '<h1>Director de Operaciones</h1>' : `
+    <section><article><div><h1 class="ij-Heading-title1">Responsable de Operaciones</h1></div>
+      <div class="ij-Box ij-OfferDetailHeader-companyLogo"><div class="ij-OfferDetailHeader-companyLogo-title"><div class="ij-Box ij-OfferDetailHeader-companyLogo-companyName"><a href="//globex.ofertas-trabajo.infojobs.net">Globex</a></div></div></div>
+      <div class="ij-OfferDetailHeader-details"><div class="ij-OfferDetailHeader-detailsList">
+        <div class="ij-OfferDetailHeader-detailsList-column">
+          <div class="ij-Box ij-OfferDetailHeader-detailsList-item"><p>L'Hospitalet de Llobregat (<a href="/ofertas-trabajo/barcelona">Barcelona</a>)</p></div>
+          <div class="ij-Box ij-OfferDetailHeader-detailsList-item"><p>Híbrido</p></div>
+          <div class="ij-Box ij-OfferDetailHeader-detailsList-item"><p>45.000€ - 55.000€ Bruto/año</p></div>
+        </div><div class="ij-OfferDetailHeader-detailsList-column">
+          <div class="ij-Box ij-OfferDetailHeader-detailsList-item"><p>Experiencia mínima: Al menos 5 años</p></div>
+          <div class="ij-Box ij-OfferDetailHeader-detailsList-item"><p>Contrato indefinido, jornada completa</p></div>
+        </div></div></div></article></section>
+    <section class="ij-Box ij-OfferDetailPage-mainContent">
+      <article class="ij-Box"><h3>Requisitos</h3><dl>
+        <dt>Estudios mínimos</dt><dd><p>Grado</p></dd>
+        <dt>Conocimientos necesarios</dt><dd><div><a href="/ofertas-trabajo/lean"><span class="sui-AtomTag-label">Lean</span></a><a href="/ofertas-trabajo/sap"><span class="sui-AtomTag-label">SAP</span></a></div></dd>
+      </dl></article>
+      <article class="ij-Box"><h3>Descripción</h3><div class="ij-EnrichedTextArea-paragraph">${DESC}</div></article>
+      <article><h3>Ofertas similares</h3><h2 class="ij-OfferCardContent2-titleContainer">Otra oferta que no es esta</h2></article>
+    </section>`;
   return `<!doctype html><html><head>${ld}</head><body>${body}<p>Experiencia mínima: Al menos 5 años</p></body></html>`;
 }
 
@@ -88,7 +107,7 @@ test('busqueda: tarjetas, paginacion, dedup, jornada parcial fuera, filtros veri
   assert.deepEqual(Object.keys(byId).sort(), ['ij_i1111111111aaaaaaaaaa', 'ij_i2222222222bbbbbbbbbb', 'ij_i4444444444dddddddddd']);
   assert.deepEqual(byId.ij_i1111111111aaaaaaaaaa, {
     jobId: 'ij_i1111111111aaaaaaaaaa', source: 'infojobs', title: 'Director de Operaciones', company: 'ACME', location: 'Barcelona',
-    url: 'https://www.infojobs.net/barcelona/director-de-operaciones/of-i1111111111aaaaaaaaaa', easyApply: null,
+    url: 'https://www.infojobs.net/barcelona/director-de-operaciones/of-i1111111111aaaaaaaaaa', easyApply: null, workplaceType: 'Presencial',
   });
   assert.equal(byId.ij_i2222222222bbbbbbbbbb.location, "L'Hospitalet de Llobregat");
   assert.equal(r.metadata.skippedPartTime, 1);
@@ -125,7 +144,7 @@ test('multi-query: misma forma que LinkedIn, acumula queries y familias', async 
   assert.deepEqual(acme.matchedFamilies, ['operations']);
 });
 
-test('detalle: JSON-LD JobPosting (descripcion, salario, experiencia)', async (t) => {
+test('detalle: JSON-LD JobPosting si la oferta lo trae (descripcion, salario)', async (t) => {
   const { page } = await withPage(t, fakeInfoJobs);
   const d = await fetchInfoJobsDetail(page, { jobId: 'ij_i1111111111aaaaaaaaaa', url: 'https://www.infojobs.net/barcelona/director-de-operaciones/of-i1111111111aaaaaaaaaa' });
   assert.equal(d.detailExtraction.status, 'description_extracted');
@@ -135,15 +154,23 @@ test('detalle: JSON-LD JobPosting (descripcion, salario, experiencia)', async (t
   assert.equal(d.company, 'ACME');
   assert.equal(d.employmentType, 'Full-time');
   assert.match(d.salary, /^40\.000 - 50\.000 EUR \/ año$/);
-  assert.equal(d.experienceMin, 'Al menos 5 años');
 });
 
-test('detalle: sin JSON-LD cae al DOM', async (t) => {
+test('detalle: estructura real de InfoJobs (cabecera + Descripcion + Requisitos)', async (t) => {
   const { page } = await withPage(t, fakeInfoJobs);
   const d = await fetchInfoJobsDetail(page, { jobId: 'ij_i2222222222bbbbbbbbbb', url: 'https://www.infojobs.net/x/y/of-i2222222222bbbbbbbbbb' });
   assert.equal(d.detailExtraction.method, 'dom');
   assert.equal(d.detailExtraction.status, 'description_extracted');
-  assert.match(d.description, /Director\/a de Operaciones/);
+  assert.match(d.description, /^Buscamos Director\/a de Operaciones/);
+  assert.match(d.description, /Requisitos:\nEstudios mínimos: Grado\nConocimientos necesarios: Lean, SAP$/);
+  assert.ok(!d.description.includes('Otra oferta que no es esta'));
+  assert.equal(d.company, 'Globex');
+  assert.equal(d.location, "L'Hospitalet de Llobregat (Barcelona)");
+  assert.equal(d.workplaceType, 'Híbrido');
+  assert.equal(d.salary, '45.000€ - 55.000€ Bruto/año');
+  assert.equal(d.experienceMin, 'Al menos 5 años');
+  assert.equal(d.contractType, 'Contrato indefinido, jornada completa');
+  assert.equal(d.employmentType, 'Full-time');
 });
 
 test('CAPTCHA: se detiene con SecurityChallengeError y diagnostico de InfoJobs', async (t) => {
