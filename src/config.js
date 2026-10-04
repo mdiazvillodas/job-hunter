@@ -175,4 +175,6 @@ module.exports = {
   // Ausente o valor inesperado => headless (true).
   HEADLESS: readBooleanEnv('HEADLESS', true),
   BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile'),
+  // InfoJobs usa su propio perfil: no comparte cookies ni sesion con LinkedIn.
+  INFOJOBS_BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile-infojobs'),
 };

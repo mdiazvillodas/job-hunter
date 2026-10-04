@@ -13,6 +13,7 @@ require('./env').loadProjectEnv();
 
 const {
   BROWSER_PROFILE_DIR,
+  INFOJOBS_BROWSER_PROFILE_DIR,
   LINKEDIN_FILTERS,
   INFOJOBS_FILTERS,
   OPENAI_MODEL,
@@ -24,6 +25,7 @@ const {
   getActiveSearchQueries,
 } = require('./config');
 const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
+const { launchInfoJobsBrowser } = require('./infojobs/browser');
 const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectMultipleSearches } = require('./linkedin/multiSearch');
@@ -242,7 +244,6 @@ async function runHunt(options) {
     log: (m) => console.error('[notify] ' + m),
   });
 
-  const context = await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
   const results = [];
   let retentionDone = false;
 
@@ -250,7 +251,12 @@ async function runHunt(options) {
   for (const source of sources) {
     const label = sourceLabel(source);
     if (options.debug) console.error(`\n######## ${label.toUpperCase()} ########`);
+    // Cada plataforma abre y cierra su propio navegador, con su propio perfil.
+    let context = null;
     try {
+      context = source === 'infojobs'
+        ? await launchInfoJobsBrowser(INFOJOBS_BROWSER_PROFILE_DIR)
+        : await launchLinkedInBrowser(BROWSER_PROFILE_DIR);
       const adapters = await buildSourceAdapters(source, context, options);
       const summary = await runPipeline({
         jobService,
@@ -276,10 +282,10 @@ async function runHunt(options) {
         : `[${label}] Error en el pipeline.`);
       console.error(`[${label}] Los jobs ya persistidos se conservan en el LocalRepository.`);
       results.push({ source, error: err, challenge, challengeDiagnostic: err && err.challengeDiagnostic ? { platform: source, ...err.challengeDiagnostic } : null });
+    } finally {
+      if (context) await context.close().catch(() => {});
     }
   }
-
-  await context.close().catch(() => {});
 
   const combined = combineSummaries(results, { startedAt, totalMs: Date.now() - startMs });
 

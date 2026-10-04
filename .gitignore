@@ -8,6 +8,9 @@ node_modules/
 
 # --- sesión de navegador / cookies de LinkedIn (NUNCA versionar) ---
 browser-profile/
+browser-profile-infojobs/
+browser-profile-chrome/
+browser-profile-firefox/
 
 # --- logs de runs y audit trail local ---
 runs/
