@@ -1,5 +1,6 @@
-const { BROWSER_PROFILE_DIR } = require('./runtime');
-const { getUserConfig } = require('./config/userConfig');
+const { BROWSER_PROFILE_DIR, INFOJOBS_BROWSER_PROFILE_DIR } = require('./runtime');
+const { getUserConfig, getInfoJobsSettings } = require('./config/userConfig');
+const { resolveInfoJobsProvince } = require('./infojobs/provinces');
 
 function readPositiveIntegerEnv(name, fallback) {
   const value = Number.parseInt(process.env[name], 10);
@@ -63,6 +64,7 @@ const config = {
   ANALYZE_LIMIT: readNonNegativeIntegerEnv('ANALYZE_LIMIT', 50),
 
   BROWSER_PROFILE_DIR,
+  INFOJOBS_BROWSER_PROFILE_DIR,
 };
 
 Object.defineProperties(config, {
@@ -79,6 +81,24 @@ Object.defineProperties(config, {
       employmentType: 'Full-time',
       datePosted: 'Past week',
     }),
+  },
+  // InfoJobs es opcional: se enciende desde Configuracion (sources.infojobs).
+  INFOJOBS_ENABLED: { enumerable: true, get: () => getInfoJobsSettings(getUserConfig()).enabled },
+  // Mismos filtros que LinkedIn, expresados como los entiende InfoJobs: la
+  // provincia sale de la configuracion o de la ubicacion principal (ver
+  // src/infojobs/provinces.js) y se aplica por parametros de la URL.
+  INFOJOBS_FILTERS: {
+    enumerable: true,
+    get: () => {
+      const user = getUserConfig();
+      const province = resolveInfoJobsProvince(getInfoJobsSettings(user).provinceId, user.search.locations);
+      return {
+        location: province.name || 'España',
+        provinceId: province.provinceId,
+        employmentType: 'Full-time',
+        datePosted: 'Past week',
+      };
+    },
   },
 });
 

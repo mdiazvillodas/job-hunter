@@ -56,6 +56,8 @@ module.exports = {
   MANAGED_NODE_EXECUTABLE: managedNodeExecutable,
   PLAYWRIGHT_BROWSERS_DIR: playwrightBrowsersDir,
   BROWSER_PROFILE_DIR: path.join(dataDir, 'browser-profile'),
+  // InfoJobs usa su propio perfil: no comparte cookies ni sesion con LinkedIn.
+  INFOJOBS_BROWSER_PROFILE_DIR: path.join(dataDir, 'browser-profile-infojobs'),
   JOBS_DIR: path.join(dataDir, 'jobs'),
   RUNS_DIR: path.join(dataDir, 'runs'),
   FEEDBACK_DIR: path.join(dataDir, 'feedback'),

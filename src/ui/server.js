@@ -13,7 +13,7 @@ const { computeLearnedPreferences } = require('../ai/learnedPreferences');
 const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 const { getUserConfig, toPublicUserConfig } = require('../config/userConfig');
-const { toEditableSearch, applySearchSettings, toEditableNotifications, applyNotificationSettings, saveUserConfigFile } = require('../config/searchSettings');
+const { toEditableSearch, applySearchSettings, toEditableNotifications, applyNotificationSettings, toEditableInfoJobs, applyInfoJobsSettings, saveUserConfigFile } = require('../config/searchSettings');
 const { getNotificationSettings } = require('../config/userConfig');
 const { getNtfyConfig, defaultSend } = require('../notifications/ntfy');
 const { createSetupService } = require('../setup/setupService');
@@ -199,7 +199,12 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
   // nunca en el codigo fuente.
   if (method === 'GET' && parts.length === 2 && parts[1] === 'settings') {
     const cfg = getUserConfig();
-    return sendJson(res, 200, { search: toEditableSearch(cfg), notifications: toEditableNotifications(cfg) });
+    return sendJson(res, 200, { search: toEditableSearch(cfg), notifications: toEditableNotifications(cfg), infojobs: toEditableInfoJobs(cfg) });
+  }
+  if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'infojobs') {
+    const next = applyInfoJobsSettings(getUserConfig(), await readBody(req));
+    saveUserConfigFile(next);
+    return sendJson(res, 200, { infojobs: toEditableInfoJobs(next) });
   }
   if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'search') {
     const next = applySearchSettings(getUserConfig(), await readBody(req));

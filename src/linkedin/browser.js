@@ -1,11 +1,20 @@
 const { chromium } = require('playwright');
 
-async function launchLinkedInBrowser(profileDir) {
+// Unico punto que abre el Chromium gestionado. Los consumidores (hunt, ventana
+// manual, Market Discovery) toman el lock del navegador antes de llamarlo.
+// `extra` permite ajustes por plataforma (p. ej. idioma de InfoJobs) sin abrir
+// un segundo camino hacia Playwright.
+async function launchManagedBrowser(profileDir, extra = {}) {
   return chromium.launchPersistentContext(profileDir, {
     headless: false,
     channel: 'chromium',
     viewport: null,
+    ...extra,
   });
+}
+
+async function launchLinkedInBrowser(profileDir) {
+  return launchManagedBrowser(profileDir);
 }
 
 async function getInitialPage(context) {
@@ -21,6 +30,7 @@ async function waitForBrowserClose(context) {
 
 module.exports = {
   getInitialPage,
+  launchManagedBrowser,
   launchLinkedInBrowser,
   waitForBrowserClose,
 };

@@ -69,7 +69,7 @@ function safeQueryOutcomes(value) {
   const str = (v, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : null);
   return value.slice(0, MAX_SUMMARY_QUERIES).map((entry) => {
     const item = entry && typeof entry === 'object' ? entry : {};
-    return {
+    const out = {
       query: str(item.query),
       family: str(item.family, 80),
       status: str(item.status, 40),
@@ -84,7 +84,33 @@ function safeQueryOutcomes(value) {
       startedAt: str(item.startedAt, 40),
       completedAt: str(item.completedAt, 40),
     };
+    // Solo con InfoJobs activo las queries llevan plataforma.
+    if (item.source === 'linkedin' || item.source === 'infojobs') out.source = item.source;
+    return out;
   });
+}
+
+// Desenlace por plataforma (solo con InfoJobs activo). Lista blanca: estado,
+// contadores y el diagnostico de challenge ya saneado.
+const SOURCE_STATUSES = new Set(['completed', 'stopped_by_challenge', 'failed']);
+function safeSources(value) {
+  if (!value || typeof value !== 'object') return undefined;
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const out = {};
+  for (const key of ['linkedin', 'infojobs']) {
+    const item = value[key];
+    if (!item || typeof item !== 'object') continue;
+    const discovery = item.discovery || {};
+    const analysis = item.analysis || {};
+    out[key] = {
+      status: SOURCE_STATUSES.has(item.status) ? item.status : 'failed',
+      challenge: safeChallenge(item.challenge),
+      error: typeof item.error === 'string' && item.error ? item.error.slice(0, 200) : null,
+      discovery: { queriesExecuted: num(discovery.queriesExecuted), uniqueResults: num(discovery.uniqueResults), newJobs: num(discovery.newJobs) },
+      analysis: { analyzed: num(analysis.analyzed), failed: num(analysis.failed) },
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function safeSummary(value) {
@@ -92,7 +118,8 @@ function safeSummary(value) {
   const discovery = value.discovery || {};
   const analysis = value.analysis || {};
   const persistence = value.persistence || {};
-  return {
+  const sources = safeSources(value.sources);
+  const summary = {
     runId: value.runId || null,
     stoppedByChallenge: value.stoppedByChallenge === true,
     challenge: safeChallenge(value.challenge),
@@ -121,6 +148,8 @@ function safeSummary(value) {
       unchanged: persistence.unchanged,
     },
   };
+  if (sources) summary.sources = sources;
+  return summary;
 }
 
 function safeError(error) {
@@ -292,4 +321,4 @@ function createHuntRunManager(options = {}) {
   return { start, cancel, getStatus: snapshot, stopAccepting, waitForIdle, waitForRun };
 }
 
-module.exports = { createHuntRunManager, safeSummary, safeQueryOutcomes, safeChallenge, safeProgress, safeError, safeDiagnostic, isCancellation };
+module.exports = { createHuntRunManager, safeSummary, safeQueryOutcomes, safeSources, safeChallenge, safeProgress, safeError, safeDiagnostic, isCancellation };

@@ -58,6 +58,23 @@ function validateTelegram(config) {
   if (telegram.enabled === true && !TELEGRAM_USER_ID_RE.test(String(telegram.allowedUserId))) invalid('telegram.allowedUserId');
 }
 
+// Bloque OPCIONAL de plataformas adicionales a LinkedIn. Un user.json anterior
+// no lo tiene y debe seguir validando: ausente significa InfoJobs apagado, de
+// modo que actualizar el producto nunca empieza a buscar en otra web por su
+// cuenta. provinceId null = usar la provincia de la ubicacion principal.
+function validateSources(config) {
+  if (config.sources === undefined) return;
+  if (!config.sources || typeof config.sources !== 'object' || Array.isArray(config.sources)) invalid('sources');
+  const infojobs = config.sources.infojobs;
+  if (infojobs === undefined) return;
+  if (!infojobs || typeof infojobs !== 'object' || Array.isArray(infojobs)) invalid('sources.infojobs');
+  if (infojobs.enabled !== undefined && typeof infojobs.enabled !== 'boolean') invalid('sources.infojobs.enabled');
+  if (infojobs.provinceId !== undefined && infojobs.provinceId !== null
+      && !(typeof infojobs.provinceId === 'string' && /^(?:\d{1,4}|all)$/.test(infojobs.provinceId))) {
+    invalid('sources.infojobs.provinceId');
+  }
+}
+
 function validateUserConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) invalid('root');
   if (!config.identity || typeof config.identity !== 'object') invalid('identity');
@@ -89,6 +106,7 @@ function validateUserConfig(config) {
   if (config.search.modalities !== undefined && !Array.isArray(config.search.modalities)) invalid('search.modalities');
   validateNotifications(config);
   validateTelegram(config);
+  validateSources(config);
   return config;
 }
 
@@ -119,4 +137,11 @@ function getNotificationSettings(config) {
   return ntfy && typeof ntfy === 'object' ? ntfy : { enabled: false };
 }
 
-module.exports = { getUserConfig, loadUserConfig, validateUserConfig, toPublicUserConfig, getNotificationSettings, ConfigurationRequiredError };
+// InfoJobs efectivo: ausente equivale a apagado.
+function getInfoJobsSettings(config) {
+  const infojobs = config && config.sources && config.sources.infojobs;
+  if (!infojobs || typeof infojobs !== 'object') return { enabled: false, provinceId: null };
+  return { enabled: infojobs.enabled === true, provinceId: infojobs.provinceId == null ? null : infojobs.provinceId };
+}
+
+module.exports = { getUserConfig, loadUserConfig, validateUserConfig, toPublicUserConfig, getNotificationSettings, getInfoJobsSettings, ConfigurationRequiredError };

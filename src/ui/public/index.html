@@ -79,6 +79,7 @@
           <button class="settings-nav-item" type="button" data-section="notifications">Notificaciones</button>
           <button class="settings-nav-item" type="button" data-section="telegram">Telegram</button>
           <button class="settings-nav-item" type="button" data-section="linkedin">LinkedIn y navegador</button>
+          <button class="settings-nav-item" type="button" data-section="infojobs">InfoJobs</button>
           <button class="settings-nav-item" type="button" data-section="market">Explorar mercado</button>
         </nav>
         <div class="settings-panels" id="settingsPanels">
@@ -242,6 +243,27 @@
               <div class="settings-actions">
                 <button id="installBrowserBtn" class="btn" type="button">Preparar navegador de LinkedIn</button>
               </div>
+            </div>
+          </section>
+          <!-- INFOJOBS: segunda fuente de ofertas, opcional. Apagada por defecto. -->
+          <section class="settings-panel" data-section="infojobs" hidden>
+            <h2>InfoJobs</h2>
+            <p class="settings-hint">Además de LinkedIn, Job Hunter puede buscar las mismas búsquedas en InfoJobs. Corre después de LinkedIn, en una ventana propia, y cada plataforma tiene su propio cupo de análisis.</p>
+            <div class="settings-group">
+              <div class="settings-row">
+                <label for="infojobsEnabled">Buscar también en InfoJobs</label>
+                <input id="infojobsEnabled" type="checkbox" />
+              </div>
+              <div class="settings-row">
+                <label for="infojobsProvince">Provincia</label>
+                <select id="infojobsProvince"></select>
+              </div>
+              <p class="muted small" id="infojobsProvinceHint"></p>
+              <p class="muted small">No hace falta iniciar sesión. Si InfoJobs muestra un CAPTCHA, esa parte se detiene sin afectar a LinkedIn.</p>
+            </div>
+            <div class="settings-actions">
+              <button id="saveInfojobsBtn" class="btn primary" type="button">Guardar cambios</button>
+              <span id="infojobsStatus" class="settings-status"></span>
             </div>
           </section>
           <section class="settings-panel" data-section="market" hidden>

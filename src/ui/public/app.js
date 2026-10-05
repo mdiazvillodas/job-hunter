@@ -224,7 +224,8 @@ function renderHuntControl() {
       const created = s.discovery ? s.discovery.newJobs : null;
       const analyzed = s.analysis ? s.analysis.analyzed : null;
       result.textContent = '✓ ' + (created != null ? created + ' nuevas' : 'Completado')
-        + (analyzed != null ? ' · ' + analyzed + ' analizadas' : '');
+        + (analyzed != null ? ' · ' + analyzed + ' analizadas' : '')
+        + (s.sources && s.sources.infojobs && s.sources.infojobs.status !== 'completed' ? ' · InfoJobs no terminó' : '');
       result.hidden = false;
     } else if (hunt.status === 'CANCELLED') {
       result.textContent = '⊘ Detenida';
@@ -544,6 +545,7 @@ function jobItemHtml(job) {
         <span class="badge ai-${ai}">${v.aiDecision ? esc(lbl(DECISION_LABELS, v.aiDecision, v.aiDecision)) : 'IA —'}</span>
         ${v.status === 'new' ? '' : `<span class="status-chip st-${v.status}">${esc(lbl(STATUS_LABELS, v.status, titleCase(v.status)))}</span>`}
         ${v.easyApply ? '<span class="badge easy">Easy Apply</span>' : ''}
+        ${v.source === 'infojobs' ? '<span class="badge source-infojobs">InfoJobs</span>' : ''}
       </div>
     </div>
   </li>`;
@@ -641,7 +643,9 @@ function renderDetail(job, cal) {
   const c = el('detailContent');
   c.hidden = false;
   const a = job.aiAnalysis || {};
-  const meta = [job.employmentType, job.workplaceType, job.seniority].filter(Boolean).map((m) => `<span class="dot">${esc(m)}</span>`).join('');
+  const isInfojobs = job.source === 'infojobs' || String(job.jobId).indexOf('ij_') === 0;
+  const meta = [job.employmentType, job.workplaceType, job.seniority, job.contractType, job.salary, job.experienceMin ? 'Experiencia mínima: ' + job.experienceMin : null]
+    .filter(Boolean).filter((m, i, all) => all.indexOf(m) === i).map((m) => `<span class="dot">${esc(m)}</span>`).join('');
   const easy = job.easyApply ? '<span class="badge easy">Easy Apply</span>' : '';
   const aiBadge = `<span class="badge ai-${a.decision || 'none'}">IA: ${a.decision ? esc(lbl(DECISION_LABELS, a.decision, a.decision)) : '—'}</span>`;
   const stBadge = `<span class="status-chip st-${job.userState.status}">Usuario: ${esc(lbl(STATUS_LABELS, job.userState.status, titleCase(job.userState.status)))}</span>`;
@@ -655,7 +659,7 @@ function renderDetail(job, cal) {
       <div class="detail-company">${esc(job.company || 'Empresa no informada')}</div>
       <div class="meta-line">${job.location ? `<span>${esc(job.location)}</span>` : ''}${meta}</div>
       <div class="head-badges">${aiBadge}${stBadge}${easy}
-        ${job.url ? `<a class="btn small" href="${esc(job.url)}" target="_blank" rel="noopener">Abrir en LinkedIn ↗</a>` : ''}
+        ${job.url ? `<a class="btn small" href="${esc(job.url)}" target="_blank" rel="noopener">Abrir en ${isInfojobs ? 'InfoJobs' : 'LinkedIn'} ↗</a>` : ''}
       </div>
     </div>
 
@@ -823,9 +827,10 @@ function setSettingsStatus(id, message, kind) {
 
 async function loadSearchSettings() {
   try {
-    const { search, notifications } = await api('/api/settings');
+    const { search, notifications, infojobs } = await api('/api/settings');
     renderSearchSettings(search);
     renderNotificationSettings(notifications);
+    if (infojobs) renderInfojobsSettings(infojobs);
   } catch (e) {
     setSettingsStatus('searchSettingsStatus', 'No se pudo cargar: ' + e.message, 'error');
   }
@@ -839,6 +844,37 @@ async function saveSearchSettings() {
     setSettingsStatus('searchSettingsStatus', 'Guardado', 'ok');
   } catch (e) {
     setSettingsStatus('searchSettingsStatus', e.message, 'error');
+  }
+}
+
+/* ---------- configuracion: InfoJobs ---------- */
+function renderInfojobsSettings(ij) {
+  el('infojobsEnabled').checked = ij.enabled;
+  const auto = 'Automática' + (ij.effectiveProvince && ij.provinceId === 'auto' ? ` (${ij.effectiveProvince})` : ' (según tu ubicación)');
+  const options = [{ id: 'auto', name: auto }, { id: 'all', name: 'Toda España' }].concat(ij.provinces);
+  el('infojobsProvince').innerHTML = options.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  el('infojobsProvince').value = ij.provinceId;
+  el('infojobsProvinceHint').textContent = ij.effectiveProvince
+    ? `Se buscará en la provincia de ${ij.effectiveProvince}.`
+    : 'Se buscará en toda España.';
+  syncInfojobsFields();
+}
+
+function syncInfojobsFields() {
+  el('infojobsProvince').disabled = !el('infojobsEnabled').checked;
+}
+
+async function saveInfojobsSettings() {
+  setSettingsStatus('infojobsStatus', 'Guardando…');
+  try {
+    const { infojobs } = await api('/api/settings/infojobs', 'PUT', {
+      enabled: el('infojobsEnabled').checked,
+      provinceId: el('infojobsProvince').value,
+    });
+    renderInfojobsSettings(infojobs);
+    setSettingsStatus('infojobsStatus', infojobs.enabled ? 'Guardado: InfoJobs activado' : 'Guardado: InfoJobs desactivado', 'ok');
+  } catch (e) {
+    setSettingsStatus('infojobsStatus', e.message, 'error');
   }
 }
 
@@ -1074,6 +1110,8 @@ function init() {
   el('settingsBtn').addEventListener('click', toggleSettings);
   el('saveSearchBtn').addEventListener('click', saveSearchSettings);
   el('saveNotificationsBtn').addEventListener('click', saveNotificationSettings);
+  el('saveInfojobsBtn').addEventListener('click', saveInfojobsSettings);
+  el('infojobsEnabled').addEventListener('change', syncInfojobsFields);
   el('telegramValidateBtn').addEventListener('click', validateTelegramToken);
   el('telegramDetectBtn').addEventListener('click', detectTelegramAccount);
   el('telegramEnabled').addEventListener('change', toggleTelegramEnabled);

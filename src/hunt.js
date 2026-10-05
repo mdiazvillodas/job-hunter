@@ -2,6 +2,7 @@
 
 // Pipeline end-to-end (Milestone 9):
 //   LinkedIn -> Multi Search + Global Dedup -> Details -> OpenAI Analyzer -> LocalRepository
+//   [InfoJobs, si esta activado en Configuracion] -> mismo pipeline, despues de LinkedIn
 // Un solo comando: npm run hunt  (real).  npm run hunt -- --debug   npm run hunt -- --dry-run
 //
 // Reutiliza la arquitectura existente. La UI (npm run ui) ve automaticamente lo persistido.
@@ -20,6 +21,8 @@ const { acquireLock, releaseLock } = require('./domain/huntLock');
 const { OPERATION_TYPES, createOwner, newOperationId } = require('./domain/operationOwner');
 const { getUserConfig, getNotificationSettings } = require('./config/userConfig');
 const { createHighMatchNotifier } = require('./notifications/ntfy');
+const { combineSummaries } = require('./pipeline/combineSummaries');
+const { isCancellation } = require('./pipeline/pipeline');
 
 function parseArgs(argv) {
   return { debug: argv.includes('--debug'), dryRun: argv.includes('--dry-run') };
@@ -134,6 +137,106 @@ function getExecutionConfig() {
     MAX_PAGES_PER_SEARCH: config.MAX_PAGES_PER_SEARCH,
     MAX_RESULTS_PER_SEARCH: config.MAX_RESULTS_PER_SEARCH,
     activeQueries: config.getActiveSearchQueries(),
+    // InfoJobs: apagado salvo que el usuario lo active en Configuracion.
+    INFOJOBS: config.INFOJOBS_ENABLED
+      ? { enabled: true, profileDir: config.INFOJOBS_BROWSER_PROFILE_DIR, filters: config.INFOJOBS_FILTERS }
+      : { enabled: false },
+  };
+}
+
+// Pipeline de InfoJobs. Corre DESPUES de LinkedIn, con su propio navegador y
+// perfil, y queda aislado: un CAPTCHA o un error de InfoJobs se informa en el
+// summary pero no convierte el hunt en fallido ni pierde lo de LinkedIn. Solo
+// la cancelacion del usuario se propaga.
+// Devuelve { summary } o { error, challenge }.
+async function runInfoJobsHunt(deps) {
+  const { options, infojobs, activeQueries, analyze, jobService, notify, stage, reportProgress,
+    ANALYZE_LIMIT, TARGET_ANALYZED_JOBS, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH } = deps;
+  const { launchInfoJobsBrowser, getInitialPage } = deps.browser || require('./infojobs/browser');
+  const { collectInfoJobsSearches } = deps.collector || require('./infojobs/collector');
+  const { fetchInfoJobsDetail } = deps.detail || require('./infojobs/detail');
+  const say = options.debug ? (m) => console.error('[hunt:infojobs] ' + m) : null;
+
+  let context = null;
+  try {
+    stage('collector_launch');
+    if (options.signal && options.signal.aborted) { const error = new Error('Hunt cancelled.'); error.name = 'HuntCancelledError'; throw error; }
+    context = await launchInfoJobsBrowser(infojobs.profileDir);
+    const page = await getInitialPage(context);
+    const summary = await runPipeline({
+      jobService,
+      discover: async () => {
+        stage('discovery');
+        const scope = await collectInfoJobsSearches(page, activeQueries, infojobs.filters, {
+          debug: options.debug,
+          maxResultsPerSearch: MAX_RESULTS_PER_SEARCH,
+          maxPagesPerSearch: MAX_PAGES_PER_SEARCH,
+          signal: options.signal,
+          reportProgress,
+        });
+        return {
+          jobs: scope.jobs,
+          discovery: {
+            queriesExecuted: scope.metadata.searches.completed,
+            rawResults: scope.metadata.results.rawResults,
+            duplicatesRemoved: scope.metadata.results.duplicatesRemoved,
+            perQuery: scope.perQuery,
+          },
+        };
+      },
+      fetchDetails: async (job) => {
+        stage('detail_collection');
+        // Pausa variable entre ofertas: ritmo de lectura de una persona.
+        return fetchInfoJobsDetail(page, job, { pauseMs: 1000 + Math.floor(Math.random() * 1500) });
+      },
+      analyze: analyze && (async (job) => { stage('analysis'); return analyze(job); }),
+      analyzeLimit: ANALYZE_LIMIT,
+      analysisTarget: TARGET_ANALYZED_JOBS,
+      targetQueries: activeQueries.map((q) => q.query),
+      notify,
+      signal: options.signal,
+      reportProgress,
+      log: say,
+    });
+    return { summary };
+  } catch (error) {
+    if (isCancellation(error) || (options.signal && options.signal.aborted)) throw error;
+    const challenge = error && error.name === 'SecurityChallengeError';
+    console.error('[InfoJobs] ' + (challenge
+      ? 'Detenido por un CAPTCHA o bloqueo de InfoJobs. No se intenta evadir.'
+      : 'Error en el pipeline: ' + (error && error.message ? error.message : error)));
+    return {
+      challenge: challenge ? (error.challengeDiagnostic || { source: 'unknown', signal: 'unknown' }) : null,
+      error: challenge ? 'InfoJobs presentó un CAPTCHA o bloqueo.' : 'La búsqueda en InfoJobs no pudo completarse.',
+    };
+  } finally {
+    if (context) await context.close().catch(() => {});
+  }
+}
+
+// Con InfoJobs activo el progreso es UNO solo para todo el hunt: lo que reporta
+// InfoJobs se suma a lo que ya hizo LinkedIn y el objetivo es el de ambas.
+const CUMULATIVE_PROGRESS = ['rawJobsDiscovered', 'uniqueJobsDiscovered', 'jobsPersisted', 'analysisAttempted', 'analysisCompleted', 'analysisFailed', 'searchesCompleted', 'searchesTotal'];
+function createProgressTracker(reportProgress, totalTarget) {
+  let offset = {};
+  let last = {};
+  return {
+    report: (next) => {
+      if (!next || typeof next !== 'object') return;
+      const merged = { ...next, analysisTarget: totalTarget };
+      for (const key of CUMULATIVE_PROGRESS) {
+        if (Number.isFinite(next[key])) {
+          last[key] = next[key];
+          merged[key] = next[key] + (offset[key] || 0);
+        }
+      }
+      reportProgress(merged);
+    },
+    // Lo hecho hasta ahora pasa a ser la base de la siguiente plataforma.
+    advance: () => {
+      for (const key of CUMULATIVE_PROGRESS) offset[key] = (offset[key] || 0) + (last[key] || 0);
+      last = {};
+    },
   };
 }
 
@@ -143,13 +246,18 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
   const stage = (name) => { currentStage = name; reportStage(name); };
   const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
   const { BROWSER_PROFILE_DIR, LINKEDIN_FILTERS, ANALYZE_LIMIT, TARGET_ANALYZED_JOBS = 20, CANDIDATE_NAME, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH, activeQueries } = executionConfig;
-  const reportProgress = typeof options.reportProgress === 'function' ? options.reportProgress : () => {};
+  const infojobs = executionConfig.INFOJOBS && executionConfig.INFOJOBS.enabled ? executionConfig.INFOJOBS : null;
+  const rawReportProgress = typeof options.reportProgress === 'function' ? options.reportProgress : () => {};
+  // Cada plataforma tiene su propio cupo de analisis: una no le quita a la otra.
+  const totalTarget = infojobs ? TARGET_ANALYZED_JOBS * 2 : TARGET_ANALYZED_JOBS;
+  const progressTracker = infojobs ? createProgressTracker(rawReportProgress, totalTarget) : null;
+  const reportProgress = progressTracker ? progressTracker.report : rawReportProgress;
   if (options.signal && options.signal.aborted) { const error = new Error('Hunt cancelled.'); error.name = 'HuntCancelledError'; throw error; }
   const repository = createLocalRepository();
   const jobService = createJobService(repository);
 
   const matchingProfile = getMatchingProfile();
-  reportProgress({ phase: 'starting', searchesTotal: activeQueries.length, analysisTarget: TARGET_ANALYZED_JOBS });
+  reportProgress({ phase: 'starting', searchesTotal: activeQueries.length, analysisTarget: totalTarget });
 
   // Decidir el modo de analisis.
   let analyze = null;
@@ -231,7 +339,7 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
       console.error('[notify] notificaciones activadas pero mal configuradas: ' + notifier.config.configError);
     }
 
-    return await runPipeline({
+    const linkedinSummary = await runPipeline({
       jobService: stagedJobService,
       discover,
       fetchDetails,
@@ -247,6 +355,18 @@ async function runHunt(options = {}, executionConfig = getExecutionConfig()) {
       reportProgress,
       log: options.debug ? (m) => console.error('[hunt] ' + m) : null,
     });
+    if (!infojobs) return linkedinSummary;
+
+    // LinkedIn ya termino: su navegador se cierra antes de abrir el de InfoJobs.
+    await context.close().catch(() => {});
+    progressTracker.advance();
+    const infojobsResult = await runInfoJobsHunt({
+      options, infojobs, activeQueries, analyze, jobService: stagedJobService,
+      notify: (job) => notifier.notifyHighMatch(job),
+      stage, reportProgress,
+      ANALYZE_LIMIT, TARGET_ANALYZED_JOBS, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH,
+    });
+    return combineSummaries(linkedinSummary, infojobsResult);
   } catch (error) {
     failedStage = currentStage;
     throw error;
@@ -268,4 +388,4 @@ function runCli(entry = main) {
 
 if (require.main === module) runCli();
 
-module.exports = { main, runHunt, runCli, getExecutionConfig };
+module.exports = { main, runHunt, runCli, getExecutionConfig, runInfoJobsHunt, createProgressTracker };

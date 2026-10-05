@@ -14,7 +14,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { USER_CONFIG_PATH } = require('../runtime');
-const { validateUserConfig } = require('./userConfig');
+const { validateUserConfig, getInfoJobsSettings } = require('./userConfig');
+const { PROVINCES, isKnownProvinceId, resolveInfoJobsProvince } = require('../infojobs/provinces');
 
 class SearchSettingsError extends Error {
   constructor(message) {
@@ -175,4 +176,34 @@ function applyNotificationSettings(currentConfig, input) {
   return validateUserConfig(next);
 }
 
-module.exports = { toEditableSearch, applySearchSettings, toEditableNotifications, applyNotificationSettings, saveUserConfigFile, SearchSettingsError, ALLOWED_MODALITIES };
+// Vista editable de InfoJobs. Bloque ausente = apagado. Incluye la provincia
+// que se usaria de verdad, para que la UI la muestre sin repetir la logica.
+function toEditableInfoJobs(config) {
+  const settings = getInfoJobsSettings(config);
+  const effective = resolveInfoJobsProvince(settings.provinceId, config.search && config.search.locations);
+  return {
+    enabled: settings.enabled,
+    provinceId: settings.provinceId === null ? 'auto' : settings.provinceId,
+    effectiveProvince: effective.name,
+    provinces: PROVINCES.map((p) => ({ id: p.id, name: p.name })),
+  };
+}
+
+// provinceId: 'auto' (segun la ubicacion principal) | 'all' (toda España) | id verificado.
+function applyInfoJobsSettings(currentConfig, input) {
+  if (!input || typeof input !== 'object') throw new SearchSettingsError('Cuerpo invalido.');
+  const raw = input.provinceId === undefined || input.provinceId === null ? 'auto' : String(input.provinceId);
+  if (raw !== 'auto' && raw !== 'all' && !isKnownProvinceId(raw)) {
+    throw new SearchSettingsError('Provincia de InfoJobs no reconocida.');
+  }
+  const next = {
+    ...currentConfig,
+    sources: {
+      ...(currentConfig.sources || {}),
+      infojobs: { enabled: input.enabled === true, provinceId: raw === 'auto' ? null : raw },
+    },
+  };
+  return validateUserConfig(next);
+}
+
+module.exports = { toEditableInfoJobs, applyInfoJobsSettings, toEditableSearch, applySearchSettings, toEditableNotifications, applyNotificationSettings, saveUserConfigFile, SearchSettingsError, ALLOWED_MODALITIES };

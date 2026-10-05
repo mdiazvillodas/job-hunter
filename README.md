@@ -56,6 +56,25 @@ continua exclusivamente en `.env`/`process.env`. Aunque `search.locations` admit
 ubicaciones para evolucion futura, en esta version el collector consume solamente la primera
 como ubicacion primaria. `search.modalities` se guarda pero aun no altera los filtros del collector.
 
+### InfoJobs (opcional)
+
+InfoJobs es una segunda fuente de ofertas que viene **apagada**. Se activa en
+Configuración → InfoJobs, que escribe el bloque opcional `sources.infojobs` de `user.json`:
+
+```json
+"sources": { "infojobs": { "enabled": true, "provinceId": null } }
+```
+
+- Con InfoJobs activo, cada hunt corre primero LinkedIn y despues InfoJobs, con las mismas
+  queries y en el mismo Chromium gestionado, pero con un perfil propio
+  (`JOB_HUNTER_DATA_DIR/browser-profile-infojobs`). No hace falta iniciar sesión.
+- Cada plataforma tiene su propio cupo de análisis (`targetAnalyzedJobs`).
+- `provinceId`: `null` = la provincia de la ubicación principal, `"all"` = toda España, o el id
+  de una provincia verificada de `src/infojobs/provinces.js`.
+- Un CAPTCHA o un error de InfoJobs detiene solo InfoJobs: el hunt termina igual, lo de LinkedIn
+  se conserva y el resumen lo informa en `sources.infojobs`. Nunca se intenta evadir un CAPTCHA.
+- Las ofertas de InfoJobs se guardan con `source: "infojobs"` y jobId `ij_<id>`.
+
 Aplicacion local para automatizar, por etapas, la busqueda laboral. Implementado con Playwright sobre un perfil de Chromium persistente.
 
 ## LinkedIn Collector

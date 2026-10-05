@@ -8,6 +8,7 @@
 //   - feedbackEvents = historial completo de eventos (nunca se sobreescribe silenciosamente).
 
 const { JOB_STATES, isValidReason } = require('./feedbackConfig');
+const { sourceOf } = require('./sources');
 
 // Estado del ANALISIS (independiente del userState). Idempotencia del pipeline.
 const ANALYSIS_STATUS = Object.freeze({
@@ -29,6 +30,8 @@ function createJobRecord(input = {}, options = {}) {
   }
   return {
     jobId: String(input.jobId),
+    // Plataforma de origen ('linkedin' | 'infojobs'). Ver domain/sources.js.
+    source: sourceOf(input),
     title: input.title ?? null,
     company: input.company ?? null,
     location: input.location ?? null,
@@ -38,6 +41,10 @@ function createJobRecord(input = {}, options = {}) {
     seniority: input.seniority ?? null,
     easyApply: input.easyApply ?? null,
     description: input.description ?? null,
+    // Datos que solo algunas plataformas publican (InfoJobs). null = no informado.
+    salary: input.salary ?? null,
+    experienceMin: input.experienceMin ?? null,
+    contractType: input.contractType ?? null,
 
     matchedQueries: Array.isArray(input.matchedQueries) ? input.matchedQueries.slice() : [],
     matchedFamilies: Array.isArray(input.matchedFamilies) ? input.matchedFamilies.slice() : [],
@@ -141,7 +148,7 @@ function applyDiscarded(job, options = {}) {
 
 // --- Idempotencia / discovery (el collector vuelve a encontrar una oferta) ---
 
-const DISCOVERY_FIELDS = ['title', 'company', 'location', 'url', 'employmentType', 'workplaceType', 'seniority', 'easyApply', 'description', 'descriptionLength'];
+const DISCOVERY_FIELDS = ['title', 'company', 'location', 'url', 'employmentType', 'workplaceType', 'seniority', 'easyApply', 'description', 'descriptionLength', 'salary', 'experienceMin', 'contractType'];
 
 function unionInto(target, values) {
   let added = false;

@@ -42,6 +42,8 @@
       aiDecision: decision(job),
       status: status(job),
       easyApply: job.easyApply === true,
+      // Ofertas anteriores al campo `source` son todas de LinkedIn.
+      source: job.source === 'infojobs' || (typeof job.jobId === 'string' && job.jobId.indexOf('ij_') === 0) ? 'infojobs' : 'linkedin',
       firstSeenAt: job.userState ? job.userState.firstSeenAt : null,
     };
   }

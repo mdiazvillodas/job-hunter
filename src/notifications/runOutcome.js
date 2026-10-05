@@ -162,6 +162,11 @@ function metricLines(summary, threshold = HIGH_MATCH_THRESHOLD) {
   const failed = num(analysis.failed);
   if (failed !== null && failed > 0) lines.push(`⚠️ ${failed} con error de análisis`);
 
+  // InfoJobs nunca cambia el desenlace del hunt, pero si no pudo terminar se avisa.
+  const infojobs = summary.sources && summary.sources.infojobs;
+  if (infojobs && infojobs.status === 'stopped_by_challenge') lines.push('⚠️ InfoJobs: detenido por un CAPTCHA');
+  else if (infojobs && infojobs.status === 'failed') lines.push('⚠️ InfoJobs: no pudo completarse');
+
   const duration = formatDuration(durations.totalMs);
   if (duration) lines.push(`Duración: ${duration}`);
 
