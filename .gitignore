@@ -11,6 +11,7 @@ browser-profile/
 browser-profile-infojobs/
 browser-profile-chrome/
 browser-profile-firefox/
+perfil_prueba_*/
 
 # --- logs de runs y audit trail local ---
 runs/
