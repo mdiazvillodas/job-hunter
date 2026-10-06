@@ -4,10 +4,10 @@ Referencia de todos los cambios hechos en `master` para agregar InfoJobs, con el
 **antes** y **después** de cada uno. Está pensada para usarla al portar InfoJobs a la
 rama `installer-v0.2`.
 
-> **Estado de `installer-v0.2` al escribir esto (2026-10-06):** la rama en GitHub **no tiene
-> ningún commit de InfoJobs**. Su último commit sigue siendo `cfacb06` ("Make the LinkedIn
-> keyword change reliable and observable", 2026-09-21). Todo lo de abajo existe solo en
-> `master`. Si hay un porteo hecho, no está pusheado o se hizo en otra copia del repo.
+> **Estado al 2026-10-06:** la rama `installer-v0.2` **no tiene InfoJobs**. Su último commit
+> sigue siendo `cfacb06` (2026-09-21). El porteo **sí existe**, pero está en otra rama de GitHub,
+> **`claude/vibrant-bohr-rfddof`**: un único commit `00c0f83` sobre `cfacb06`, sin mergear en
+> `installer-v0.2`. Ver la sección 6.
 
 ---
 
@@ -133,3 +133,45 @@ Estas son las diferencias que más probablemente rompan un porteo directo:
   que les toque análisis.
 - Con el launcher anterior (`channel: 'chromium'`), InfoJobs mostraba CAPTCHA en la primera
   búsqueda y el hunt se cortaba solo con `SecurityChallengeError`.
+
+---
+
+## 6. El porteo a la versión instalable (commit `00c0f83`)
+
+| | |
+|---|---|
+| Rama | `origin/claude/vibrant-bohr-rfddof` (solo en GitHub; no hay copia local) |
+| Commit | `00c0f83` "Add InfoJobs as an optional second job source" |
+| Fecha | 2026-10-05 14:32 UTC, sesión de Claude en la nube (`session_01A66vSrAuPBvvLM8VGsgo7n`) |
+| Base | `cfacb06`, el último commit de `installer-v0.2` |
+| Mergeado en `installer-v0.2` | **No** |
+| Copia local `C:\dev\job-hunter-v02` | Está en `installer-v0.2` pero **atrasada**, en `29c6e68` (Phase 13), y sin cambios pendientes. No tiene ni `cfacb06` ni el porteo. |
+
+Para traerlo: `git fetch origin` y después `git checkout claude/vibrant-bohr-rfddof`, o mergearlo
+en `installer-v0.2` después de revisarlo.
+
+### Cómo estaba en `installer-v0.2` y cómo lo dejó el porteo
+
+| Tema | Antes (`cfacb06`) | Después (`00c0f83`) |
+|---|---|---|
+| Navegador | `src/linkedin/browser.js`: `launchLinkedInBrowser()` → `chromium.launchPersistentContext(profileDir, { headless: false, channel: 'chromium', viewport: null })`. | Se extrajo `launchManagedBrowser(profileDir, extra)`, el **único** punto que abre Playwright, con las mismas opciones más `...extra`. `launchLinkedInBrowser()` lo llama sin extras, así que LinkedIn queda igual. |
+| Navegador InfoJobs | No existía. | `src/infojobs/browser.js` → `launchManagedBrowser(profileDir, { locale: 'es-ES', timezoneId: 'Europe/Madrid' })`. Es **el mismo Chromium administrado del instalador** (`channel: 'chromium'`, `PLAYWRIGHT_BROWSERS_PATH`), visible. **No** usa `channel: 'chrome'` ni el launcher de `master` (`a84448a`). |
+| Perfil InfoJobs | No existía. | `INFOJOBS_BROWSER_PROFILE_DIR = path.join(dataDir, 'browser-profile-infojobs')` en `src/runtime.js`, en la carpeta de datos, junto al de LinkedIn. |
+| Activación | — | **Apagado por defecto.** Se prende en Configuración → InfoJobs, que guarda `sources.infojobs.enabled` y `provinceId` en `user.json` (`src/config/userConfig.js`, `validateSources` / `getInfoJobsSettings`). Un `user.json` viejo sin ese bloque deja InfoJobs apagado. |
+| Provincia | Fija en 9 (Barcelona) en `master`. | `src/infojobs/provinces.js`, con IDs reales de InfoJobs: automática según la ubicación principal, toda España (`all`) o una provincia elegida. |
+| Hunt | Solo LinkedIn. | `src/hunt.js` y `src/run/huntRunManager.js`: LinkedIn primero, después InfoJobs, con las mismas queries y su propio cupo de análisis. Un CAPTCHA o error en InfoJobs corta solo InfoJobs: el hunt termina, los resultados de LinkedIn se conservan y el resumen informa en `sources.infojobs`. |
+| Extracción y detección | — | `collector.js`, `detail.js`, `extract.js`, `challenge.js` y `urls.js` portados y adaptados a las etapas de challenge, la cancelación y el progreso del instalador. |
+| Datos | — | `source`, IDs `ij_`, `salary`, `experienceMin` y `contractType` en `src/domain/jobRecord.js`. |
+| UI y servidor | — | Sección InfoJobs en Configuración (`index.html`, `app.js`, `src/ui/server.js`) y marca de InfoJobs en la lista. |
+| Tests | — | `src/tests/infojobs.test.js`, sumado a `npm test`. **No** se portó `infojobs-browser.test.js`. |
+| Dependencias | `playwright ^1.62.1` en `dependencies`. | Sin dependencias nuevas. `playwright-extra` y el plugin stealth **no** están en el porteo. |
+
+### Diferencia clave entre el porteo y `master`
+
+El porteo abre InfoJobs con **el Chromium administrado de Playwright**, es decir, la misma configuración
+con la que en `master` InfoJobs mostraba CAPTCHA en la primera búsqueda (sección 5). Por diseño, el hunt
+del instalador lo detecta, corta solo InfoJobs y lo informa en `sources.infojobs`. LinkedIn sigue
+funcionando.
+
+En `master`, en cambio, InfoJobs usa el launcher de `a84448a` (`channel: 'chrome'` y las opciones del
+usuario), que es con el que el hunt completó las 22 búsquedas. Ese launcher **no** forma parte del porteo.
