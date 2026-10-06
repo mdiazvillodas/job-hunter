@@ -23,6 +23,7 @@ const { getUserConfig, getNotificationSettings } = require('./config/userConfig'
 const { createHighMatchNotifier } = require('./notifications/ntfy');
 const { combineSummaries } = require('./pipeline/combineSummaries');
 const { isCancellation } = require('./pipeline/pipeline');
+const { isChromeNotFoundError } = require('./infojobs/chromeCheck');
 
 function parseArgs(argv) {
   return { debug: argv.includes('--debug'), dryRun: argv.includes('--dry-run') };
@@ -144,6 +145,15 @@ function getExecutionConfig() {
   };
 }
 
+// Mensaje para el summary, la UI y la notificacion de cierre. Los errores de
+// arranque del navegador tienen su propio texto para que se sepa que hacer.
+function infoJobsErrorMessage(error) {
+  const code = error && error.code;
+  if (code === 'INFOJOBS_LAUNCHER_MISSING') return 'Falta el launcher de InfoJobs (src/infojobs/browser.js).';
+  if (code === 'INFOJOBS_CHROME_MISSING') return 'InfoJobs necesita Google Chrome instalado en esta PC.';
+  return 'La búsqueda en InfoJobs no pudo completarse.';
+}
+
 // Pipeline de InfoJobs. Corre DESPUES de LinkedIn, con su propio navegador y
 // perfil, y queda aislado: un CAPTCHA o un error de InfoJobs se informa en el
 // summary pero no convierte el hunt en fallido ni pierde lo de LinkedIn. Solo
@@ -152,7 +162,11 @@ function getExecutionConfig() {
 async function runInfoJobsHunt(deps) {
   const { options, infojobs, activeQueries, analyze, jobService, notify, stage, reportProgress,
     ANALYZE_LIMIT, TARGET_ANALYZED_JOBS, MAX_PAGES_PER_SEARCH, MAX_RESULTS_PER_SEARCH } = deps;
-  const { launchInfoJobsBrowser, getInitialPage } = deps.browser || require('./infojobs/browser');
+  // src/infojobs/browser.js solo tiene que exportar launchInfoJobsBrowser; si no
+  // trae getInitialPage se usa el de LinkedIn (misma logica para cualquier context).
+  const browserModule = deps.browser || require('./infojobs/browser');
+  const launchInfoJobsBrowser = browserModule.launchInfoJobsBrowser;
+  const getInitialPage = browserModule.getInitialPage || require('./linkedin/browser').getInitialPage;
   const { collectInfoJobsSearches } = deps.collector || require('./infojobs/collector');
   const { fetchInfoJobsDetail } = deps.detail || require('./infojobs/detail');
   const say = options.debug ? (m) => console.error('[hunt:infojobs] ' + m) : null;
@@ -161,7 +175,17 @@ async function runInfoJobsHunt(deps) {
   try {
     stage('collector_launch');
     if (options.signal && options.signal.aborted) { const error = new Error('Hunt cancelled.'); error.name = 'HuntCancelledError'; throw error; }
-    context = await launchInfoJobsBrowser(infojobs.profileDir);
+    if (typeof launchInfoJobsBrowser !== 'function') {
+      const error = new Error('src/infojobs/browser.js no exporta launchInfoJobsBrowser.');
+      error.code = 'INFOJOBS_LAUNCHER_MISSING';
+      throw error;
+    }
+    try {
+      context = await launchInfoJobsBrowser(infojobs.profileDir);
+    } catch (error) {
+      if (isChromeNotFoundError(error)) error.code = 'INFOJOBS_CHROME_MISSING';
+      throw error;
+    }
     const page = await getInitialPage(context);
     const summary = await runPipeline({
       jobService,
@@ -207,7 +231,7 @@ async function runInfoJobsHunt(deps) {
       : 'Error en el pipeline: ' + (error && error.message ? error.message : error)));
     return {
       challenge: challenge ? (error.challengeDiagnostic || { source: 'unknown', signal: 'unknown' }) : null,
-      error: challenge ? 'InfoJobs presentó un CAPTCHA o bloqueo.' : 'La búsqueda en InfoJobs no pudo completarse.',
+      error: challenge ? 'InfoJobs presentó un CAPTCHA o bloqueo.' : infoJobsErrorMessage(error),
     };
   } finally {
     if (context) await context.close().catch(() => {});

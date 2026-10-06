@@ -27,6 +27,13 @@ const { createLocalScheduler } = require('../scheduler/localScheduler');
 const { createTelegramService } = require('../telegram/telegramService');
 const { acquireUiLock, releaseUiLock } = require('../runtime/uiLock');
 const { version: APP_VERSION } = require('../../package.json');
+const { findInstalledChrome } = require('../infojobs/chromeCheck');
+
+// Configuracion de InfoJobs + si la PC tiene Google Chrome (el launcher de
+// InfoJobs puede usarlo; Job Hunter no lo instala). Solo se informa como bool.
+function infojobsSettingsView(cfg) {
+  return { ...toEditableInfoJobs(cfg), chromeInstalled: !!findInstalledChrome() };
+}
 
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -199,12 +206,12 @@ async function handleApi(req, res, url, svc, setupService, linkedinSessionServic
   // nunca en el codigo fuente.
   if (method === 'GET' && parts.length === 2 && parts[1] === 'settings') {
     const cfg = getUserConfig();
-    return sendJson(res, 200, { search: toEditableSearch(cfg), notifications: toEditableNotifications(cfg), infojobs: toEditableInfoJobs(cfg) });
+    return sendJson(res, 200, { search: toEditableSearch(cfg), notifications: toEditableNotifications(cfg), infojobs: infojobsSettingsView(cfg) });
   }
   if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'infojobs') {
     const next = applyInfoJobsSettings(getUserConfig(), await readBody(req));
     saveUserConfigFile(next);
-    return sendJson(res, 200, { infojobs: toEditableInfoJobs(next) });
+    return sendJson(res, 200, { infojobs: infojobsSettingsView(next) });
   }
   if (method === 'PUT' && parts[1] === 'settings' && parts[2] === 'search') {
     const next = applySearchSettings(getUserConfig(), await readBody(req));

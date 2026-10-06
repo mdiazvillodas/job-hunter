@@ -857,6 +857,8 @@ function renderInfojobsSettings(ij) {
   el('infojobsProvinceHint').textContent = ij.effectiveProvince
     ? `Se buscará en la provincia de ${ij.effectiveProvince}.`
     : 'Se buscará en toda España.';
+  // Solo se avisa si el servidor informa explicitamente que no hay Chrome.
+  el('infojobsChromeHint').hidden = ij.chromeInstalled !== false;
   syncInfojobsFields();
 }
 

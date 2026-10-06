@@ -23,6 +23,7 @@ const { runInfoJobsHunt, createProgressTracker, getExecutionConfig } = require('
 const { createLocalRepository } = require('../data/jobRepository');
 const { createJobService } = require('../services/jobService');
 const { SecurityChallengeError } = require('../linkedin/errors');
+const { findInstalledChrome, isChromeNotFoundError } = require('../infojobs/chromeCheck');
 const L = require('../ui/jobListLogic');
 
 let passed = 0;
@@ -212,6 +213,40 @@ async function run() {
     let name = null;
     try { await runInfoJobsHunt(deps); } catch (e) { name = e.name; }
     ok('la cancelacion del usuario si se propaga', name === 'HuntCancelledError');
+  }
+
+  section('Launcher de InfoJobs (src/infojobs/browser.js pegado aparte)');
+  {
+    // Igual que el archivo de master: exporta SOLO launchInfoJobsBrowser.
+    const { deps, closed } = infojobsDeps({ browser: { launchInfoJobsBrowser: async () => ({ pages: () => [{}], close: async () => { closed.value = true; } }) } });
+    const result = await runInfoJobsHunt(deps);
+    ok('sin getInitialPage propio usa el de LinkedIn y corre completo', result.summary && result.summary.analysis.analyzed === 1);
+    ok('y cierra su navegador', closed.value === true);
+  }
+  {
+    // Archivo todavia sin pegar (solo comentarios): module.exports vacio.
+    const { deps } = infojobsDeps({ browser: {} });
+    const result = await runInfoJobsHunt(deps);
+    ok('sin launcher: no lanza, se informa en el summary', !result.summary && result.challenge === null);
+    ok('el mensaje dice que falta el launcher', /Falta el launcher de InfoJobs/.test(result.error));
+  }
+  {
+    const missing = new Error("browserType.launchPersistentContext: Chromium distribution 'chrome' is not found at C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
+    const { deps } = infojobsDeps({ browser: { launchInfoJobsBrowser: async () => { throw missing; } } });
+    const result = await runInfoJobsHunt(deps);
+    ok('sin Google Chrome: mensaje claro, sin tumbar el hunt', !result.summary && /Google Chrome/.test(result.error));
+  }
+  {
+    const env = { ProgramFiles: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' };
+    const found = findInstalledChrome({ env, exists: (p) => p.startsWith('C:\\Users\\x') });
+    ok('detecta Chrome instalado por usuario (LOCALAPPDATA)', found && /AppData\\Local\\Google\\Chrome\\Application\\chrome\.exe$/.test(found));
+    ok('sin chrome.exe en ningun lado devuelve null', findInstalledChrome({ env, exists: () => false }) === null);
+    ok('reconoce el error de Playwright por Chrome ausente', isChromeNotFoundError(new Error("Chromium distribution 'chrome' is not found at X")));
+    ok('no confunde otros errores con Chrome ausente', !isChromeNotFoundError(new Error('no chromium')));
+  }
+  {
+    const config = require('../config');
+    ok('config exporta HEADLESS (visible salvo HEADLESS=true)', config.HEADLESS === (process.env.HEADLESS === 'true'));
   }
 
   section('Hunt');

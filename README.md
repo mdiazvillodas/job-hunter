@@ -66,8 +66,13 @@ Configuración → InfoJobs, que escribe el bloque opcional `sources.infojobs` d
 ```
 
 - Con InfoJobs activo, cada hunt corre primero LinkedIn y despues InfoJobs, con las mismas
-  queries y en el mismo Chromium gestionado, pero con un perfil propio
-  (`JOB_HUNTER_DATA_DIR/browser-profile-infojobs`). No hace falta iniciar sesión.
+  queries y un perfil propio (`JOB_HUNTER_DATA_DIR/browser-profile-infojobs`). No hace falta
+  iniciar sesión.
+- El navegador de InfoJobs lo abre `src/infojobs/browser.js`, que solo tiene que exportar
+  `launchInfoJobsBrowser(profileDir)`. Si ese launcher usa Google Chrome (`channel: 'chrome'`),
+  la PC tiene que tenerlo instalado: Job Hunter no lo instala. Configuración → InfoJobs avisa si
+  no lo encuentra, y el hunt informa "InfoJobs necesita Google Chrome instalado" sin afectar a
+  LinkedIn.
 - Cada plataforma tiene su propio cupo de análisis (`targetAnalyzedJobs`).
 - `provinceId`: `null` = la provincia de la ubicación principal, `"all"` = toda España, o el id
   de una provincia verificada de `src/infojobs/provinces.js`.

@@ -63,6 +63,11 @@ const config = {
   // (Distinto de MAX_*_PER_SEARCH, donde 0 = sin limite: aqui 0 = ninguno, por seguridad de gasto.)
   ANALYZE_LIMIT: readNonNegativeIntegerEnv('ANALYZE_LIMIT', 50),
 
+  // Ventana visible por defecto, como el resto del producto: si aparece un CAPTCHA
+  // la persona lo ve. Solo HEADLESS="true" explicito la oculta. Lo lee el launcher
+  // de InfoJobs (src/infojobs/browser.js); LinkedIn sigue siempre visible.
+  HEADLESS: process.env.HEADLESS === 'true',
+
   BROWSER_PROFILE_DIR,
   INFOJOBS_BROWSER_PROFILE_DIR,
 };
