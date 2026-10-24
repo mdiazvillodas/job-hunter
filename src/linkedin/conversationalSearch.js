@@ -49,7 +49,9 @@ async function modalFor(page) {
   const trigger=page.getByRole('button',{name:/^(All filters|Show all filters\.)/i}).filter({visible:true});
   if(await trigger.count()!==1)throw Error('LinkedIn conversacional: boton All filters no disponible o ambiguo');
   await trigger.click();
-  const modal=firstVisible(page,'aside[aria-hidden="false"]:has(h2:text-is("Jobs filters")), [role="dialog"], dialog[open], .artdeco-modal');
+  // LinkedIn video players also expose role=dialog. Never let a dynamic .first()
+  // move from the filters panel to an unrelated dialog after closing filters.
+  const modal=page.locator('aside[aria-hidden="false"]:has(h2:text-is("Jobs filters")), :is([role="dialog"], dialog[open], .artdeco-modal):has(:is([role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]))').filter({visible:true});
   await modal.waitFor({state:'visible',timeout:15000});return modal;
 }
 async function option(modal,role,name) {

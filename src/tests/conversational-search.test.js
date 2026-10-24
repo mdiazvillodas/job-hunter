@@ -86,6 +86,24 @@ test('dos controles visibles Past week no se resuelven tomando el primero',async
  });
  await assert.rejects(semantic.applyFilters(page,filters),/Past week \(coincidencias visibles: 2\)/);
 });
+
+test('diálogo visible de error de vídeo no se confunde con filtros ni impide su cierre',async t=>{
+ const page=await fixture(t);
+ await page.evaluate(()=>{
+  const video=document.createElement('div');video.setAttribute('role','dialog');
+  video.setAttribute('aria-label','Modal Window');video.className='vjs-error-display vjs-modal-dialog';
+  video.textContent='Video playback error';document.body.prepend(video);
+ });
+ // The fixture handlers target the filter panel explicitly, as the actual UI does.
+ await page.evaluate(()=>{
+  const panel=document.querySelectorAll('[role=dialog]')[1];
+  document.querySelector('button').onclick=()=>panel.hidden=false;
+  panel.querySelector('button').onclick=()=>panel.hidden=true;
+ });
+ await semantic.initialize(page,'Head of Product Operations',filters,{queryTimeout:1000});
+ assert((await semantic.verifyFilters(page,filters)).datePostedActive);
+ assert(await page.getByRole('dialog',{name:'Modal Window'}).isVisible());
+});
 test('flujo clásico conserva ubicación estricta por geoId y filtros por URL',async t=>{
  const page=await fixture(t,{mode:'classic'});const r=await initializeSearchWithFilters(page,'Head of Operations',filters);assert.equal(r.filtersActive.locationActive,true);assert.equal(r.filtersActive.datePostedActive,true);assert.equal(r.filtersActive.employmentTypeActive,true);assert(!r.filtersActive.locationMode);assert(await changeSearchQuery(page,'Operations Lead',{queryTimeout:1000}));
 });

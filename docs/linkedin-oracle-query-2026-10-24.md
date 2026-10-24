@@ -8,6 +8,8 @@ Se corrigió una carrera reproducible: el panel visible no garantiza que sus con
 
 Regresiones locales: 28 pruebas aprobadas, incluyendo fecha montada tarde tras un cambio de consulta, rechazo de dos controles visibles con el mismo nombre y rechazo de fecha ausente. La ejecución real anterior no persistió resultados parciales; conserva las 650 ofertas previas. OpenAI estuvo desactivado.
 
+La comprobación real dirigida posterior identificó un diálogo visible ajeno al panel: `role=dialog`, `aria-label="Modal Window"`, clases `vjs-error-display vjs-modal-dialog`. El localizador genérico con `.first()` podía cambiar de identidad al ocultar los filtros, o seleccionar ese diálogo en lugar de ellos. Se restringe el alcance al aside con encabezado Jobs filters o a un modal con controles de fecha/jornada; no se selecciona arbitrariamente el primero. Una regresión mantiene el error de vídeo visible antes y después de inicializar/verificar filtros. No se ignoran errores ni se omite la verificación de fecha.
+
 En la comprobación manual, una consulta escrita como `Head of Operations in Barcelona` quedó en la URL de LinkedIn como `keywords=head%20of%20operations%20in%20barcelona`. La comparación anterior exigía igualdad sensible a mayúsculas y devolvía falso incluso si LinkedIn había aceptado la consulta.
 
 La comparación ahora normaliza únicamente mayúsculas, espacios y representación Unicode NFC, tanto en la URL como en el campo visible al reutilizar una consulta. Se conservan palabras, ubicación y acentos. No se elimina la exigencia de tarjetas nuevas después de un envío: resultados viejos o una ubicación diferente siguen rechazados. No se cambian filtros, Analyzer, scoring ni decisiones.
