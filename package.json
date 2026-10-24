@@ -44,7 +44,7 @@
     "package:simple": "node scripts/package-simple.js",
     "test:profile-diagnosis": "node --test src/tests/profileDiagnosis.test.js",
     "test:analyzer-evidence": "node --test src/tests/analyzer-evidence.test.js",
-    "test:linkedin-login": "node --test src/tests/linkedin-login.test.js",
+    "test:linkedin-login": "node --test src/tests/linkedin-login.test.js src/tests/browser-window.test.js",
     "test:profile-provenance": "node --test src/tests/profileProvenance.test.js",
     "test:linkedin-conversational": "node --test src/tests/conversational-search.test.js",
     "test:access": "node --test src/tests/access-config.test.js src/tests/manual-search.test.js",

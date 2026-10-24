@@ -5,6 +5,8 @@ async function launchLinkedInBrowser(profileDir, { headless = HEADLESS } = {}) {
   return chromium.launchPersistentContext(profileDir, {
     headless,
     channel: 'chromium',
+    // Match the Oracle virtual desktop; keep local Windows behavior unchanged.
+    ...(process.platform === 'linux' && process.env.DISPLAY ? { args: ['--window-size=1440,900'] } : {}),
     viewport: null,
   });
 }

@@ -14,6 +14,8 @@ async function isConversational(page) {
   }
   return false;
 }
+// LinkedIn normalizes URL keywords (observed: lowercase). Keep every term and accent.
+function normalizeQuery(value) { return typeof value==='string' ? value.normalize('NFC').trim().replace(/\s+/gu,' ').toLowerCase() : null; }
 function composeQuery(query, location) { return location && location.trim() ? `${query.trim()} in ${location.trim()}` : query; }
 async function resultSignature(page) {
   return page.evaluate(() => Array.from(document.querySelectorAll('main [role="button"][componentkey^="job-card-component-ref-"], li[data-occludable-job-id], li.jobs-search-results__list-item, [data-job-id], .job-card-container, a[href*="/jobs/view/"]'))
@@ -23,18 +25,19 @@ async function resultSignature(page) {
 async function submitQuery(page, query, {semantic=false, allowExisting=false, timeout=20000}={}) {
   const input = semantic ? firstVisible(page, SEMANTIC_INPUT) : await getSearchInput(page,'Search by title, skill, or company');
   const currentKeyword = () => {try{return new URL(page.url()).searchParams.get('keywords');}catch{return null;}};
-  if ((allowExisting || confirmedQueries.get(page)===query) && currentKeyword()===query && await input.inputValue()===query) {
+  if ((allowExisting || confirmedQueries.get(page)===query) && normalizeQuery(currentKeyword())===normalizeQuery(query) && normalizeQuery(await input.inputValue())===normalizeQuery(query)) {
     confirmedQueries.set(page,query);return true;
   }
   const previous = await resultSignature(page);
   await input.fill(query);await input.press('Enter');
   try {
-    await page.waitForFunction(({query,previous}) => {
-      if(new URL(location.href).searchParams.get('keywords')!==query)return false;
+    await page.waitForFunction(({normalizedQuery,previous}) => {
+      const keyword=new URL(location.href).searchParams.get('keywords');
+      if(typeof keyword!=='string'||keyword.normalize('NFC').trim().replace(/\s+/gu,' ').toLowerCase()!==normalizedQuery)return false;
       const signature=Array.from(document.querySelectorAll('main [role="button"][componentkey^="job-card-component-ref-"], li[data-occludable-job-id], li.jobs-search-results__list-item, [data-job-id], .job-card-container, a[href*="/jobs/view/"]'))
         .filter(el=>el.getClientRects().length).map(el=>[el.getAttribute('componentkey') || el.getAttribute('data-occludable-job-id')||el.getAttribute('data-job-id')||el.getAttribute('href')||'',el.textContent.trim().replace(/\s+/g,' ')].join(':')).join('|');
       return !!signature && signature!==previous;
-    },{query,previous},{timeout});
+    },{normalizedQuery:normalizeQuery(query),previous},{timeout});
     await page.waitForLoadState('networkidle',{timeout:15000}).catch(()=>{});
     await detectSecurityChallenge(page);confirmedQueries.set(page,query);return true;
   } catch(error) {
@@ -132,4 +135,4 @@ async function changeQuery(page,query,options={}) {
   if(changed){contexts.set(page,{...state,query});await applyFilters(page,state.filters);await verifyFilters(page,state.filters);}
   return changed;
 }
-module.exports={SEMANTIC_INPUT,isConversational,composeQuery,resultSignature,submitQuery,initialize,changeQuery,verifyFilters,applyFilters};
+module.exports={normalizeQuery,SEMANTIC_INPUT,isConversational,composeQuery,resultSignature,submitQuery,initialize,changeQuery,verifyFilters,applyFilters};

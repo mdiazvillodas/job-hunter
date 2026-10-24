@@ -20,7 +20,7 @@ function html(mode,query,custom=false){
  if(mode==='semantic')history.replaceState({},'', '/jobs/search-results/?keywords='+encodeURIComponent(${JSON.stringify(query)}));
  function resetFilters(){document.querySelectorAll('input[type=radio],input[type=checkbox]').forEach(x=>x.checked=false);document.querySelectorAll('[aria-checked]').forEach(x=>x.setAttribute('aria-checked','false'));}
  document.querySelector('input').addEventListener('keydown',e=>{if(e.key!=='Enter')return;const q=e.target.value;
-  if(!window.noURLChange)history.pushState({},'',(mode==='semantic'?'/jobs/search-results/':'/jobs/search/')+'?keywords='+encodeURIComponent(q));
+  if(!window.noURLChange)history.pushState({},'',(mode==='semantic'?'/jobs/search-results/':'/jobs/search/')+'?keywords='+encodeURIComponent(window.lowercaseURL?q.toLowerCase():q));
   resetFilters();if(!window.noCardChange)setTimeout(()=>{document.querySelector('ul').innerHTML='<li data-occludable-job-id="'+(++window.counter)+'"><a href="/jobs/view/'+window.counter+'">'+q+'</a></li>';},60);
  });window.counter=100;
  const locationInput=document.querySelector('[aria-label="City, state, or zip code"]');if(locationInput)locationInput.addEventListener('keydown',e=>{if(e.key==='Enter'){const u=new URL(location.href);u.searchParams.set('geoId','123');history.replaceState({},'',u);}});
@@ -183,3 +183,8 @@ test('tarjetas incompletas o resultados anunciados sin tarjetas no son éxito va
  await assert.rejects(collectCurrentPageJobs(page),/incompleta/);
  await page.setContent('<main><p>0 results</p></main>');assert.equal((await collectCurrentPageJobs(page)).jobs.length,0);
 });
+
+
+test('Oracle: LinkedIn guarda keywords en minúsculas y conserva la consulta y resultados nuevos',async t=>{const page=await fixture(t);await page.evaluate(()=>window.lowercaseURL=true);const result=await semantic.initialize(page,'Head of Operations',filters,{queryTimeout:1000});assert.equal(new URL(page.url()).searchParams.get('keywords'),'head of operations in barcelona');assert.equal(result.filtersActive.locationMentioned,true);assert(await semantic.changeQuery(page,'Delivery Lead',{queryTimeout:1000}));});
+test('keywords en minúsculas sin renovación de tarjetas siguen rechazados',async t=>{const page=await fixture(t);await page.evaluate(()=>{window.lowercaseURL=true;window.noCardChange=true;});assert.equal(await semantic.submitQuery(page,'Head of Operations in Barcelona',{semantic:true,timeout:150}),false);});
+test('normalización conserva palabras, ubicación y acentos; admite solo forma y espacios',()=>{assert.equal(semantic.normalizeQuery('  Head  of Operations in Barcelona '),semantic.normalizeQuery('head of operations in barcelona'));assert.notEqual(semantic.normalizeQuery('Operations in Barcelona'),semantic.normalizeQuery('Operations in Madrid'));assert.notEqual(semantic.normalizeQuery('Operations in Barcelona'),semantic.normalizeQuery('Operations'));assert.notEqual(semantic.normalizeQuery('A Coruña'),semantic.normalizeQuery('A Coruna'));assert.equal(semantic.normalizeQuery(null),null);});
