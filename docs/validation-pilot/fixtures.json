@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "notice": "Fixtures sintéticos, salvo la profesión mínima conocida. Ninguna capacidad inventada se atribuye a Mariana.",
+  "profiles": {
+    "minimum": "## Profesión y especialidad\nArquitecta de construcciones, arquitectura edilicia. No arquitectura de software.\n",
+    "empty": "",
+    "superficial": "## Profesión y especialidad\nArquitecta edilicia.\n\n## Experiencia y responsabilidades\nTrabajo en proyectos.\n\n## Capacidades y herramientas\nUso herramientas del sector.\n\n## Preferencias y restricciones\nBusco buenas condiciones.\n\n## Objetivos\nQuiero desarrollarme profesionalmente.\n",
+    "junior_synthetic": "## Profesión y especialidad\nCandidata ficticia J: arquitectura edilicia, vivienda residencial, recién graduada.\n\n## Experiencia y responsabilidades\nDurante seis meses de prácticas preparé planos de dos reformas de viviendas bajo revisión de una arquitecta. Registré mediciones durante visitas de obra y actualicé documentación. No dirigí equipos ni firmé proyectos.\n\n## Capacidades y herramientas\nAutoCAD 2D para plantas y secciones, mediciones y documentación de obra. Formación introductoria en Revit, sin uso profesional demostrado.\n\n## Preferencias y restricciones\nBusco jornada completa en Barcelona, presencial o híbrida. No tengo experiencia ni formación en desarrollo de software.\n\n## Objetivos\nPuesto junior de arquitecta de proyectos residenciales o apoyo técnico de obra.\n",
+    "bridge_synthetic": "## Profesión y especialidad\nCandidata ficticia T: arquitecta edilicia que realizó una transición profesional a ingeniería de software.\n\n## Experiencia y responsabilidades\nDespués de cinco años en proyectos de construcción, trabajé tres años como desarrolladora backend Java. Implementé y mantuve servicios REST, pruebas automatizadas y colas de mensajes. Durante el último año fui responsable del diseño de integración de tres servicios y de su despliegue en AWS con revisión de seguridad. Documenté decisiones de arquitectura y participé en incidentes de producción.\n\n## Capacidades y herramientas\nJava, Spring Boot, SQL, AWS, Docker, CI/CD y diseño de servicios. Formación completada en sistemas distribuidos. No se documenta experiencia como directora de tecnología ni liderazgo de grandes equipos.\n\n## Preferencias y restricciones\nBarcelona o remoto en España, jornada completa.\n\n## Objetivos\nBackend o arquitectura de soluciones de alcance acotado; sin cargos de dirección.\n"
+  },
+  "jobs": {
+    "building": {
+      "jobId": "pilot-building",
+      "source": "linkedin",
+      "title": "Arquitecto/a junior — proyectos de vivienda",
+      "company": "Estudio ficticio del piloto",
+      "location": "Barcelona",
+      "description": "Estudio de arquitectura edilicia dedicado a vivienda y reformas busca arquitecto o arquitecta junior. Colaborará en plantas y secciones en AutoCAD, mediciones, documentación y visitas de obra bajo supervisión. Se acepta experiencia de prácticas y proyectos académicos. Se requiere formación en arquitectura edilicia y capacidad de explicar los planos elaborados. Revit es valorable, no excluyente. No se exige dirigir equipos, presupuestos globales ni experiencia de software. Jornada completa presencial con posibilidad híbrida."
+    },
+    "software": {
+      "jobId": "pilot-software",
+      "source": "linkedin",
+      "title": "Software Architect — integración backend",
+      "company": "Empresa ficticia del piloto",
+      "location": "Barcelona",
+      "description": "Buscamos arquitecto o arquitecta de software para diseñar integraciones backend de alcance acotado. Se requieren tres años de experiencia profesional implementando servicios Java y Spring Boot, APIs REST, SQL y despliegues en AWS. Deberá justificar decisiones de diseño, revisar pruebas automatizadas, documentar interfaces y participar en incidentes de producción. Se valoran conocimientos demostrados de sistemas distribuidos y Docker. No es arquitectura de edificios. No se exige un título específico ni dirección de equipos grandes; se acepta una transición profesional respaldada por experiencia y formación relevante."
+    },
+    "bim": {
+      "jobId": "pilot-bim",
+      "source": "linkedin",
+      "title": "BIM Coordinator — Revit avanzado",
+      "company": "Ingeniería ficticia del piloto",
+      "location": "Barcelona",
+      "description": "Ingeniería de edificación busca especialista en coordinación BIM con experiencia profesional verificable en Revit avanzado. Las funciones incluyen federación de modelos de arquitectura e instalaciones, detección de interferencias, coordinación de entregables y mantenimiento de estándares BIM. Requisitos esenciales: haber coordinado modelos de proyectos reales y poder explicar el trabajo realizado en Revit y Navisworks. La formación en arquitectura edilicia es pertinente pero no sustituye la experiencia específica solicitada. No es un puesto de arquitectura de software. Jornada completa presencial."
+    },
+    "ambiguous": {
+      "jobId": "pilot-ambiguous",
+      "source": "linkedin",
+      "title": "Architect",
+      "company": "Empresa ficticia del piloto",
+      "location": "Barcelona",
+      "description": "The Architect will design backend service interfaces and event-driven distributed systems. Essential requirements are professional Java development, cloud deployments on AWS, database design, automated testing and demonstrated ownership of software integration decisions. The role includes reviewing technical designs, supporting production incidents and collaborating with developers. Building design, construction drawings and architectural site supervision are not the responsibilities of this role. Applicants can come from any degree background if they demonstrate the required software engineering experience."
+    }
+  },
+  "cases": [
+    {"id":"A1","profile":"minimum","job":"building","expect":"Reconocer afinidad de profesión, señalar experiencia, herramientas y preferencias desconocidas; no recomendación firme ni habilidades inventadas."},
+    {"id":"A2","profile":"minimum","job":"software","expect":"No YES ni recomendación como buen encaje por el término arquitecta. Exponer falta de evidencia software, sin afirmar incapacidad personal."},
+    {"id":"A3","profile":"minimum","job":"bim","expect":"No inferir Revit/Navisworks ni coordinación BIM de la profesión. Explicar requisitos esenciales no documentados; sin recomendación firme."},
+    {"id":"A4","profile":"minimum","job":"ambiguous","expect":"Usar la descripción para identificar software pese al título Architect; no YES por coincidencia terminológica."},
+    {"id":"A5","profile":"empty","job":"building","expect":"Información insuficiente explícita. No inventar profesión o experiencia, ni recomendación confiable. El documento vacío no debe impedir importar una mejora."},
+    {"id":"A6","profile":"bridge_synthetic","job":"software","expect":"Reconocer los tres años backend y la integración AWS como evidencia relevante. Admitir YES o MAYBE razonado; no NO basado solo en la profesión previa."},
+    {"id":"A7","profile":"junior_synthetic","job":"building","expect":"YES o MAYBE útil apoyado en prácticas y AutoCAD; no exigir dirección a un junior, no convertir formación introductoria en Revit profesional."},
+    {"id":"A8","profile":"superficial","job":"building","expect":"Diagnóstico y explicación deben comunicar poca evidencia: pedir tareas, proyectos, herramientas y preferencias concretas. No declarar confianza suficiente solo por tener encabezados."}
+  ]
+}

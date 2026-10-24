@@ -1,0 +1,11 @@
+const vm=require('vm'),fs=require('fs'),path=require('path'),{EventEmitter}=require('events'),assert=require('assert/strict');
+let now=0,scheduled=null,minutes=0;const children=[];
+const fakeFs={existsSync:()=>true,readFileSync:()=>JSON.stringify({minutes})};
+const spawn=()=>{const child=new EventEmitter();child.kill=()=>{};children.push(child);return child;};
+const sandbox={require:n=>n==='./env'?{loadProjectEnv(){}}:n==='fs'?fakeFs:n==='child_process'?{spawn}:require(n),__dirname:path.resolve(__dirname,'../src'),process:{env:{},execPath:process.execPath,on(){},exit(){}},console,Date:{now:()=>now},setInterval:cb=>{scheduled=cb;return 1;},clearInterval(){}};
+vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../src/start.js'),'utf8'),sandbox);
+assert.equal(children.length,1);now=3600000;scheduled();assert.equal(children.length,1,'Desactivado por defecto');
+minutes=15;scheduled();assert.equal(children.length,2,'Una búsqueda al cumplir intervalo');
+now+=3600000;scheduled();assert.equal(children.length,2,'No superponer búsquedas');
+children[1].emit('exit',0);scheduled();assert.equal(children.length,3,'Continuar tras finalizar');
+console.log('PASS: programación desactivada por defecto, intervalo y no superposición; procesos simulados');

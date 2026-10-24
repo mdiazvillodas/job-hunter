@@ -111,6 +111,7 @@ async function runPipeline(deps) {
   let detailsWithUsableDescription = 0;
   let detailsWithoutUsableDescription = 0;
   let skippedDueToMissingDescription = 0;
+  const eligibilitySkips = {};
   let stoppedByChallenge = false;
   // Diagnostico compacto del challenge que detuvo el run, ademas del detalle
   // que ya queda en detailDiagnostics. Permite responder "por que se detuvo"
@@ -159,6 +160,22 @@ async function runPipeline(deps) {
       skippedDueToMissingDescription += 1;
       say(`analysis:deferred ${cand.jobId} description_missing_or_insufficient`);
       continue;
+    }
+
+    if(typeof deps.checkEligibility === 'function'){
+      try{
+        const check=await deps.checkEligibility(jobService.getJob(cand.jobId));
+        if(check.detail)jobService.updateDiscovery(cand.jobId,check.detail);
+        if(!check.eligible){
+          const reason=check.reason||'employment_not_documented';
+          eligibilitySkips[reason]=(eligibilitySkips[reason]||0)+1;
+          say('analysis:deferred '+cand.jobId+' '+reason);
+          continue;
+        }
+      }catch(err){
+        if(isChallenge(err)){stoppedByChallenge=true;challenge=toStopDiagnostic(err,{stage:'employment_verification',jobId:cand.jobId});break;}
+        jobService.applyAnalysisFailure(cand.jobId,'employment_verification: '+(err.message||err));failed+=1;continue;
+      }
     }
 
     // 2) analisis (OpenAI) — si no hay analyzer, el job queda 'pending' (skipped).
@@ -218,6 +235,7 @@ async function runPipeline(deps) {
     stoppedByChallenge,
     challenge,
     discovery: {
+      ...(dstats.locationMode ? { locationMode: dstats.locationMode } : {}),
       queriesExecuted: dstats.queriesExecuted ?? null,
       rawResults: dstats.rawResults ?? null,
       uniqueResults: uniqueJobs.length,
@@ -237,6 +255,7 @@ async function runPipeline(deps) {
       detailsWithUsableDescription,
       detailsWithoutUsableDescription,
       skippedDueToMissingDescription,
+      ...(typeof deps.checkEligibility==='function'?{eligibilitySkips}:{}),
       detailExtractionCounts: detailDiagnostics.reduce((counts, d) => {
         counts[d.status] = (counts[d.status] || 0) + 1;
         return counts;

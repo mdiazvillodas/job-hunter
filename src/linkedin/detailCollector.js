@@ -1,4 +1,5 @@
 const { detectSecurityChallenge } = require('./session');
+const { readEmploymentEvidence } = require('./employmentEvidence');
 const { readJobDescription } = require('./descriptionExtractor');
 
 function canonicalJobUrl(url, jobId) {
@@ -112,6 +113,7 @@ async function collectJobDetail(page, listingJob, options = {}) {
       throw error;
     }
     const descriptionResult = await readJobDescription(page, listingJob.jobId, options);
+    descriptionResult.diagnostics = {...descriptionResult.diagnostics, employmentEvidence:await readEmploymentEvidence(page,listingJob.jobId)};
     const extracted = await extractJobDetail(page, listingJob, descriptionResult);
     return {
       detail: extracted.detail,

@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-18",
+  "baseCommit": "53cfa72",
+  "historicalJobs": 783,
+  "systemPromptHash": "2412d953d3570bc3a0931b6c04882e1c5f97b74abee0f6bf94cdcad3a5eb7ace",
+  "historicalInputsHash": "b52d2ca533b76b06c5373dbd82b9d3a8949dbac5fddacbb859cabc82ee1f6879",
+  "schemaEqualExceptProfileReference": true,
+  "contextualPromptCases": 5,
+  "isolation": true,
+  "restartPersistence": true,
+  "paidCalls": 0,
+  "realHunts": 0,
+  "limitations": [
+    "Equivalencia de entradas y contrato; no nueva comparación de salidas reales del modelo.",
+    "Casos de profesiones verifican instrucciones y evidencia enviada; requieren validación semántica real autorizada."
+  ]
+}

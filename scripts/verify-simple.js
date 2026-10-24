@@ -1,0 +1,44 @@
+'use strict';
+const fs=require('fs'),path=require('path'),assert=require('assert/strict'),crypto=require('crypto'),os=require('os');
+const {spawnSync}=require('child_process');
+const root=path.resolve(__dirname,'..'), original='C:/Users/maria/job-hunter';
+const current=require('../src/ai/jobAnalyzer'),baseline=require(path.join(original,'src/ai/jobAnalyzer'));
+const profile=JSON.parse(fs.readFileSync(path.join(root,'private-baseline/marianoMatchingProfile.json')));
+const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
+const before=JSON.stringify(profile);
+assert.notEqual(current.buildSystemPrompt(profile),baseline.buildSystemPrompt(profile));
+assert.equal(JSON.stringify(profile),before);
+assert(current.buildSystemPrompt(profile).includes('Missing evidence alone is NOT_EVIDENCED'));
+const sent=JSON.parse(current.buildSystemPrompt(profile).split('\n').find(line=>line.startsWith('{"meta"')));
+const expected=JSON.parse(before);
+expected.transferability.rules=expected.transferability.rules.map(rule=>rule==='If no evidence supports equivalence, classify as real_gap or critical_requirement_unmet by how critical it is.'?'If evidence is missing, classify as NOT_EVIDENCED. CLEAR_GAP and CRITICAL_GAP require concrete evidence that the requirement is unmet.':rule);
+assert.deepEqual(sent,expected);
+const records=[];
+for(const name of fs.readdirSync(path.join(root,'private-baseline/jobs')).filter(n=>n.endsWith('.json'))){
+ const job=JSON.parse(fs.readFileSync(path.join(root,'private-baseline/jobs',name)));
+ assert.equal(current.buildUserPrompt(job),baseline.buildUserPrompt(job));
+ assert.deepEqual(current.pickJobData(job),baseline.pickJobData(job));
+ records.push(hash(current.buildUserPrompt(job)));
+}
+const schema=JSON.parse(JSON.stringify(current.JOB_ANALYSIS_SCHEMA));
+delete schema.properties.requirementAssessments.items.properties.profileReference;
+schema.properties.requirementAssessments.items.required=schema.properties.requirementAssessments.items.required.filter(x=>x!=='profileReference');
+assert.deepEqual(schema,baseline.JOB_ANALYSIS_SCHEMA);
+const simple=require('../src/ai/simpleProfile');
+assert.equal(simple.diagnose('').missing.length,5);
+const cases=[['Arquitecta edilicia; obra y planos AutoCAD','Software Architect; distributed systems AWS'],['Product Manager; roadmap y mercado','Product Designer; investigación UX Figma'],['Project Manager construcción; obra y presupuestos','IT Project Manager; desarrollo software Scrum'],['Analista financiero; balances y presupuestos','Data Analyst; Python SQL'],['Ingeniero industrial; procesos de manufactura','Software Engineer; Java backend']];
+for(const [profession,offer]of cases){const p={candidateDocument:profession,profession};const prompt=current.buildSystemPrompt(p);assert(!prompt.includes('Mariano'));assert(prompt.includes('Shared titles alone are not evidence'));assert(prompt.includes('Missing evidence is NOT incapacity'));assert(prompt.includes(profession));assert(current.buildUserPrompt({title:offer}).includes(offer));}
+const {createInstance}=require('./install');
+const name='test-'+Date.now();const dest=createInstance(name,Math.floor(10000+Math.random()*30000),false,{query:'Arquitectura edilicia',location:'Madrid'});
+assert(!fs.existsSync(path.join(dest,'src/ai/marianoProfile.json')));
+const envProbe=spawnSync(process.execPath,['-e',"require('./src/env').loadProjectEnv();if(process.env.OPENAI_API_KEY||process.env.NTFY_TOPIC||process.env.TELEGRAM_BOT_TOKEN)process.exit(1)"],{cwd:dest,env:{...process.env,OPENAI_API_KEY:'synthetic-other-candidate-key',NTFY_TOPIC:'other-person',TELEGRAM_BOT_TOKEN:'synthetic-token'}});
+assert.equal(envProbe.status,0,'No heredar credenciales ajenas');
+assert.equal(fs.readdirSync(path.join(dest,'src/data/jobs')).length,0);
+const child=spawnSync(process.execPath,['-e',`const p=require('./src/ai/simpleProfile');p.save('## Profesión y especialidad\\nArquitecta edilicia');require('./src/data/jobRepository').createLocalRepository().save({jobId:'synthetic-isolation',title:'Prueba'});console.log(JSON.stringify(require('./src/config').getActiveSearchQueries()));`],{cwd:dest,encoding:'utf8'});
+assert.equal(child.status,0,child.stderr);assert(child.stdout.includes('Arquitectura edilicia'));
+assert(!fs.existsSync(path.join(original,'src/data/jobs/synthetic-isolation.json')));
+assert(!fs.existsSync(path.join(root,'instances/mariana/src/data/jobs/synthetic-isolation.json')));
+const reloaded=spawnSync(process.execPath,['-e',`console.log(require('./src/ai/simpleProfile').read());console.log(require('./src/data/jobRepository').createLocalRepository().get('synthetic-isolation').title)`],{cwd:dest,encoding:'utf8'});
+assert.equal(reloaded.status,0);assert(reloaded.stdout.includes('Arquitecta edilicia'));assert(reloaded.stdout.includes('Prueba'));
+const report={date:'2026-10-18',baseCommit:'53cfa72',historicalJobs:records.length,systemPromptHash:hash(current.buildSystemPrompt(profile)),historicalInputsHash:hash(records.sort().join('\n')),schemaEqualExceptProfileReference:true,contextualPromptCases:cases.length,isolation:true,restartPersistence:true,paidCalls:0,realHunts:0,limitations:['Equivalencia de entradas y contrato; no nueva comparación de salidas reales del modelo.','Casos de profesiones verifican instrucciones y evidencia enviada; requieren validación semántica real autorizada.']};
+fs.writeFileSync(path.join(root,'docs/verification-simple.json'),JSON.stringify(report,null,2));console.log(report);

@@ -219,3 +219,10 @@ test('pipeline: ofertas de InfoJobs se persisten con source y conviven con Linke
   assert.equal(saved.salary, '45.000 EUR / año');
   assert.equal(saved.analysisStatus, 'completed');
 });
+
+test('runtime InfoJobs conserva Chrome Windows y usa Chromium nativo en Linux',async()=>{
+ const vm=require('node:vm'),fs=require('fs'),path=require('path');
+ for(const platform of ['win32','linux']){let options;const fake={addInitScript:async()=>{}};const sandbox={module:{exports:{}},process:{platform},require:name=>name==='playwright'?{chromium:{launchPersistentContext:async(dir,opts)=>{options=opts;return fake;}}}:{HEADLESS:true}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../infojobs/browser.js'),'utf8'),sandbox);
+ await sandbox.module.exports.launchInfoJobsBrowser('synthetic-own-profile');assert.equal(options.channel,platform==='win32'?'chrome':'chromium');assert.equal(Boolean(options.userAgent),platform==='win32');}
+});

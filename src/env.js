@@ -74,12 +74,20 @@ function loadProjectEnv(options = {}) {
   for (const key of Object.keys(parsed)) {
     // "Definida" incluye cadena vacia: si alguien exporto la variable vacia a
     // proposito, esa decision del entorno manda sobre el archivo.
-    if (env[key] !== undefined) {
+    if (env[key] !== undefined && !(options.env === undefined && fs.existsSync(path.join(PROJECT_ROOT, '.instance')))) {
       result.kept.push(key);
       continue;
     }
     env[key] = parsed[key];
     result.applied.push(key);
+  }
+
+  // Installed instances never borrow credentials or notification destinations
+  // from a machine-wide environment belonging to another candidate.
+  if (options.env === undefined && fs.existsSync(path.join(PROJECT_ROOT, '.instance'))) {
+    for (const key of Object.keys(env)) {
+      if (/^(OPENAI_|NTFY_|TELEGRAM_|HUNT_TRIGGER_)/.test(key) && !Object.hasOwn(parsed, key)) delete env[key];
+    }
   }
 
   return result;

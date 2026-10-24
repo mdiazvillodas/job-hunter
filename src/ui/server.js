@@ -17,6 +17,7 @@ const { computeLearnedPreferences } = require('../ai/learnedPreferences');
 const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 
+const manualSearch = require('./manualSearch').createManualSearch();
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UI_DIR = __dirname;
@@ -72,6 +73,31 @@ function calibrationsFor(jobs) {
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = req.method;
+  if (manualSearch(req, res, url)) return;
+  if (parts[1] === 'settings') {
+    const settings = require('./settings');
+    if (method === 'GET') return sendJson(res,200,settings.read());
+    if (method === 'POST') {
+      if (req.headers.origin !== 'http://' + req.headers.host) return sendJson(res,403,{error:'Origen inválido'});
+      return sendJson(res,200,settings.save(await readBody(req)));
+    }
+  }
+  if (parts[1] === 'profile') {
+    const simple = require('../ai/simpleProfile');
+    const legacy = fs.existsSync(path.join(__dirname, '../ai/marianoProfile.json'));
+    if (method === 'GET') return sendJson(res, 200, { legacy, text: legacy ? JSON.stringify(require('../ai/marianoProfile').getMarianoProfile(), null, 2) : simple.read(), diagnosis: legacy ? {status:'Perfil original preservado', missing:[]} : simple.diagnose(simple.read()) });
+    if (method === 'POST') {
+      if (legacy) return sendJson(res, 409, {error:'El perfil original se conserva sin alteraciones.'});
+      const origin = req.headers.origin;
+      if (origin !== 'http://' + req.headers.host) return sendJson(res, 403, {error:'Origen inválido'});
+      const body = await readBody(req);
+      return sendJson(res, 200, {diagnosis:simple.save(body.text)});
+    }
+  }
+  if (parts[1] === 'profile-guide' && method === 'GET') {
+    res.writeHead(200, {'Content-Type':'text/markdown; charset=utf-8','Content-Disposition':'attachment; filename="guia-perfil.md"'});
+    return res.end(fs.readFileSync(path.join(__dirname, '../../docs/guia-perfil.md')));
+  }
 
   // GET /api/jobs
   if (method === 'GET' && parts.length === 2 && parts[1] === 'jobs') {
@@ -163,7 +189,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`Job Hunter UI corriendo en  http://localhost:${PORT}`);
   console.log(`Repository local: ${repository.dir}`);
   console.log('Ctrl+C para detener.');

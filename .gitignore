@@ -53,3 +53,20 @@ state/
 
 # --- capturas de reconocimiento de InfoJobs (pueden incluir datos de sesion) ---
 recon/
+
+instances/
+private-baseline/
+dist/
+
+
+# Acceso privado de Oracle: configuración generada, claves y sesión remota
+oracle-private/
+access-secrets/
+**/.vnc-passwd
+**/.vnc-password.txt
+
+# Informes privados de pilotos reales: conservar solo localmente
+docs/validation-pilot/resultados-reales-*
+docs/validation-pilot/diagnostico-tecnico-cuatro-problemas.md
+docs/validation-pilot/validacion-final-dirigida-*.md
+docs/validation-pilot/cierre-simple-*.md

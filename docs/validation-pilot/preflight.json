@@ -1,0 +1,141 @@
+{
+  "preparedAt": "2026-10-18",
+  "baseCandidateCommit": "193426a",
+  "candidateRevision": "diagnostico-contenido-v1",
+  "diagnosisSHA256": "94c6680b55ee11875015efe1261d0a2bc9728eb7903d9637974cb3160c3eb7c3",
+  "status": "PREPARED_NOT_AUTHORIZED",
+  "apiCallsExecuted": 0,
+  "scrapesExecuted": 0,
+  "plannedCalls": {
+    "marianoPaired": 12,
+    "architecture": 8,
+    "freshJobs": 2,
+    "maximum": 22,
+    "retries": 0
+  },
+  "budget": {
+    "currency": "USD",
+    "inputPerMillion": 0.4,
+    "outputPerMillion": 1.6,
+    "maxInputTokensPerCall": 65536,
+    "maxOutputTokensPerCall": 32768,
+    "upperEstimate": 1.7301504000000003,
+    "authorizationCeiling": 2,
+    "excludes": "Impuestos y cambio de divisa; sin descuentos por cache"
+  },
+  "historicalCases": 6,
+  "architectureCases": 8,
+  "profileSHA256": "843a80ffb8fbbab466d9e6d11d915be77c216811391622550403e1ea5e0f78d4",
+  "packageSHA256": "85dfab81ffc7905b4e4ac6afe398a5a232059e05058e3c994c0075421fdbeb4b",
+  "maxHistoricalRequestBytes": 59863,
+  "diagnostics": {
+    "minimum": {
+      "status": "Perfil insuficiente para recomendaciones confiables",
+      "missing": [
+        "Experiencia y responsabilidades",
+        "Capacidades y herramientas",
+        "Preferencias y restricciones",
+        "Objetivos"
+      ],
+      "questions": [
+        {
+          "section": "Experiencia y responsabilidades",
+          "question": "Contá una tarea que hiciste y sobre qué entregable o situación: ¿qué preparaste, revisaste o resolviste? Sirven estudios, proyectos personales y prácticas bajo supervisión."
+        },
+        {
+          "section": "Capacidades y herramientas",
+          "question": "¿Qué herramienta, técnica o método usaste y para qué tarea? Puede ser manual o digital; diferenciá aprendizaje de uso profesional."
+        },
+        {
+          "section": "Preferencias y restricciones",
+          "question": "¿Qué modalidad, jornada, ubicación o disponibilidad necesitás? Podés indicar que no tenés restricciones o qué sigue pendiente."
+        },
+        {
+          "section": "Objetivos",
+          "question": "¿Qué puesto o tipo de trabajo querés buscar? Nombrá un rol o ámbito concreto, aunque sea junior o de prácticas."
+        }
+      ],
+      "advice": "Podés seguir buscando y editar el perfil. Este diagnóstico orientativo reconoce ejemplos concretos; no verifica su veracidad ni evalúa tu capacidad. Si no reconoce una descripción, aclarala con un ejemplo. No exige métricas, liderazgo ni experiencia laboral previa."
+    },
+    "empty": {
+      "status": "Perfil insuficiente para recomendaciones confiables",
+      "missing": [
+        "Profesión y especialidad",
+        "Experiencia y responsabilidades",
+        "Capacidades y herramientas",
+        "Preferencias y restricciones",
+        "Objetivos"
+      ],
+      "questions": [
+        {
+          "section": "Profesión y especialidad",
+          "question": "¿Cuál es tu profesión y especialidad? Indicá el sector o tipo de trabajo (por ejemplo, arquitectura edilicia o software)."
+        },
+        {
+          "section": "Experiencia y responsabilidades",
+          "question": "Contá una tarea que hiciste y sobre qué entregable o situación: ¿qué preparaste, revisaste o resolviste? Sirven estudios, proyectos personales y prácticas bajo supervisión."
+        },
+        {
+          "section": "Capacidades y herramientas",
+          "question": "¿Qué herramienta, técnica o método usaste y para qué tarea? Puede ser manual o digital; diferenciá aprendizaje de uso profesional."
+        },
+        {
+          "section": "Preferencias y restricciones",
+          "question": "¿Qué modalidad, jornada, ubicación o disponibilidad necesitás? Podés indicar que no tenés restricciones o qué sigue pendiente."
+        },
+        {
+          "section": "Objetivos",
+          "question": "¿Qué puesto o tipo de trabajo querés buscar? Nombrá un rol o ámbito concreto, aunque sea junior o de prácticas."
+        }
+      ],
+      "advice": "Podés seguir buscando y editar el perfil. Este diagnóstico orientativo reconoce ejemplos concretos; no verifica su veracidad ni evalúa tu capacidad. Si no reconoce una descripción, aclarala con un ejemplo. No exige métricas, liderazgo ni experiencia laboral previa."
+    },
+    "superficial": {
+      "status": "Perfil insuficiente para recomendaciones confiables",
+      "missing": [
+        "Experiencia y responsabilidades",
+        "Capacidades y herramientas",
+        "Preferencias y restricciones",
+        "Objetivos"
+      ],
+      "questions": [
+        {
+          "section": "Experiencia y responsabilidades",
+          "question": "Contá una tarea que hiciste y sobre qué entregable o situación: ¿qué preparaste, revisaste o resolviste? Sirven estudios, proyectos personales y prácticas bajo supervisión."
+        },
+        {
+          "section": "Capacidades y herramientas",
+          "question": "¿Qué herramienta, técnica o método usaste y para qué tarea? Puede ser manual o digital; diferenciá aprendizaje de uso profesional."
+        },
+        {
+          "section": "Preferencias y restricciones",
+          "question": "¿Qué modalidad, jornada, ubicación o disponibilidad necesitás? Podés indicar que no tenés restricciones o qué sigue pendiente."
+        },
+        {
+          "section": "Objetivos",
+          "question": "¿Qué puesto o tipo de trabajo querés buscar? Nombrá un rol o ámbito concreto, aunque sea junior o de prácticas."
+        }
+      ],
+      "advice": "Podés seguir buscando y editar el perfil. Este diagnóstico orientativo reconoce ejemplos concretos; no verifica su veracidad ni evalúa tu capacidad. Si no reconoce una descripción, aclarala con un ejemplo. No exige métricas, liderazgo ni experiencia laboral previa."
+    },
+    "junior_synthetic": {
+      "status": "Perfil suficientemente documentado",
+      "missing": [],
+      "questions": [],
+      "advice": "Podés seguir buscando y editar el perfil. Este diagnóstico orientativo reconoce ejemplos concretos; no verifica su veracidad ni evalúa tu capacidad. Si no reconoce una descripción, aclarala con un ejemplo. No exige métricas, liderazgo ni experiencia laboral previa."
+    },
+    "bridge_synthetic": {
+      "status": "Perfil suficientemente documentado",
+      "missing": [],
+      "questions": [],
+      "advice": "Podés seguir buscando y editar el perfil. Este diagnóstico orientativo reconoce ejemplos concretos; no verifica su veracidad ni evalúa tu capacidad. Si no reconoce una descripción, aclarala con un ejemplo. No exige métricas, liderazgo ni experiencia laboral previa."
+    }
+  },
+  "localDiagnosisRegression": "A8 rechazado como suficiente; junior aceptado; 13 regresiones locales aprobadas",
+  "knownBlockers": [
+    "Mariana no tiene todavía un perfil real cargado: no se puede aprobar su calidad personalizada con fixtures."
+  ],
+  "privateCaseIndex": "private-baseline/validation-pilot/case-index.json",
+  "paidSemanticEvaluation": "NOT_RUN",
+  "liveScraping": "NOT_RUN"
+}

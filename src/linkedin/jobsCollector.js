@@ -19,6 +19,7 @@ async function openJobsSearch(page, query) {
 async function waitForJobResults(page) {
   const cards = page.locator(
     [
+      'main [role="button"][componentkey^="job-card-component-ref-"]',
       'li.jobs-search-results__list-item',
       'li[data-occludable-job-id]',
       '[data-job-id]',
@@ -74,8 +75,20 @@ async function extractVisibleJobs(page, options = {}) {
     };
 
     const cards = Array.from(document.querySelectorAll('li[data-occludable-job-id]'));
+    const semanticCards=Array.from(document.querySelectorAll('main [role="button"][componentkey^="job-card-component-ref-"]'));
     const seen = new Set();
     const diagnostics = [];
+
+    const semanticJobs=semanticCards.map(card=>{
+      const jobId=(card.getAttribute('componentkey')||'').match(/^job-card-component-ref-(\d+)$/)?.[1];
+      if(!jobId||seen.has(jobId))return null;
+      const paragraphs=Array.from(card.querySelectorAll('p'));
+      const title=normalizeText(paragraphs[0]?.querySelector('[aria-hidden="true"]')?.textContent || paragraphs[0]?.textContent)?.replace(/^Selected,\s*/,'');
+      const company=normalizeText(paragraphs[1]?.textContent),location=normalizeText(paragraphs[2]?.textContent);
+      if(!title||!company||!location)throw Error('LinkedIn: tarjeta conversacional incompleta; no se informa como cero ofertas');
+      seen.add(jobId);return {jobId,title,company,location,url:'https://www.linkedin.com/jobs/view/'+jobId+'/',easyApply:/easy apply|solicitud sencilla|candidatura sencilla/i.test(card.textContent)};
+    }).filter(Boolean);
+    if(!cards.length&&!semanticJobs.length && /(?:^|\s)[1-9][\d.,+]*\s+results\b/i.test(document.querySelector('main')?.innerText||''))throw Error('LinkedIn: la pantalla anuncia resultados pero el extractor no reconoce tarjetas');
 
     const jobs = cards
       .map((card) => {
@@ -144,7 +157,7 @@ async function extractVisibleJobs(page, options = {}) {
       .filter((job) => job && (job.title || job.company || job.url || job.jobId));
 
     return {
-      jobs,
+      jobs:[...semanticJobs,...jobs],
       diagnostics,
     };
   });
@@ -184,6 +197,10 @@ async function collectHydratedJobsWhileScrolling(page, options = {}) {
       .map((card) => card.getAttribute('data-occludable-job-id'))
       .filter(Boolean);
   });
+
+  const semanticCards=page.locator('main [role="button"][componentkey^="job-card-component-ref-"]');
+  const semanticCount=await semanticCards.count();
+  for(let i=0;i<semanticCount;i++){await semanticCards.nth(i).scrollIntoViewIfNeeded();await page.waitForTimeout(100);await mergeExtraction();}
 
   for (const jobId of jobIds) {
     await page.locator(`li[data-occludable-job-id="${jobId}"]`).scrollIntoViewIfNeeded();

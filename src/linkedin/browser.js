@@ -1,9 +1,9 @@
 const { chromium } = require('playwright');
 const { HEADLESS } = require('../config');
 
-async function launchLinkedInBrowser(profileDir) {
+async function launchLinkedInBrowser(profileDir, { headless = HEADLESS } = {}) {
   return chromium.launchPersistentContext(profileDir, {
-    headless: HEADLESS,
+    headless,
     channel: 'chromium',
     viewport: null,
   });

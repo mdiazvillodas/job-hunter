@@ -87,6 +87,7 @@ function metricLines(summary, threshold = HIGH_MATCH_THRESHOLD) {
   const notifications = summary.notifications || {};
   const durations = summary.durations || {};
   const lines = [];
+  if (discovery.locationMode === 'conversational_query') lines.push('⚠️ LinkedIn: ubicación orientativa, pedida en consulta conversacional; sin filtro geográfico estricto.');
 
   const unique = num(discovery.uniqueResults);
   if (unique !== null) lines.push(`${unique} ofertas encontradas`);
@@ -125,9 +126,13 @@ function sourceLines(summary) {
     if (num(d.uniqueResults) !== null) parts.push(`${d.uniqueResults} encontradas`);
     if (num(d.newJobs) !== null) parts.push(`${d.newJobs} nuevas`);
     if (num(a.analyzed) !== null) parts.push(`${a.analyzed} analizadas`);
+    const skipped=a.eligibilitySkips||{};
+    const unknown=(skipped.employment_not_documented||0)+(skipped.employment_ambiguous||0);
+    if(skipped.employment_mismatch)parts.push(skipped.employment_mismatch+' omitidas por jornada incompatible');
+    if(unknown)parts.push(unknown+' pendientes por jornada no confirmada');
     const metrics = parts.join(' · ');
     if (src.status === 'interrupted') return `${label}: ❌ interrumpido (verificación de seguridad)${metrics ? ' · ' + metrics : ''}`;
-    return `${label}: ${metrics || 'sin datos'}`;
+    return `${label}: ${metrics || 'sin datos'}${d.locationMode === 'conversational_query' ? ' · ⚠️ ubicación orientativa (consulta conversacional, sin filtro geográfico estricto)' : ''}`;
   });
 }
 

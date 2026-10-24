@@ -525,3 +525,11 @@ input[type='search']::-webkit-search-cancel-button { filter: grayscale(1) opacit
 @media (prefers-reduced-motion: reduce) {
   .detail { transition: none; }
 }
+
+.profile-basis { border-left:4px solid #78649b; padding:8px 14px; margin:16px 0; background:var(--surface); }
+.profile-basis h3 { font-size:1rem; margin:6px 0; }
+.profile-basis.basis-unknown { border-left-color:#a66b20; }
+.profile-basis details { border:1px solid var(--border); padding:10px; margin:10px 0; }
+.profile-basis summary { cursor:pointer; font-size:.85rem; color:var(--text); }
+.profile-basis blockquote { white-space:normal; margin:12px 4px; padding-left:12px; border-left:3px solid #368367; overflow-wrap:anywhere; }
+.basis-label { font-size:.8rem; font-weight:700; }

@@ -119,7 +119,7 @@ test('UI excluye scores/decisiones stale de filtros y orden vigente', () => {
 });
 test('UI real renderiza aviso stale y no muestra score/reasoning anterior', () => {
   const elements = new Map();
-  const context = { window: { JobListLogic: L }, document: { addEventListener() {}, getElementById(id) {
+  const context = { window: { JobListLogic: L, ProfilePresentation: require('../ui/public/profilePresentation') }, document: { addEventListener() {}, getElementById(id) {
     if (!elements.has(id)) elements.set(id, { innerHTML: '', querySelectorAll: () => [] }); return elements.get(id);
   } } };
   vm.createContext(context); vm.runInContext(fs.readFileSync(path.join(__dirname, '../ui/public/app.js'), 'utf8'), context);
@@ -129,6 +129,6 @@ test('UI real renderiza aviso stale y no muestra score/reasoning anterior', () =
   assert.doesNotMatch(html, /OLD_ANALYSIS|class="val">90</);
   assert.match(context.jobItemHtml(job()), /IA pendiente de actualización/);
   context.renderDetail(job('2', { analysisStatus: 'completed' }), null);
-  assert.match(elements.get('detailContent').innerHTML, /OLD_ANALYSIS/);
+  assert.doesNotMatch(elements.get('detailContent').innerHTML, /OLD_ANALYSIS/); // Raw prose remains audit data, never accredited presentation.
   assert.match(elements.get('detailContent').innerHTML, /class="val">90</);
 });

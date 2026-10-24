@@ -16,7 +16,8 @@
         <span class="brand-name">Job Hunter</span>
       </div>
 
-      <div class="topbar-spacer"></div>
+      <button id="manualHuntBtn" class="btn small" type="button">Buscar ofertas</button><span id="manualHuntStatus" role="status" aria-live="polite"></span>
+      <a href="/profile.html">Perfil</a> · <a href="/settings.html">Configuración</a><div class="topbar-spacer"></div>
 
       <label class="field-inline" for="sortSelect">
         <span class="field-inline-label">Orden</span>
@@ -185,6 +186,8 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="/jobListLogic.js"></script>
+    <script src="/profilePresentation.js"></script>
     <script src="/app.js"></script>
+  <script src="/manualSearch.js"></script>
   </body>
 </html>

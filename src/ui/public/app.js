@@ -326,21 +326,21 @@ function feedbackHistoryHtml(job) {
 }
 
 /* Diagnóstico estructurado (requirementAssessments + coreCapabilityCoverage) — solo lectura del aiAnalysis. */
+function sourceHtml(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return '<ul>' + value.map(v => '<li>' + sourceHtml(v) + '</li>').join('') + '</ul>';
+  const labels = {point:'Aspecto',evidence:'Descripción',company:'Empresa',role:'Puesto',period:'Período',context:'Contexto',scope:'Alcance',responsibilities:'Responsabilidades',selectedInitiatives:'Iniciativas',impact:'Impacto',capabilitiesDemonstrated:'Capacidades descritas',transferableElements:'Posibles aplicaciones',language:'Idioma',level:'Nivel',proficiency:'Dominio declarado',formalCertification:'Certificación',historicalContext:'Contexto',institution:'Institución',field:'Área',status:'Estado',degreeAwarded:'Título obtenido',statement:'Descripción',credential:'Formación'};
+  if (typeof value === 'object') return Object.entries(value).map(([key, v]) => '<div><strong>' + esc(labels[key] || key.replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ')) + ':</strong> ' + sourceHtml(v) + '</div>').join('');
+  return esc(String(value)).replaceAll('\n', '<br>');
+}
 function diagnosisHtml(a) {
-  let html = '';
-  const ra = a.requirementAssessments || [];
-  if (ra.length) {
-    html += '<div class="section"><h2>EVALUACIÓN DE REQUISITOS</h2><ul class="assess-list">' +
-      ra.map((r) => `<li><span class="cls-badge cls-${esc(r.classification)}">${esc(lbl(CLASSIFICATION_LABELS, r.classification, r.classification))}</span> <span class="assess-req">${esc(r.requirement)}</span>${r.note ? `<div class="assess-note muted small">${esc(r.note)}</div>` : ''}</li>`).join('') +
-      '</ul></div>';
-  }
-  const cc = a.coreCapabilityCoverage || [];
-  if (cc.length) {
-    html += '<div class="section"><h2>COBERTURA DE CAPACIDADES CENTRALES</h2><ul class="assess-list">' +
-      cc.map((c) => `<li><span class="rate-badge rate-${esc(c.rating)}">${esc(lbl(RATING_LABELS, c.rating, c.rating))}</span> <span class="assess-req">${esc(c.capability)}</span>${c.note ? `<div class="assess-note muted small">${esc(c.note)}</div>` : ''}</li>`).join('') +
-      '</ul></div>';
-  }
-  return html;
+  const rows = window.ProfilePresentation.present(a);
+  if (!rows.length) return '<div class="section"><p>No hay referencias de perfil para explicar este análisis histórico. La recomendación de IA requiere revisión.</p></div>';
+  return '<div class="section"><h2>FUNDAMENTO DE LA RECOMENDACIÓN</h2><p class="muted small">Los textos del perfil son declaraciones documentadas, no una verificación externa. Las relaciones profesionales son propuestas de la IA.</p>' + rows.map(row =>
+    '<article class="profile-basis basis-' + row.category + '"><h3>Requisito evaluado por la IA: ' + esc(row.requirement) + '</h3>' +
+    '<p class="basis-label">' + (row.category === 'unknown' ? 'COMPETENCIA O EXPERIENCIA NO DOCUMENTADA' : 'POSIBLE RELACIÓN PROFESIONAL · INFERENCIA') + '</p><p>' + esc(row.message) + '</p>' +
+    (row.source ? '<details><summary>INFORMACIÓN DOCUMENTADA EN EL PERFIL · ver texto completo</summary><blockquote>' + sourceHtml(row.source.content) + '</blockquote><p class="muted small">' + esc(row.sourceMessage) + '</p></details>' : '<p class="muted small">' + esc(row.sourceMessage) + '</p>') + '</article>'
+  ).join('') + '</div>';
 }
 
 function renderDetail(job, cal) {
@@ -392,14 +392,8 @@ function renderDetail(job, cal) {
       ${scoreCard('Confianza', a.confidence)}
     </div>
 
-    ${a.summary ? `<div class="section"><h2>RESUMEN</h2><p>${esc(a.summary)}</p></div>` : ''}
+    <div class="section"><p>Recomendación orientativa de IA: <strong>${esc(lbl(DECISION_LABELS, a.decision, a.decision || 'Sin análisis'))}</strong>. Revisá el fundamento antes de postularte; los puntajes no verifican antecedentes.</p></div>
     ${diagnosisHtml(a)}
-    ${listSection('POR QUÉ ENCAJA', a.whyItFits)}
-    ${listSection('EXPERIENCIA TRANSFERIBLE', a.transferableExperience)}
-    ${listSection('BRECHAS', a.gaps)}
-    ${listSection('REQUISITOS CRÍTICOS NO CUMPLIDOS', a.criticalRequirementsUnmet, { critical: true })}
-    ${listSection('SEÑALES DE ALERTA', a.redFlags, { critical: true })}
-    ${a.reasoning ? `<div class="section"><h2>RAZONAMIENTO</h2><p class="reasoning">${esc(a.reasoning)}</p></div>` : ''}
     ${!job.aiAnalysis ? '<div class="section"><h2>ANÁLISIS DE IA</h2><p class="muted small">Esta oferta todavía no tiene análisis de OpenAI.</p></div>' : ''}
 
     ${found}${fams}

@@ -1,0 +1,21 @@
+'use strict';
+const test = require('node:test'), assert = require('node:assert/strict'), http = require('http'), fs = require('fs'), os = require('os'), path = require('path');
+const { EventEmitter } = require('node:events'), { PassThrough } = require('node:stream');
+const { createManualSearch } = require('../ui/manualSearch');
+test('búsqueda manual: GET no dispara, POST exige origen y reutiliza exclusión del runner', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'manual-hunt-')); let spawned = 0;
+  const child = new EventEmitter(); child.pid = 999999; child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  const handle = createManualSearch({ projectRoot: directory, runsDir: path.join(directory, 'runs'), log: () => {}, inspectLock: () => ({ busy: false }), spawnHunt: () => { spawned++; return child; } });
+  const server = http.createServer((req, res) => { if (!handle(req, res, new URL(req.url, 'http://localhost'))) { res.writeHead(404); res.end(); } });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  t.after(async () => { child.stdout.end(); child.stderr.end(); child.emit('close', 0); await new Promise(r => server.close(r)); fs.rmSync(directory, { recursive: true, force: true }); });
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  assert.equal((await fetch(origin + '/api/hunt')).status, 200); assert.equal(spawned, 0);
+  assert.equal((await fetch(origin + '/api/hunt', { method: 'POST', headers: { Origin: 'https://foreign.example' } })).status, 403); assert.equal(spawned, 0);
+  const started = await fetch(origin + '/api/hunt', { method: 'POST', headers: { Origin: origin } });
+  assert.equal(started.status, 202); assert.equal(spawned, 1);
+  const { runId } = await started.json();
+  assert.equal((await fetch(origin + '/api/hunt', { method: 'POST', headers: { Origin: origin } })).status, 409); assert.equal(spawned, 1);
+  assert.equal((await fetch(origin + '/api/hunt/run/' + runId)).status, 200);
+  assert.equal((await fetch(origin + '/api/hunt/run/../../.env')).status, 404);
+});

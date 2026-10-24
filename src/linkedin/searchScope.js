@@ -1,3 +1,4 @@
+const conversational = require('./conversationalSearch');
 const { detectSecurityChallenge } = require('./session');
 const { firstVisible, getSearchInput } = require('./searchControls');
 const {
@@ -125,6 +126,7 @@ async function applyModalFilters(page, filters, options) {
 
 // Verifica, a partir de la URL real que LinkedIn genera, que los filtros quedaron activos.
 async function verifyFiltersActive(page, filters) {
+  if (await conversational.isConversational(page)) return conversational.verifyFilters(page, filters);
   const url = page.url();
   const datePostedId = DATE_POSTED_IDS[String(filters.datePosted || '').toLowerCase()] || '';
   const tprCode = (datePostedId.match(/timePostedRange-(r\d+)/) || [])[1];
@@ -146,21 +148,21 @@ async function verifyFiltersActive(page, filters) {
 
 async function getActivePageNumber(page) {
   return page.evaluate(() => {
-    const active = document.querySelector('.jobs-search-pagination__indicator-button--active');
+    const active = document.querySelector('.jobs-search-pagination__indicator-button--active, button[aria-current="true"][data-testid^="pagination-indicator-"]');
     return active ? active.innerText.trim() : null;
   });
 }
 
 async function getFirstCardId(page) {
   return page.evaluate(() => {
-    const card = document.querySelector('li[data-occludable-job-id]');
-    return card ? card.getAttribute('data-occludable-job-id') : null;
+    const card = document.querySelector('li[data-occludable-job-id], main [role="button"][componentkey^="job-card-component-ref-"]');
+    return card ? (card.getAttribute('data-occludable-job-id')||card.getAttribute('componentkey')) : null;
   });
 }
 
 // Devuelve el estado real del boton "siguiente pagina".
 async function inspectNextButton(page) {
-  const next = page.locator('button.jobs-search-pagination__button--next').first();
+  const next = page.locator('button.jobs-search-pagination__button--next, button[data-testid="pagination-controls-next-button-visible"]').filter({visible:true}).first();
   const exists = (await next.count()) > 0;
   if (!exists) return { exists: false, enabled: false, locator: next };
   const disabledAttr = await next.getAttribute('disabled');
@@ -180,10 +182,10 @@ async function goToNextPage(page, nextLocator) {
   const changed = await page
     .waitForFunction(
       ({ prevActive: pa, prevFirstId: pf }) => {
-        const active = document.querySelector('.jobs-search-pagination__indicator-button--active');
+        const active = document.querySelector('.jobs-search-pagination__indicator-button--active, button[aria-current="true"][data-testid^="pagination-indicator-"]');
         const activeText = active ? active.innerText.trim() : null;
-        const firstCard = document.querySelector('li[data-occludable-job-id]');
-        const firstId = firstCard ? firstCard.getAttribute('data-occludable-job-id') : null;
+        const firstCard = document.querySelector('li[data-occludable-job-id], main [role="button"][componentkey^="job-card-component-ref-"]');
+        const firstId = firstCard ? (firstCard.getAttribute('data-occludable-job-id')||firstCard.getAttribute('componentkey')) : null;
         const activeChanged = pa !== null && activeText !== null && activeText !== pa;
         const firstChanged = pf !== null && firstId !== null && firstId !== pf;
         return activeChanged || firstChanged;
@@ -205,6 +207,7 @@ async function goToNextPage(page, nextLocator) {
 async function initializeSearchWithFilters(page, query, filters, options = {}) {
   await openJobsSearch(page, query);
   await waitForJobResults(page);
+  if (await conversational.isConversational(page)) return conversational.initialize(page, query, filters, options);
 
   if (filters.location) {
     await applyLocationFilter(page, filters.location, options);
@@ -222,46 +225,8 @@ async function initializeSearchWithFilters(page, query, filters, options = {}) {
 // -location, employment type, date posted- se conservan; verificado contra la UI real).
 // Espera de forma robusta a que LinkedIn refleje el nuevo keyword antes de continuar.
 async function changeSearchQuery(page, query, options = {}) {
-  const kw = await getSearchInput(page, 'Search by title, skill, or company');
-
-  const prevFirstId = await getFirstCardId(page);
-  await kw.click();
-  await kw.press('Control+a');
-  await kw.press('Delete');
-  await kw.type(query, { delay: 40 });
-  await kw.press('Enter');
-
-  // Gate principal: el parametro keywords de la URL pasa a ser EXACTAMENTE la nueva query.
-  // (evita falsos positivos por substrings; ademas se acepta cambio de la primera tarjeta)
-  const changed = await page
-    .waitForFunction(
-      ({ qDecoded, prev }) => {
-        const m = location.href.match(/keywords=([^&]*)/);
-        let kwMatch = false;
-        if (m) {
-          try {
-            kwMatch = decodeURIComponent(m[1].replace(/\+/g, '%20')) === qDecoded;
-          } catch (e) {
-            kwMatch = false;
-          }
-        }
-        const first = document.querySelector('li[data-occludable-job-id]')?.getAttribute('data-occludable-job-id') || null;
-        const firstChanged = prev && first && first !== prev;
-        return kwMatch && (firstChanged || true);
-      },
-      { qDecoded: query, prev: prevFirstId },
-      { timeout: 20000 }
-    )
-    .then(() => true)
-    .catch(() => false);
-
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await waitForJobResults(page).catch(() => {});
-  await page.waitForTimeout(800);
-  await detectSecurityChallenge(page);
-
-  debugLog(options, { event: 'query_changed', query, changed });
-  return changed;
+  if (await conversational.isConversational(page)) return conversational.changeQuery(page, query, options);
+  return conversational.submitQuery(page, query, { timeout: options.queryTimeout });
 }
 
 // Recorre la paginacion de la busqueda ACTUAL (filtros ya aplicados) y devuelve

@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-24",
+  "release": "0.2.0-rc.2",
+  "platform": "Ubuntu 24.04 ARM64",
+  "authelia": "4.39.28",
+  "caddy": "2.11.7",
+  "anonymousDenied": true,
+  "spoofingDenied": true,
+  "userRouting": true,
+  "apisSeparated": true,
+  "foreignOriginDenied": true,
+  "secureCookies": true,
+  "fiveFailuresBan": true,
+  "backendCalls": {
+    "mariano": 5,
+    "mariana": 5
+  },
+  "syntheticOnly": true,
+  "paidCalls": 0,
+  "realScraping": 0,
+  "limitations": [
+    "Prueba sintética de acceso, no despliegue de candidatos reales.",
+    "Sin LinkedIn ni llamadas a OpenAI.",
+    "Producción pendiente de hostname, confianza HTTPS y credenciales privadas."
+  ]
+}

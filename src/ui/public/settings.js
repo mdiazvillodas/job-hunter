@@ -1,0 +1,3 @@
+const form=document.querySelector('form'),out=document.querySelector('pre');
+fetch('/api/settings').then(r=>r.json()).then(d=>{form.elements.query.value=d.settings.query||'';form.elements.location.value=d.settings.location||'';form.elements.minutes.value=d.minutes;out.textContent=d.hasApiKey?'Hay una clave configurada.':'Sin clave en este proceso.';});
+form.onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(form));d.limit=Number(d.limit);d.minutes=Number(d.minutes);try{const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});const body=await r.json();out.textContent=body.message||body.error;form.apiKey.value='';}catch(e){out.textContent=e.message;}};

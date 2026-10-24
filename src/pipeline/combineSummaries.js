@@ -87,7 +87,7 @@ function combineSummaries(entries, meta = {}) {
       status,
       error: s ? null : safeMessage(entry.error),
       discovery: s ? s.discovery : null,
-      analysis: s ? { analyzed: s.analysis.analyzed, failed: s.analysis.failed, skipped: s.analysis.skipped } : null,
+      analysis: s ? { analyzed: s.analysis.analyzed, failed: s.analysis.failed, skipped: s.analysis.skipped, ...(s.analysis.eligibilitySkips?{eligibilitySkips:s.analysis.eligibilitySkips}:{}) } : null,
       notifications: s ? s.notifications : null,
       durations: s ? s.durations : null,
       challenge,

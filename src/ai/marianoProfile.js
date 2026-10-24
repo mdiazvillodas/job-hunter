@@ -6,11 +6,13 @@
 // Todo el contenido esta respaldado por el documento profesional ("Resumen Profesional / CV").
 // Este modulo NO llama a OpenAI: solo expone el perfil como objeto para que otras capas lo usen.
 
-const profile = require('./marianoProfile.json');
-const matchingProfile = require('./marianoMatchingProfile.json');
+const generic = !require('fs').existsSync(require('path').join(__dirname, 'marianoProfile.json'));
+const simple = require('./simpleProfile');
+const profile = generic ? {} : require('./marianoProfile.json');
+const matchingProfile = generic ? {} : require('./marianoMatchingProfile.json');
 // Fuente maestra de contexto profesional (creada manualmente, AUTORIZADA).
 // Es la verdad conceptual DETRAS del matching profile; NO se envia completa a OpenAI.
-const careerContext = require('./marianoCareerContext.json');
+const careerContext = generic ? {} : require('./marianoCareerContext.json');
 
 /**
  * Devuelve el perfil completo de Mariano como objeto.
@@ -18,7 +20,7 @@ const careerContext = require('./marianoCareerContext.json');
  * @returns {object} perfil completo
  */
 function getMarianoProfile() {
-  return JSON.parse(JSON.stringify(profile));
+  return generic ? simple.profile() : JSON.parse(JSON.stringify(profile));
 }
 
 /**
@@ -28,7 +30,7 @@ function getMarianoProfile() {
  * @returns {object} matching profile
  */
 function getMarianoMatchingProfile() {
-  return JSON.parse(JSON.stringify(matchingProfile));
+  return generic ? simple.profile() : JSON.parse(JSON.stringify(matchingProfile));
 }
 
 /**
@@ -38,7 +40,7 @@ function getMarianoMatchingProfile() {
  * @returns {object} career context
  */
 function getMarianoCareerContext() {
-  return JSON.parse(JSON.stringify(careerContext));
+  return generic ? simple.profile() : JSON.parse(JSON.stringify(careerContext));
 }
 
 /**
@@ -46,6 +48,7 @@ function getMarianoCareerContext() {
  * @returns {object}
  */
 function getMarianoProfileSummary() {
+  if (generic) return simple.diagnose(simple.read());
   return {
     person: profile.meta.person,
     headline: profile.positioning.headline,

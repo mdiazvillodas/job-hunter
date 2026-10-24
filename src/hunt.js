@@ -26,6 +26,7 @@ const {
 } = require('./config');
 const { getInitialPage, launchLinkedInBrowser } = require('./linkedin/browser');
 const { launchInfoJobsBrowser } = require('./infojobs/browser');
+const { classifyEmployment } = require('./linkedin/employmentEvidence');
 const { collectJobDetails } = require('./linkedin/detailCollector');
 const { SecurityChallengeError } = require('./linkedin/errors');
 const { collectMultipleSearches } = require('./linkedin/multiSearch');
@@ -177,11 +178,12 @@ async function buildSourceAdapters(source, context, options) {
     };
   }
 
-  // LinkedIn: exactamente el flujo de siempre.
+  // LinkedIn: flujo clásico o conversacional según los controles visibles.
   const page = await getInitialPage(context);
   await assertAuthenticatedSession(context, page);
   const queries = getActiveSearchQueries(undefined, SOURCES.LINKEDIN);
   let searchResultsUrl = null;
+  let conversational = false;
   return {
     analyzeLimit: ANALYZE_LIMIT,
     discover: async () => {
@@ -191,14 +193,26 @@ async function buildSourceAdapters(source, context, options) {
         maxPagesPerSearch: MAX_PAGES_PER_SEARCH,
       });
       searchResultsUrl = page.url();
+      conversational = scope.metadata.locationMode === 'conversational_query';
       return {
         jobs: scope.jobs,
         discovery: {
           queriesExecuted: scope.metadata.searches.completed,
           rawResults: scope.metadata.results.rawResults,
           duplicatesRemoved: scope.metadata.results.duplicatesRemoved,
+          ...(scope.metadata.locationMode ? {locationMode:scope.metadata.locationMode} : {}),
         },
       };
+    },
+    checkEligibility: async (job) => {
+      if(!conversational || !LINKEDIN_FILTERS.employmentType)return {eligible:true};
+      let detail=null,evidence=job.detailExtraction?.employmentEvidence;
+      if(!evidence){
+        const r=await collectJobDetails(page,[job],{limit:1,searchResultsUrl,debug:options.debug});
+        detail=r.details[0];if(!detail)throw Error('no detail extracted for employment verification');
+        evidence=detail.detailExtraction?.employmentEvidence;
+      }
+      return {...classifyEmployment(evidence,LINKEDIN_FILTERS.employmentType,job.jobId),detail};
     },
     fetchDetails: async (job) => {
       const r = await collectJobDetails(page, [job], { limit: 1, searchResultsUrl, debug: options.debug });
@@ -262,6 +276,7 @@ async function runHunt(options) {
         jobService,
         discover: adapters.discover,
         fetchDetails: adapters.fetchDetails,
+        checkEligibility: adapters.checkEligibility,
         analyze,
         analyzeLimit: adapters.analyzeLimit,
         notify: (job) => notifier.notifyHighMatch(job),

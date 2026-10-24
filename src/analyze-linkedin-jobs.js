@@ -130,7 +130,7 @@ function printJobResult(index, totalCount, job, result) {
   console.log(`CV fit: ${a.cvFitScore}`);
   console.log(`Confidence: ${a.confidence}`);
   console.log(`Role family: ${a.roleFamily}`);
-  console.log(`Summary: ${a.summary}`);
+  for (const row of require('./ui/public/profilePresentation').present(a)) console.log(row.requirement + ': ' + row.message + ' ' + row.sourceMessage);
 }
 
 async function collectJobsWithDetails(options) {
@@ -357,12 +357,12 @@ function printCalibrationReport(output) {
     const x = a.analysis;
     const fmt = (arr) => (arr && arr.length ? arr.map((s) => `\n    - ${s}`).join('') : ' (none)');
     console.log(`  roleFamily: ${x.roleFamily}`);
-    console.log(`  whyItFits:${fmt(x.whyItFits)}`);
-    console.log(`  transferableExperience:${fmt(x.transferableExperience)}`);
-    console.log(`  gaps:${fmt(x.gaps)}`);
+    console.log(`  [AUDITORÍA: TEXTO IA NO VERIFICADO] whyItFits:${fmt(x.whyItFits)}`);
+    console.log(`  [AUDITORÍA: TEXTO IA NO VERIFICADO] transferableExperience:${fmt(x.transferableExperience)}`);
+    console.log(`  [AUDITORÍA: TEXTO IA NO VERIFICADO] gaps:${fmt(x.gaps)}`);
     console.log(`  criticalRequirementsUnmet:${fmt(x.criticalRequirementsUnmet)}`);
     console.log(`  redFlags:${fmt(x.redFlags)}`);
-    console.log(`  reasoning: ${x.reasoning}`);
+    console.log(`  [AUDITORÍA: TEXTO IA NO VERIFICADO] reasoning: ${x.reasoning}`);
   });
 }
 

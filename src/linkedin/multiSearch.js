@@ -194,6 +194,7 @@ async function collectMultipleSearches(page, activeQueries, filters, options = {
         employmentType: filters.employmentType,
         datePosted: filters.datePosted,
       },
+      ...(perQuery.some(q=>q.filtersActive?.locationMode==='conversational_query') ? {locationMode:'conversational_query'} : {}),
       searches: { total, completed },
       results: { rawResults, uniqueResults, duplicatesRemoved },
     },

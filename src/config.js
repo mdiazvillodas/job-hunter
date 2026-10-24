@@ -94,7 +94,7 @@ const SEARCH_QUERIES = [
 // Sin `source` (compatibilidad) solo devuelve las queries sin restriccion, que
 // son exactamente las de LinkedIn de siempre.
 // Devuelve: [{ query, family, familyLabel, priority }]
-function getActiveSearchQueries(groups = SEARCH_QUERIES, source = null) {
+function getActiveSearchQueries(groups = module.exports.SEARCH_QUERIES || SEARCH_QUERIES, source = null) {
   const runsOn = (q) => (Array.isArray(q.sources) ? !!source && q.sources.includes(source) : true);
   return groups
     .filter((g) => g.enabled)
@@ -178,3 +178,14 @@ module.exports = {
   // InfoJobs usa su propio perfil: no comparte cookies ni sesion con LinkedIn.
   INFOJOBS_BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile-infojobs'),
 };
+
+// Instancias nuevas: preferencias explícitas, sin búsquedas heredadas de Mariano.
+const settingsFile = path.join(PROJECT_ROOT, 'candidate-settings.json');
+if (require('fs').existsSync(settingsFile)) {
+ const settings = JSON.parse(require('fs').readFileSync(settingsFile, 'utf8'));
+ module.exports.SEARCH_QUERIES = [{family:'candidate',label:'Búsqueda personal',enabled:true,priority:1,queries:settings.query ? [{query:settings.query,enabled:true}] : []}];
+ module.exports.LINKEDIN_SEARCH_QUERY = settings.query || '';
+ module.exports.LINKEDIN_FILTERS = {...module.exports.LINKEDIN_FILTERS,location:settings.location || ''};
+ module.exports.INFOJOBS_FILTERS = {...module.exports.INFOJOBS_FILTERS,location:settings.location || ''};
+ module.exports.SOURCES = ['linkedin'];
+}

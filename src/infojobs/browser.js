@@ -9,7 +9,7 @@ const { HEADLESS } = require('../config');
 async function launchInfoJobsBrowser(profileDir) {
   const contextOptions = {
     headless: HEADLESS,
-    channel: 'chrome', // Usa el navegador comercial real de tu Windows
+    channel: process.platform === 'win32' ? 'chrome' : 'chromium', // Chrome en Windows; Chromium nativo en Linux/ARM64
     viewport: null,
     
     // Parámetros regionales esenciales para evitar discrepancias de geolocalización en InfoJobs España
@@ -17,7 +17,7 @@ async function launchInfoJobsBrowser(profileDir) {
     timezoneId: 'Europe/Madrid',
     
     // CRÍTICO: Forzamos el User-Agent idéntico al de un usuario humano común en Windows
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    ...(process.platform === 'win32' ? {userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'} : {}),
     
     // Argumentos nativos para remover barras de control y firmas de automatización
     args: [
