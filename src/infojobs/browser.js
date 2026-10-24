@@ -9,7 +9,9 @@ const { HEADLESS } = require('../config');
 async function launchInfoJobsBrowser(profileDir) {
   const contextOptions = {
     headless: HEADLESS,
-    channel: process.platform === 'win32' ? 'chrome' : 'chromium', // Chrome en Windows; Chromium nativo en Linux/ARM64
+    ...(process.platform === 'win32' ? { channel: 'chrome' } : {
+      executablePath: process.env.INFOJOBS_CHROME_EXECUTABLE || '/usr/bin/google-chrome-stable',
+    }), // Chrome oficial también en Oracle; sin fallback silencioso a Chromium.
     viewport: null,
     
     // Parámetros regionales esenciales para evitar discrepancias de geolocalización en InfoJobs España
@@ -25,6 +27,7 @@ async function launchInfoJobsBrowser(profileDir) {
       '--start-maximized',                              // Simula el comportamiento de pantalla de un humano
       '--no-sandbox',
       '--disable-infobars',                             // Quita la barra de aviso de control remoto
+      ...(process.platform === 'linux' && process.env.DISPLAY ? ['--window-size=1440,900'] : []),
     ],
     // Ignora los valores por defecto de la API que delatan a Playwright automáticamente
     ignoreDefaultArgs: ['--enable-automation'],

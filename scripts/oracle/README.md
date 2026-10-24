@@ -28,6 +28,8 @@ La CA interna se permite **solo en las pruebas sintéticas**. Para el uso person
 
 ## Instancias y ejecución
 
+Actualización 25/10/2026: InfoJobs requiere Chrome oficial incluido en la imagen, sin fallback a Chromium. Configuración permite preparar ntfy y Telegram por persona; permanecen desactivados hasta activación explícita. Telegram reutiliza el runner de la UI, con conexión interna solo por loopback, sin puertos públicos nuevos. No se trasladan tokens del Hunter original. Véase `docs/chrome-notifications-2026-10-25.md` para validación y recuperación. Las indicaciones de “sin Telegram” que siguen describen el estado inicial del despliegue.
+
 Cada persona necesita su propia carpeta persistente, `.env`, `src/data/jobs`, perfil profesional, `browser-profile`, navegador de InfoJobs y puertos. No copiar sesiones de Windows ni compartir cookies entre candidatos.
 
 `Dockerfile` prepara Node/Playwright y las herramientas de acceso gráfico manual. `start.sh` inicia únicamente UI y visor gráfico restringido a loopback, protegido por contraseña; no inicia scheduler, Telegram ni el trigger como servicio separado. El botón **Buscar ofertas** reutiliza el runner existente dentro de la UI. Un GET nunca inicia un hunt; POST exige origen correcto y respeta el bloqueo compartido, incluida la autenticación manual de LinkedIn. La clave OpenAI y los límites se recargan desde el `.env` de esa instancia antes de cada proceso.

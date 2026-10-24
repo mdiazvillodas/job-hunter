@@ -49,7 +49,8 @@
     "test:linkedin-conversational": "node --test src/tests/conversational-search.test.js",
     "test:access": "node --test src/tests/access-config.test.js src/tests/manual-search.test.js",
     "test:session": "node --test src/tests/session-api.test.js",
-    "test:connection": "node --test src/tests/linkedin-connection.test.js"
+    "test:connection": "node --test src/tests/linkedin-connection.test.js",
+    "test:connections": "node --test src/tests/notification-settings.test.js src/tests/infojobs-chrome-launch.test.js src/tests/manual-search.test.js"
   },
   "keywords": [],
   "author": "",

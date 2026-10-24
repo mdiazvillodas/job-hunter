@@ -18,6 +18,7 @@ const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 
 const manualSearch = require('./manualSearch').createManualSearch();
+const notificationAccess = require('./notificationAccess').createNotificationAccess({getTrigger:manualSearch.getTelegramTrigger});
 const linkedinConnection = require('./linkedinConnection').createLinkedinConnection();
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -72,6 +73,7 @@ function calibrationsFor(jobs) {
 }
 
 async function handleApi(req, res, url) {
+  if(await notificationAccess.handle(req,res,url,readBody))return;
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = req.method;
   if (manualSearch(req, res, url)) return;
@@ -200,6 +202,7 @@ server.listen(PORT, process.env.UI_HOST || '127.0.0.1', () => {
   console.log(`Job Hunter UI corriendo en  http://localhost:${PORT}`);
   console.log(`Repository local: ${repository.dir}`);
   console.log('Ctrl+C para detener.');
+  notificationAccess.start().catch(()=>console.error('[telegram] No se pudo iniciar la conexión configurada.'));
 });
 
 module.exports = { server };

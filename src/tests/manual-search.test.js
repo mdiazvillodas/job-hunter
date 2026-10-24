@@ -17,6 +17,10 @@ test('búsqueda manual: GET no dispara, POST exige origen y reutiliza exclusión
   const { runId } = await started.json();
   assert.equal((await fetch(origin + '/api/hunt', { method: 'POST', headers: { Origin: origin } })).status, 409); assert.equal(spawned, 1);
   assert.equal((await fetch(origin + '/api/hunt/run/' + runId)).status, 200);
+  const telegram=await handle.getTelegramTrigger();t.after(()=>handle.close());
+  assert(telegram.baseUrl.startsWith('http://127.0.0.1:'));
+  assert.equal((await telegram.startHunt()).result,'already_running');assert.equal(spawned,1);
+  assert.equal((await telegram.getStatus()).huntRunning,true);
   assert.equal((await fetch(origin + '/api/hunt/run/../../.env')).status, 404);
 });
 

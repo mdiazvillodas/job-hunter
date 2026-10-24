@@ -148,7 +148,9 @@ function createHighMatchNotifier(options = {}) {
   const send = options.send || defaultSend;
   const markNotified = options.markNotified || (() => {});
   const log = typeof options.log === 'function' ? options.log : () => {};
-  const threshold = typeof options.threshold === 'number' ? options.threshold : HIGH_MATCH_THRESHOLD;
+  const configuredThreshold = Number((options.env || process.env).NTFY_THRESHOLD);
+  const threshold = typeof options.threshold === 'number' ? options.threshold :
+    Number.isInteger(configuredThreshold) && configuredThreshold >= 50 && configuredThreshold <= 100 ? configuredThreshold : HIGH_MATCH_THRESHOLD;
 
   let configErrorLogged = false;
 
