@@ -17,7 +17,7 @@ function createInstance(name, port, original=false, settings={}) {
   if(original&&!fs.existsSync(path.join(root,'private-baseline/marianoProfile.json')))throw Error('Referencia privada no disponible');
   fs.mkdirSync(dest,{recursive:true});
   fs.writeFileSync(path.join(dest,'.instance'),name);
-  for(const dir of ['src','docs']) fs.cpSync(path.join(root,dir),path.join(dest,dir),{recursive:true,filter:p=>!/(candidate\.md|mariano(?:MatchingProfile|CareerContext|Profile)\.json)$/.test(p)&&!p.includes(path.join('data','jobs')+path.sep)});
+  for(const dir of ['src','docs']) fs.cpSync(path.join(root,dir),path.join(dest,dir),{recursive:true,filter:p=>!/(?:^|[\\/])(?:resultados-reales-[^\\/]+|diagnostico-tecnico-cuatro-problemas\.md|validacion-final-dirigida-[^\\/]+|cierre-simple-[^\\/]+)$/.test(p)&&!/(candidate\.md|mariano(?:MatchingProfile|CareerContext|Profile)\.json)$/.test(p)&&!p.includes(path.join('data','jobs')+path.sep)});
   fs.mkdirSync(path.join(dest,'src/data/jobs'),{recursive:true});
   fs.copyFileSync(path.join(root,'package.json'),path.join(dest,'package.json'));
   if(original){

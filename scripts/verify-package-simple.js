@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path'),assert=require('assert/strict');
 const root=path.resolve(__dirname,'..'),pkg=path.join(root,'dist',process.argv[2] || 'Job-Hunter-0.2-simple-diagnostico');
 async function run(){
- for(const f of ['src/ai/marianoProfile.json','src/ai/marianoMatchingProfile.json','src/ai/marianoCareerContext.json','.env','private-baseline'])assert(!fs.existsSync(path.join(pkg,f)),f+' debe estar excluido');
+ for(const f of ['docs/validation-pilot/resultados-reales-2026-10-18.json','docs/validation-pilot/resultados-reales-2026-10-18.md','docs/validation-pilot/diagnostico-tecnico-cuatro-problemas.md','docs/validation-pilot/validacion-final-dirigida-2026-10-18.md','docs/validation-pilot/cierre-simple-2026-10-18.md','src/ai/marianoProfile.json','src/ai/marianoMatchingProfile.json','src/ai/marianoCareerContext.json','.env','private-baseline'])assert(!fs.existsSync(path.join(pkg,f)),f+' debe estar excluido');
  assert(fs.existsSync(path.join(pkg,'runtime/node.exe')));
  const dest=require(path.join(pkg,'scripts/install')).createInstance('package-smoke',45873,false,{query:'Arquitectura edilicia',location:'Barcelona'});
  assert.equal(fs.readdirSync(path.join(dest,'src/data/jobs')).length,0);

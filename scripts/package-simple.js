@@ -3,7 +3,7 @@ const root=path.resolve(__dirname,'..'), dest=path.join(root,'dist',process.argv
 if(fs.existsSync(dest))throw Error('El paquete existe: conservarlo y elegir otro destino');
 fs.mkdirSync(dest,{recursive:true});
 // Keep the archive's own hash in the external preflight, avoiding a recursive manifest.
-for(const d of ['src','docs','scripts']) fs.cpSync(path.join(root,d),path.join(dest,d),{recursive:true,filter:p=>!/(candidate\.md|mariano(?:MatchingProfile|CareerContext|Profile)\.json)$/.test(p)&&!p.includes(path.join('data','jobs')+path.sep)&&!p.endsWith(path.join('validation-pilot','preflight.json'))});
+for(const d of ['src','docs','scripts']) fs.cpSync(path.join(root,d),path.join(dest,d),{recursive:true,filter:p=>!/(?:^|[\\/])(?:resultados-reales-[^\\/]+|diagnostico-tecnico-cuatro-problemas\.md|validacion-final-dirigida-[^\\/]+|cierre-simple-[^\\/]+)$/.test(p)&&!/(candidate\.md|mariano(?:MatchingProfile|CareerContext|Profile)\.json)$/.test(p)&&!p.includes(path.join('data','jobs')+path.sep)&&!p.endsWith(path.join('validation-pilot','preflight.json'))});
 for(const f of ['package.json','package-lock.json','LEEME.md'])fs.copyFileSync(path.join(root,f),path.join(dest,f));
 fs.mkdirSync(path.join(dest,'runtime'));fs.copyFileSync(process.execPath,path.join(dest,'runtime/node.exe'));
 fs.cpSync(path.join(root,'node_modules'),path.join(dest,'node_modules'),{recursive:true});

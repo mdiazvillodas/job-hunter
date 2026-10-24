@@ -32,6 +32,8 @@ Cada persona necesita su propia carpeta persistente, `.env`, `src/data/jobs`, pe
 
 `Dockerfile` prepara Node/Playwright y las herramientas de acceso gráfico manual. `start.sh` inicia únicamente UI y visor gráfico restringido a loopback, protegido por contraseña; no inicia scheduler, Telegram ni el trigger como servicio separado. El botón **Buscar ofertas** reutiliza el runner existente dentro de la UI. Un GET nunca inicia un hunt; POST exige origen correcto y respeta el bloqueo compartido, incluida la autenticación manual de LinkedIn. La clave OpenAI y los límites se recargan desde el `.env` de esa instancia antes de cada proceso.
 
+El contenedor de aplicación usa `pwuser`, no root. Al preparar cada volumen hay que asignarle el UID/GID correspondiente a ese usuario en la imagen y permisos privados; no cambiar propietarios de carpetas de otros servicios. Los secretos de Authelia y el acceso gráfico no se guardan en la imagen.
+
 Mariano: modo manual, sin programación, ntfy ni Telegram hasta validar calidad. Copiar íntegros los tres JSON profesionales, restricciones, configuración pertinente e historial actual del original, con manifiesto de hashes y respaldo. Las preferencias de visualización guardadas solo en localStorage del navegador no viajan con la copia de archivos; el feedback y las preferencias profesionales derivados de los registros sí se conservan al copiar el historial. No cargar tokens de Telegram/ntfy durante esta etapa.
 
 Mariana: carpeta separada y perfil editable progresivo, sin heredar clave, preferencias, historial ni sesiones de Mariano. La migración de datos personales y la autenticación manual real no se ejecutan como parte de las pruebas de acceso.

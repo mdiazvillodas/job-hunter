@@ -36,8 +36,12 @@ async function run(){
  const {chromium}=require(path.join(pkg,'node_modules/playwright'));browser=await chromium.launch({headless:true});
  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
+ let manualStarts=0;
+ await page.route('**/api/hunt',r=>{if(r.request().method()==='POST'){manualStarts++;return r.fulfill({contentType:'application/json',body:JSON.stringify({runId:'run_synthetic',status:'started'})});}return r.fulfill({contentType:'application/json',body:JSON.stringify({busy:false})});});
+ await page.route('**/api/hunt/run/run_synthetic',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({status:'success',summary:{sources:{linkedin:{label:'LinkedIn',status:'failed'},infojobs:{label:'InfoJobs',status:'completed',discovery:{uniqueResults:2},analysis:{analyzed:1}}}}})}));
  await page.goto('http://127.0.0.1:'+port);await page.locator('.job-item').first().waitFor();
  await page.locator('#filtersBtn').click();await page.selectOption('#scoreFilter','0');await page.locator('#closeFiltersBtn').click();
+ assert.equal(manualStarts,0);await page.getByRole('button',{name:'Buscar ofertas',exact:true}).click();await page.locator('#manualHuntStatus').filter({hasText:'LinkedIn: falló'}).waitFor();assert.equal(manualStarts,1);
  for(const c of cases){
  await page.locator('.job-item[data-id="replay-'+c.id+'"]').click();await page.locator('#detailContent h1').filter({hasText:c.job.title}).waitFor();await page.locator('#detailContent .profile-basis').first().waitFor();
  const detail=await page.locator('#detailContent').innerText();
