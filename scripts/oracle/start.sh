@@ -15,6 +15,6 @@ until [ -S /tmp/.X11-unix/X1 ]; do
   sleep 0.1
 done
 x11vnc -display :1 -localhost -rfbport "$VNC_PORT" -rfbauth /data/.vnc-passwd -forever -shared -quiet >/data/vnc.log 2>&1 &
-websockify --web=/usr/share/novnc "127.0.0.1:$NOVNC_PORT" "127.0.0.1:$VNC_PORT" >/data/web-viewer.log 2>&1 &
+websockify --web=/usr/share/novnc "${NOVNC_LISTEN_ADDRESS:-127.0.0.1}:$NOVNC_PORT" "127.0.0.1:$VNC_PORT" >/data/web-viewer.log 2>&1 &
 # Only the UI: no scheduler, Telegram listener or trigger service is started.
 exec node /data/src/ui/server.js

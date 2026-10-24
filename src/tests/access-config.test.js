@@ -26,3 +26,9 @@ test('acceso: secretos nuevos y escritura que nunca reemplaza una instalación',
   const target = path.join(dir, 'private'); writeConfiguration(target, options, users);
   assert.throws(() => writeConfiguration(target, options, users));
 });
+
+test('acceso Docker: backends privados y escritorio según la misma identidad',()=>{
+ const r=configuration({...options,proxyBind:'0.0.0.0',authBind:'0.0.0.0',authUpstream:'job-hunter-auth',marianoUpstream:'job-hunter-mariano',marianaUpstream:'job-hunter-mariana',desktopPort:6080},users);
+ assert.equal(r.config.server.address,'tcp://0.0.0.0:49091');assert(r.caddy.includes('reverse_proxy job-hunter-mariano:6080'));assert(r.caddy.includes('reverse_proxy job-hunter-mariana:6080'));assert(r.caddy.includes('forward_auth job-hunter-auth:49091'));
+ assert.throws(()=>configuration({...options,authUpstream:'x\nrespond 200'},users));assert.throws(()=>configuration({...options,desktopPort:22},users));
+});

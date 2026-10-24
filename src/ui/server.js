@@ -189,7 +189,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, process.env.UI_HOST || '127.0.0.1', () => {
   console.log(`Job Hunter UI corriendo en  http://localhost:${PORT}`);
   console.log(`Repository local: ${repository.dir}`);
   console.log('Ctrl+C para detener.');

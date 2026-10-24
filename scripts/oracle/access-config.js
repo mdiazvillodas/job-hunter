@@ -3,10 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-function configuration({ host, authHost, port = 443, authPort = 49091, marianoPort = 46773, marianaPort = 46783, internalTLS = false }, users) {
+function configuration({ host, authHost, port = 443, authPort = 49091, marianoPort = 46773, marianaPort = 46783, internalTLS = false, proxyBind = '127.0.0.1', authBind = '127.0.0.1', authUpstream = '127.0.0.1', marianoUpstream = '127.0.0.1', marianaUpstream = '127.0.0.1', desktopPort = null }, users) {
   const hostname = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
   for (const value of [host, authHost]) if (!hostname.test(value || '') || !value.includes('.') || value.includes('..')) throw Error('Hostname inválido');
   if (host === authHost || !authHost.endsWith('.' + host)) throw Error('Usar auth.<hostname de Job Hunter>');
+  for (const value of [proxyBind, authBind]) if (!['127.0.0.1', '0.0.0.0'].includes(value)) throw Error('Bind inválido');
+  for (const value of [authUpstream, marianoUpstream, marianaUpstream]) if (!hostname.test(value)) throw Error('Upstream inválido');
+  if (desktopPort !== null && (!Number.isInteger(desktopPort) || desktopPort < 1024 || desktopPort > 65535)) throw Error('Puerto gráfico inválido');
   for (const value of [port, authPort, marianoPort, marianaPort]) if (!Number.isInteger(value) || value < 1024 || value > 65535) {
     if (value !== 443) throw Error('Puerto inválido');
   }
@@ -16,7 +19,7 @@ function configuration({ host, authHost, port = 443, authPort = 49091, marianoPo
   const origin = 'https://' + host + suffix;
   const authOrigin = 'https://' + authHost + suffix;
   const config = {
-    server: { address: 'tcp://127.0.0.1:' + authPort },
+    server: { address: 'tcp://' + authBind + ':' + authPort },
     log: { level: 'info' },
     authentication_backend: { password_reset: { disable: true }, password_change: { disable: true }, file: { path: '/config/users.yml' } },
     access_control: { default_policy: 'deny', rules: [{ domain: host, subject: ['user:mariano', 'user:mariana'], policy: 'one_factor' }] },
@@ -32,12 +35,12 @@ function configuration({ host, authHost, port = 443, authPort = 49091, marianoPo
   skip_install_trust
 }
 ${authOrigin} {
-  bind 127.0.0.1
+  bind ${proxyBind}
   ${tls}
-  reverse_proxy 127.0.0.1:${authPort}
+  reverse_proxy ${authUpstream}:${authPort}
 }
 ${origin} {
-  bind 127.0.0.1
+  bind ${proxyBind}
   ${tls}
   route {
     request_header -Remote-User
@@ -47,7 +50,7 @@ ${origin} {
     request_header -X-Forwarded-For
     request_header -X-Forwarded-Host
     request_header -X-Forwarded-Proto
-    forward_auth 127.0.0.1:${authPort} {
+    forward_auth ${authUpstream}:${authPort} {
       uri /api/authz/forward-auth
       copy_headers Remote-User
     }
@@ -58,15 +61,19 @@ ${origin} {
     respond @foreign "Origen no permitido" 403
     @mariano header Remote-User mariano
     handle @mariano {
-      reverse_proxy 127.0.0.1:${marianoPort} {
+      ${desktopPort ? `handle_path /desktop/* {\n        reverse_proxy ${marianoUpstream}:${desktopPort}\n      }\n      handle {` : ''}
+      reverse_proxy ${marianoUpstream}:${marianoPort} {
         header_up Origin http://${host}${suffix}
       }
+      ${desktopPort ? '}' : ''}
     }
     @mariana header Remote-User mariana
     handle @mariana {
-      reverse_proxy 127.0.0.1:${marianaPort} {
+      ${desktopPort ? `handle_path /desktop/* {\n        reverse_proxy ${marianaUpstream}:${desktopPort}\n      }\n      handle {` : ''}
+      reverse_proxy ${marianaUpstream}:${marianaPort} {
         header_up Origin http://${host}${suffix}
       }
+      ${desktopPort ? '}' : ''}
     }
     respond "Acceso no autorizado" 403
   }

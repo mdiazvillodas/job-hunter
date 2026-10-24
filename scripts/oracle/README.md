@@ -46,3 +46,5 @@ Mariana: carpeta separada y perfil editable progresivo, sin heredar clave, prefe
 - No prueba todavía LinkedIn real, calidad del modelo, importación de perfiles ni un hunt real. No enviar búsquedas durante instalación. Preservar el Hunter Windows como respaldo y evitar programación simultánea.
 
 Fuentes: [Authelia/Caddy](https://www.authelia.com/integration/proxies/caddy/), [regulación](https://www.authelia.com/configuration/security/regulation/), [sesiones](https://www.authelia.com/configuration/session/introduction/).
+
+El despliegue privado final usa una red Docker bridge dedicada. UI y visor gráfico escuchan dentro del contenedor (`UI_HOST=0.0.0.0`, `NOVNC_LISTEN_ADDRESS=0.0.0.0`), sin puertos publicados. Caddy recibe los nombres DNS internos como upstreams y es el único servicio publicado, mediante `127.0.0.1:8443:8443`. La ruta `/desktop/` también pasa por autenticación y selecciona exclusivamente el navegador de la misma persona. Los valores predeterminados de la app local y de las pruebas siguen en loopback.
