@@ -54,7 +54,13 @@ async function modalFor(page) {
 }
 async function option(modal,role,name) {
   const found=modal.getByRole(role,{name,exact:true}).filter({visible:true});
-  if(await found.count()!==1)throw Error(`LinkedIn conversacional: filtro no disponible o ambiguo: ${name}`);
+  // The panel can be visible before its asynchronous controls have mounted.
+  // Wait for the requested control, never substitute another date or pick a duplicate.
+  try { await found.waitFor({state:'visible',timeout:10000}); }
+  catch(cause) {
+    throw Error(`LinkedIn conversacional: filtro no disponible o ambiguo: ${name} (coincidencias visibles: ${await found.count()})`,{cause});
+  }
+  if(await found.count()!==1)throw Error(`LinkedIn conversacional: filtro no disponible o ambiguo: ${name} (coincidencias visibles: ${await found.count()})`);
   return found;
 }
 async function checked(control) {

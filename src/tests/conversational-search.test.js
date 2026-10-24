@@ -60,6 +60,32 @@ test('más de una jornada activa se detecta como ensanchamiento del filtro',asyn
 test('filtro solicitado ausente o ambiguo falla explícitamente',async t=>{
  const page=await fixture(t);await page.getByRole('radio',{name:'Past week',exact:true,includeHidden:true}).evaluate(el=>el.parentElement.remove());await assert.rejects(semantic.applyFilters(page,filters),/no disponible o ambiguo/);
 });
+
+test('panel visible antes de cargar Past week espera el control también al cambiar consulta',async t=>{
+ const page=await fixture(t);
+ await semantic.initialize(page,'Head of Operations',filters,{queryTimeout:1000});
+ await page.evaluate(()=>{
+  const trigger=document.querySelector('button');
+  trigger.onclick=()=>{
+   const panel=document.querySelector('[role=dialog]');
+   const label=Array.from(panel.querySelectorAll('label')).find(el=>el.textContent==='Past week');
+   const anchor=document.createComment('date placeholder');label.replaceWith(anchor);panel.hidden=false;
+   setTimeout(()=>anchor.replaceWith(label),300);
+  };
+ });
+ assert(await semantic.changeQuery(page,'Head of Product Operations',{queryTimeout:1000}));
+ assert((await semantic.verifyFilters(page,filters)).datePostedActive);
+});
+
+test('dos controles visibles Past week no se resuelven tomando el primero',async t=>{
+ const page=await fixture(t);
+ await page.evaluate(()=>{
+  const panel=document.querySelector('[role=dialog]');
+  const original=Array.from(panel.querySelectorAll('label')).find(el=>el.textContent==='Past week');
+  panel.append(original.cloneNode(true));
+ });
+ await assert.rejects(semantic.applyFilters(page,filters),/Past week \(coincidencias visibles: 2\)/);
+});
 test('flujo clásico conserva ubicación estricta por geoId y filtros por URL',async t=>{
  const page=await fixture(t,{mode:'classic'});const r=await initializeSearchWithFilters(page,'Head of Operations',filters);assert.equal(r.filtersActive.locationActive,true);assert.equal(r.filtersActive.datePostedActive,true);assert.equal(r.filtersActive.employmentTypeActive,true);assert(!r.filtersActive.locationMode);assert(await changeSearchQuery(page,'Operations Lead',{queryTimeout:1000}));
 });
