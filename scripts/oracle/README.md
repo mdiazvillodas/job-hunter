@@ -8,7 +8,7 @@ La capa común usa Authelia 4.39.28 y Caddy 2.11.7, sin autenticación casera en
 
 Se eliminan cabeceras de identidad aportadas por el cliente antes de consultar Authelia. Solo se aceptan operaciones de escritura cuyo Origin sea el portal HTTPS; únicamente después de validarlo se adapta Origin al backend HTTP local, preservando su protección existente.
 
-Cinco fallos en quince minutos producen un bloqueo de quince minutos por usuario e IP. Es temporal, no permanente ni exponencial. Una IP compartida (incluido un túnel SSH) puede bloquear temporalmente a ambos usuarios: es un límite conocido. La sesión caduca a las ocho horas y tras quince minutos de inactividad; no se ofrece recordar sesión. El restablecimiento por correo y el cambio de contraseña están desactivados hasta configurar un canal seguro de administración. Las contraseñas se guardan como hashes Argon2id.
+Cinco fallos en quince minutos producen un bloqueo de quince minutos por usuario e IP. Es temporal, no permanente ni exponencial. Una IP compartida (incluido un túnel SSH) puede bloquear temporalmente a ambos usuarios: es un límite conocido. Sin Recordarme, la sesión caduca a las ocho horas y tras quince minutos de inactividad. Recordarme permite conservarla hasta siete días en el navegador elegido; cerrar sesión la invalida. Un reinicio de Authelia puede pedir un nuevo acceso porque las sesiones permanecen en memoria. El restablecimiento por correo y el cambio de contraseña están desactivados hasta configurar un canal seguro de administración. Las contraseñas se guardan como hashes Argon2id.
 
 `access-config.js` genera configuración privada, base de usuarios con hashes y secretos aleatorios en un directorio **nuevo**. No sobrescribe una instalación existente ni resetea sesiones silenciosamente:
 
@@ -48,3 +48,16 @@ Mariana: carpeta separada y perfil editable progresivo, sin heredar clave, prefe
 Fuentes: [Authelia/Caddy](https://www.authelia.com/integration/proxies/caddy/), [regulación](https://www.authelia.com/configuration/security/regulation/), [sesiones](https://www.authelia.com/configuration/session/introduction/).
 
 El despliegue privado final usa una red Docker bridge dedicada. UI y visor gráfico escuchan dentro del contenedor (`UI_HOST=0.0.0.0`, `NOVNC_LISTEN_ADDRESS=0.0.0.0`), sin puertos publicados. Caddy recibe los nombres DNS internos como upstreams y es el único servicio publicado, mediante `127.0.0.1:8443:8443`. La ruta `/desktop/` también pasa por autenticación y selecciona exclusivamente el navegador de la misma persona. Los valores predeterminados de la app local y de las pruebas siguen en loopback.
+
+
+## Interfaz y operación manual
+
+Ofertas, Perfil y Configuración comparten identidad de instancia y acceso a Cerrar sesión. Una respuesta de sesión vencida devuelve al acceso seguro y conserva el destino, sin repetir POST ni lanzar otra búsqueda. El listado diferencia carga, fallo y ausencia real de ofertas.
+
+Mi cuenta → Conectar LinkedIn abre exclusivamente el navegador de la instancia mediante POST con Origin validado. El usuario abre el visor autenticado e introduce personalmente sus credenciales y verificaciones. La contraseña propia del visor aparece solo en la respuesta de apertura; no se incluye en URLs ni en GET de estado. Cerrar Chromium, además del visor, libera el browser-profile para buscar. No se automatiza el login ni se verifica su éxito por la existencia de cookies. En Windows local, sin escritorio remoto Linux, el botón no aparece.
+
+La búsqueda tiene un indicador animado indeterminado, sin porcentajes de avance inventados. Al finalizar se actualiza el listado por GET. El script de arranque recupera únicamente archivos temporales obsoletos del display :1 después de comprobar que no hay un Xvfb activo; no elimina perfiles de navegador.
+
+Pruebas sin servicios pagos: `npm run test:simple`. Incluye recuperación de sesión sin repetir POST, conexión con procesos simulados, aislamiento, diagnóstico de perfil, procedencia de citas y persistencia de límites. El comportamiento real de LinkedIn y la calidad del modelo requieren sus propias pruebas autorizadas.
+
+Para actualizar un servidor existente, respaldar primero configuración y datos, avanzar la copia de código a un commit revisado y comparar los archivos desplegados con ese commit. No regenerar `access-config.js` sobre configuración existente: cambiar duraciones en el archivo privado conserva secretos y usuarios. Las instancias montan código y datos por separado de la copia Git; un pull por sí solo no actualiza esos archivos ni la imagen de arranque. No reiniciar durante búsquedas o conexiones manuales activas.

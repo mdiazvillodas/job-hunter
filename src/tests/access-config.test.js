@@ -9,7 +9,7 @@ test('acceso: usuarios separados, bloqueo temporal y sesiones con caducidad', ()
   assert.deepEqual(config.access_control.rules[0].subject, ['user:mariano', 'user:mariana']);
   assert.equal(config.regulation.max_retries, 5); assert.equal(config.regulation.ban_time, '15m');
   assert.equal(config.session.cookies[0].authelia_url, 'https://auth.hunter.example.com:18443');
-  assert.equal(config.session.remember_me, -1);
+  assert.equal(config.session.remember_me, '7d');
   assert(caddy.includes('request_header -Remote-User')); assert(caddy.indexOf('forward_auth') < caddy.indexOf('@mariano'));
   assert(caddy.includes('not header Origin https://hunter.example.com:18443'));
   assert(caddy.includes('bind 127.0.0.1')); assert(caddy.includes('127.0.0.1:46773')); assert(caddy.includes('127.0.0.1:46783'));

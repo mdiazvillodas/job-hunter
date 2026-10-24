@@ -18,6 +18,7 @@ const { computeCalibrationSignal } = require('../domain/calibration');
 const { FEEDBACK_REASONS } = require('../domain/feedbackConfig');
 
 const manualSearch = require('./manualSearch').createManualSearch();
+const linkedinConnection = require('./linkedinConnection').createLinkedinConnection();
 const PORT = Number(process.env.UI_PORT) || 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UI_DIR = __dirname;
@@ -25,7 +26,7 @@ const UI_DIR = __dirname;
 const repository = createLocalRepository(); // dir por defecto: src/data/jobs
 const svc = createJobService(repository);
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
@@ -74,6 +75,12 @@ async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
   const method = req.method;
   if (manualSearch(req, res, url)) return;
+  if (linkedinConnection(req, res, url)) return;
+  if (method === 'GET' && url.pathname === '/api/instance') {
+    const legacy = fs.existsSync(path.join(__dirname, '../ai/marianoProfile.json'));
+    const user = req.headers['remote-user'];
+    return sendJson(res,200,{name:user==='mariana'?'Mariana':user==='mariano'||legacy?'Mariano':'Mi espacio',personalLinkedin:legacy?'https://www.linkedin.com/in/mdiazvillodas/':null});
+  }
   if (parts[1] === 'settings') {
     const settings = require('./settings');
     if (method === 'GET') return sendJson(res,200,settings.read());

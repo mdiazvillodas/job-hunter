@@ -19,3 +19,16 @@ test('búsqueda manual: GET no dispara, POST exige origen y reutiliza exclusión
   assert.equal((await fetch(origin + '/api/hunt/run/' + runId)).status, 200);
   assert.equal((await fetch(origin + '/api/hunt/run/../../.env')).status, 404);
 });
+
+
+test('interfaz: al terminar actualiza la lista sin repetir POST; una conexión no se anuncia como búsqueda',async()=>{
+ const vm=require('node:vm');
+ for(const running of [true,false]){
+  const bar={hidden:true,attributes:{},setAttribute(k,v){this.attributes[k]=v;}},status={textContent:''},button={disabled:true,addEventListener(){}};const timers=[],events=[],calls=[];
+  const responses=[{busy:true,huntRunning:running,currentRunId:running?'run_fixture':null},{busy:false,huntRunning:false},{summary:{sources:{infojobs:{label:'InfoJobs',status:'completed',discovery:{uniqueResults:2},analysis:{analyzed:0}}}}}];
+  const context={document:{getElementById:id=>id==='huntActivity'?bar:id==='manualHuntBtn'?button:status},window:{SessionApi:{request:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>responses.shift()};}},dispatchEvent:e=>events.push(e.type)},setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){},Event:class{constructor(type){this.type=type;}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../ui/public/manualSearch.js'),'utf8'),context);
+  await new Promise(setImmediate);assert(status.textContent.includes(running?'Búsqueda en curso':'Instancia ocupada'));assert.equal(bar.attributes['data-state'],running?'busy':'occupied');assert.equal(bar.hidden,false);
+  await timers.shift()();assert.equal(button.disabled,false);assert.deepEqual(events,['hunt-finished']);assert.equal(bar.attributes['data-state'],'complete');assert(calls.every(c=>!c.options));assert(!status.textContent.includes('Actualizá la lista'));
+ }
+});

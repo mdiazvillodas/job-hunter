@@ -130,13 +130,15 @@ test('perfil superficial: discovery, análisis simulado y persistencia no se blo
   assert.equal(repo.get(job.jobId).aiAnalysis.decision, 'MAYBE');
 });
 test('la UI muestra las preguntas como texto y admite el perfil original sin preguntas', () => {
-  const elements = { text: {}, status: {}, save: {}, file: {} };
-  const context = vm.createContext({ document: { getElementById: id => elements[id] }, fetch: () => new Promise(() => {}) });
+  function node(){return {children:[],textContent:'',append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;}};}
+  const elements = { text: node(), status: node(), save: node(), file: node(), diagnosis: node() };
+  const content=n=>n.textContent+n.children.map(content).join(' ');
+  const context = vm.createContext({ window: { SessionApi: { request: () => new Promise(() => {}) } }, document: { getElementById: id => elements[id], createElement: () => node() }, fetch: () => new Promise(() => {}) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../ui/public/profile.js'), 'utf8'), context);
   context.d = diagnose(fixtures.profiles.superficial);
   vm.runInContext('show(d)', context);
-  for (const item of context.d.questions) assert(elements.status.textContent.includes(item.question));
+  for (const item of context.d.questions) assert(content(elements.diagnosis).includes(item.question));
   context.d = { status: 'Perfil original preservado', missing: [] };
   vm.runInContext('show(d)', context);
-  assert(elements.status.textContent.includes('Perfil original preservado'));
+  assert(content(elements.diagnosis).includes('Perfil original preservado'));
 });

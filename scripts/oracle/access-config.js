@@ -23,7 +23,7 @@ function configuration({ host, authHost, port = 443, authPort = 49091, marianoPo
     log: { level: 'info' },
     authentication_backend: { password_reset: { disable: true }, password_change: { disable: true }, file: { path: '/config/users.yml' } },
     access_control: { default_policy: 'deny', rules: [{ domain: host, subject: ['user:mariano', 'user:mariana'], policy: 'one_factor' }] },
-    session: { secret: crypto.randomBytes(48).toString('hex'), name: 'jobhunter_session', same_site: 'lax', inactivity: '15m', expiration: '8h', remember_me: -1, cookies: [{ domain: host, authelia_url: authOrigin, default_redirection_url: origin }] },
+    session: { secret: crypto.randomBytes(48).toString('hex'), name: 'jobhunter_session', same_site: 'lax', inactivity: '15m', expiration: '8h', remember_me: '7d', cookies: [{ domain: host, authelia_url: authOrigin, default_redirection_url: origin }] },
     regulation: { modes: ['user', 'ip'], max_retries: 5, find_time: '15m', ban_time: '15m' },
     storage: { encryption_key: crypto.randomBytes(48).toString('hex'), local: { path: '/config/storage.sqlite3' } },
     notifier: { filesystem: { filename: '/config/notifications.txt' } }

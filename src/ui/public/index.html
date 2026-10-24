@@ -3,42 +3,28 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Job Hunter</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2"><link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png?v=2"><title>Job Hunter</title>
     <!-- Tema ANTES de la hoja de estilos: evita el flash de tema incorrecto. -->
-    <script src="/uiPrefs.js"></script>
+    <script src="/sessionApi.js?v=2"></script><script src="/uiPrefs.js"></script>
     <script>window.UiPrefs && window.UiPrefs.applyStoredTheme();</script>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=7" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
+        <img class="brand-logo" src="/favicon.svg?v=2" width="28" height="28" alt="" aria-hidden="true">
         <span class="brand-name">Job Hunter</span>
       </div>
 
-      <button id="manualHuntBtn" class="btn small" type="button">Buscar ofertas</button><span id="manualHuntStatus" role="status" aria-live="polite"></span>
-      <a href="/profile.html">Perfil</a> · <a href="/settings.html">Configuración</a><div class="topbar-spacer"></div>
-
-      <label class="field-inline" for="sortSelect">
-        <span class="field-inline-label">Orden</span>
-        <select id="sortSelect">
-          <option value="overall">Recomendadas / General</option>
-          <option value="newest">Más nuevas</option>
-          <option value="oldest">Más viejas</option>
-          <option value="title">Título</option>
-          <option value="company">Empresa</option>
-        </select>
-      </label>
-
-      <div class="topbar-divider" aria-hidden="true"></div>
-
-      <div class="mariano-linkedin">
-        <a class="ml-link" href="https://www.linkedin.com/in/mdiazvillodas/" target="_blank" rel="noopener">LinkedIn de Mariano ↗</a>
-        <button id="copyLinkedinBtn" class="btn ghost small" type="button">Copiar enlace</button>
-      </div>
-
-      <button id="diagBtn" class="btn ghost small" type="button">Diagnóstico</button>
-
+      <button id="manualHuntBtn" class="btn primary hunt-button" type="button" disabled>Buscar ofertas</button>
+      <nav class="topbar-nav" aria-label="Mi espacio"><a href="/profile.html">Perfil</a><a href="/settings.html">Configuración</a></nav>
+      <div class="topbar-spacer"></div>
+      <details class="account-menu"><summary>Mi cuenta <span aria-hidden="true">⌄</span></summary><div class="account-menu-panel">
+       <button class="btn ghost small" type="button" data-linkedin-connect hidden>Conectar LinkedIn</button>
+       <div class="mariano-linkedin" hidden><a class="ml-link" href="https://www.linkedin.com/in/mdiazvillodas/" target="_blank" rel="noopener">Mi perfil en LinkedIn ↗</a><button id="copyLinkedinBtn" class="btn ghost small" type="button">Copiar enlace del perfil</button></div>
+       <button id="diagBtn" class="btn ghost small" type="button">Diagnóstico</button>
+       <a class="btn ghost small" data-session-logout hidden>Cerrar sesión</a>
+      </div></details>
       <button id="themeToggle" class="btn icon ghost" type="button" title="Cambiar tema" aria-label="Cambiar tema">
         <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7" />
@@ -51,6 +37,7 @@
       </button>
     </header>
 
+    <section id="huntActivity" class="hunt-activity" hidden aria-label="Estado de búsqueda"><span class="activity-spinner" aria-hidden="true"></span><span id="manualHuntStatus" role="status" aria-live="polite"></span><span class="activity-track" aria-hidden="true"></span></section>
     <main class="layout" id="mainLayout">
       <!-- SIDEBAR -->
       <aside class="sidebar" id="sidebar">
@@ -71,12 +58,24 @@
           </button>
         </div>
 
+        <div class="sidebar-sort">      <label class="field-inline" for="sortSelect">
+        <span class="field-inline-label">Orden</span>
+        <select id="sortSelect">
+          <option value="overall">Recomendadas / General</option>
+          <option value="newest">Más nuevas</option>
+          <option value="oldest">Más viejas</option>
+          <option value="title">Título</option>
+          <option value="company">Empresa</option>
+        </select>
+      </label>
+
+</div>
         <div class="status-tabs-wrap">
           <nav class="status-tabs" id="statusFilter" aria-label="Vistas por estado"></nav>
         </div>
 
         <div class="list-meta">
-          <span class="list-count"><b id="listCount">0</b> ofertas</span>
+          <span id="listLoading" role="status">Cargando ofertas…</span><span id="loadedCount" class="list-count" hidden><b id="listCount">0</b> ofertas</span>
           <div class="active-chips" id="activeChips"></div>
         </div>
 
@@ -187,7 +186,7 @@
 
     <script src="/jobListLogic.js"></script>
     <script src="/profilePresentation.js"></script>
-    <script src="/app.js"></script>
-  <script src="/manualSearch.js"></script>
-  </body>
+    <script src="/app.js?v=6"></script>
+  <script src="/manualSearch.js?v=7"></script>
+  <script src="/instanceAccess.js?v=1"></script></body>
 </html>

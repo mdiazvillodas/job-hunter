@@ -15,7 +15,7 @@ async function run(){
   assert.equal((await(await fetch(origin+'/api/hunt')).json()).huntRunning,false);
   assert.equal((await fetch(origin+'/api/hunt',{method:'POST',headers:{Origin:'https://foreign.example'}})).status,403);
   assert.equal((await fetch(origin+'/profile.html')).status,200);
-  assert((await(await fetch(origin+'/settings.html')).text()).includes('Conectar LinkedIn.cmd'));
+  assert((await(await fetch(origin+'/settings.html')).text()).includes('0 desactiva los análisis pagos'));
   assert((await(await fetch(origin+'/api/profile-guide')).text()).includes('ChatGPT'));
   let r=await fetch(origin+'/api/profile',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({text:'## Profesión y especialidad\nArquitecta edilicia\n\n## Objetivos\nObra residencial'})});
   assert.equal(r.status,200);assert((await r.json()).diagnosis.missing.includes('Experiencia y responsabilidades'));
@@ -29,7 +29,8 @@ async function run(){
   assert(diagnosis.questions.some(q=>q.section==='Experiencia y responsabilidades'));
   assert(diagnosis.questions.some(q=>q.section==='Capacidades y herramientas'));
   r=await fetch(origin+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({apiKey:'synthetic-local-key',limit:0,minutes:0,query:'Arquitecta',location:'Barcelona'})});assert.equal(r.status,200);
-  assert(!JSON.stringify(await(await fetch(origin+'/api/settings')).json()).includes('synthetic-local-key'));
+  const state=await(await fetch(origin+'/api/settings')).json();assert.equal(state.limit,0);assert.equal(state.hasApiKey,true);assert(!JSON.stringify(state).includes('synthetic-local-key'));
+  r=await fetch(origin+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({apiKey:'',limit:5,minutes:0,query:'Arquitecta',location:'Barcelona'})});assert.equal(r.status,200);assert.equal((await(await fetch(origin+'/api/settings')).json()).limit,5);
   assert(fs.readFileSync(path.join(cwd,'.env'),'utf8').includes('synthetic-local-key'));
   assert.equal(JSON.parse(fs.readFileSync(path.join(cwd,'schedule.json'))).minutes,0);
   console.log('PASS: UI, guía, importación/edición, diagnóstico, persistencia y protección de origen HTTP');

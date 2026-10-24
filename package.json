@@ -40,14 +40,16 @@
     "test:retention": "node --test src/tests/retention.test.js",
     "test:infojobs": "node --test src/tests/infojobs.test.js",
     "test:infojobs-browser": "node --test src/tests/infojobs-browser.test.js",
-    "test:simple": "npm run test:access && npm run test:profile-provenance && npm run test:analyzer-evidence && npm run test:linkedin-login && npm run test:profile-diagnosis && node scripts/verify-simple.js && node scripts/verify-scheduler.js && node scripts/smoke-http.js",
+    "test:simple": "npm run test:connection && npm run test:session && npm run test:access && npm run test:profile-provenance && npm run test:analyzer-evidence && npm run test:linkedin-login && npm run test:profile-diagnosis && node scripts/verify-simple.js && node scripts/verify-scheduler.js && node scripts/smoke-http.js",
     "package:simple": "node scripts/package-simple.js",
     "test:profile-diagnosis": "node --test src/tests/profileDiagnosis.test.js",
     "test:analyzer-evidence": "node --test src/tests/analyzer-evidence.test.js",
     "test:linkedin-login": "node --test src/tests/linkedin-login.test.js",
     "test:profile-provenance": "node --test src/tests/profileProvenance.test.js",
     "test:linkedin-conversational": "node --test src/tests/conversational-search.test.js",
-    "test:access": "node --test src/tests/access-config.test.js src/tests/manual-search.test.js"
+    "test:access": "node --test src/tests/access-config.test.js src/tests/manual-search.test.js",
+    "test:session": "node --test src/tests/session-api.test.js",
+    "test:connection": "node --test src/tests/linkedin-connection.test.js"
   },
   "keywords": [],
   "author": "",

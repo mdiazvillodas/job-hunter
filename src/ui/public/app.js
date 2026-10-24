@@ -112,7 +112,7 @@ async function copyMarianoLink(btn) {
 }
 
 async function api(path, method, body) {
-  const res = await fetch(path, {
+  const res = await window.SessionApi.request(path, {
     method: method || 'GET',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -136,11 +136,13 @@ function toast(msg, isError) {
 async function loadAll() {
   try {
     const [{ jobs }, { reasons }] = await Promise.all([api('/api/jobs'), api('/api/reasons')]);
+    el('listLoading').hidden = true; el('loadedCount').hidden = false;
     state.jobs = jobs || [];
     state.reasons = reasons || [];
     renderFilters();
     renderList();
   } catch (e) {
+    el('listLoading').hidden = false; el('listLoading').textContent = 'No se pudieron cargar las ofertas. ' + e.message;
     toast('No se pudieron cargar las ofertas: ' + e.message, true);
   }
 }
@@ -529,3 +531,4 @@ function init() {
   loadAll();
 }
 document.addEventListener('DOMContentLoaded', init);
+window.addEventListener('hunt-finished', loadAll);

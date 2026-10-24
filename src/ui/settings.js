@@ -1,7 +1,14 @@
 'use strict';
 const fs=require('fs'),path=require('path');
 const root=path.resolve(__dirname,'../..');
-function read(){let settings={};const p=path.join(root,'candidate-settings.json');if(fs.existsSync(p))settings=JSON.parse(fs.readFileSync(p,'utf8'));const schedule=path.join(root,'schedule.json');return {settings,minutes:fs.existsSync(schedule)?JSON.parse(fs.readFileSync(schedule,'utf8')).minutes:0,hasApiKey:!!process.env.OPENAI_API_KEY};}
+function read(){
+ let settings={};const p=path.join(root,'candidate-settings.json');if(fs.existsSync(p))settings=JSON.parse(fs.readFileSync(p,'utf8'));
+ const schedule=path.join(root,'schedule.json');const envPath=path.join(root,'.env');
+ const saved=fs.existsSync(envPath)?require('node:util').parseEnv(fs.readFileSync(envPath,'utf8')):{};
+ const configured=saved.ANALYZE_LIMIT??process.env.ANALYZE_LIMIT??require('../config').ANALYZE_LIMIT;
+ const limit=Number(configured);
+ return {settings,limit:Number.isInteger(limit)&&limit>=0?limit:50,minutes:fs.existsSync(schedule)?JSON.parse(fs.readFileSync(schedule,'utf8')).minutes:0,hasApiKey:!!(saved.OPENAI_API_KEY||process.env.OPENAI_API_KEY),preservedProfile:fs.existsSync(path.join(root,'src/ai/marianoProfile.json')),manualOnly:process.platform!=='win32'};
+}
 function save(d){
  if(typeof d.apiKey!=='string'||/[\r\n]/.test(d.apiKey))throw Error('Clave inválida');
  if(!Number.isInteger(d.limit)||d.limit<0||d.limit>100)throw Error('Límite entre 0 y 100');
