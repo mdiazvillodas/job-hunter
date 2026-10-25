@@ -8,7 +8,8 @@ const { HEADLESS } = require('../config');
  */
 async function launchInfoJobsBrowser(profileDir) {
   const contextOptions = {
-    headless: HEADLESS,
+    headless: ['true', 'false'].includes(process.env.INFOJOBS_HEADLESS)
+      ? process.env.INFOJOBS_HEADLESS === 'true' : HEADLESS,
     ...(process.platform === 'win32' ? { channel: 'chrome' } : {
       executablePath: process.env.INFOJOBS_CHROME_EXECUTABLE || '/usr/bin/google-chrome-stable',
     }), // Chrome oficial también en Oracle; sin fallback silencioso a Chromium.

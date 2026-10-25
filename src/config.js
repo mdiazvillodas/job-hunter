@@ -176,7 +176,9 @@ module.exports = {
   HEADLESS: readBooleanEnv('HEADLESS', true),
   BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile'),
   // InfoJobs usa su propio perfil: no comparte cookies ni sesion con LinkedIn.
-  INFOJOBS_BROWSER_PROFILE_DIR: path.join(PROJECT_ROOT, 'browser-profile-infojobs'),
+  INFOJOBS_BROWSER_PROFILE_DIR: process.env.INFOJOBS_BROWSER_PROFILE_DIR
+    ? path.resolve(PROJECT_ROOT, process.env.INFOJOBS_BROWSER_PROFILE_DIR)
+    : path.join(PROJECT_ROOT, 'browser-profile-infojobs'),
 };
 
 // Instancias nuevas: preferencias explícitas, sin búsquedas heredadas de Mariano.
@@ -187,5 +189,5 @@ if (require('fs').existsSync(settingsFile)) {
  module.exports.LINKEDIN_SEARCH_QUERY = settings.query || '';
  module.exports.LINKEDIN_FILTERS = {...module.exports.LINKEDIN_FILTERS,location:settings.location || ''};
  module.exports.INFOJOBS_FILTERS = {...module.exports.INFOJOBS_FILTERS,location:settings.location || ''};
- module.exports.SOURCES = ['linkedin'];
+ module.exports.SOURCES = settings.sources ? parseSources(settings.sources.join(',')) : ['linkedin'];
 }

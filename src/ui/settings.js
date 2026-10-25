@@ -22,7 +22,8 @@ function save(d){
  fs.writeFileSync(path.join(root,'schedule.json'),JSON.stringify({minutes:d.minutes}));
  if(fs.existsSync(path.join(root,'candidate-settings.json'))){
   if(typeof d.query!=='string'||!d.query.trim()||typeof d.location!=='string')throw Error('Completá puesto y ubicación');
-  fs.writeFileSync(path.join(root,'candidate-settings.json'),JSON.stringify({query:d.query.trim(),location:d.location.trim()},null,2));
+  const current=JSON.parse(fs.readFileSync(path.join(root,'candidate-settings.json'),'utf8'));
+  fs.writeFileSync(path.join(root,'candidate-settings.json'),JSON.stringify({...current,query:d.query.trim(),location:d.location.trim()},null,2));
  }
  return {message:'Configuración guardada. Las próximas búsquedas usarán estos valores. La clave no se muestra.'};
 }
