@@ -99,6 +99,24 @@ function fakeInfoJobs(url) {
   return '<html><body>404</body></html>';
 }
 
+test('entrada: portada antes de resultados y una sola vez por pagina', async (t) => {
+  const { page, visited } = await withPage(t, fakeInfoJobs);
+  await collectQuery(page, 'Operations Manager', FILTERS, { ...FAST, maxPages: 1, maxResults: 1 });
+  await collectQuery(page, 'Director', FILTERS, { ...FAST, maxPages: 1, maxResults: 1 });
+  const urls = visited.filter(url => new URL(url).hostname === 'www.infojobs.net');
+  assert.equal(urls[0], 'https://www.infojobs.net/');
+  assert.equal(urls.filter(url => url === 'https://www.infojobs.net/').length, 1);
+  assert.equal(urls.filter(url => new URL(url).pathname.startsWith('/jobsearch/')).length, 2);
+});
+
+test('entrada: CAPTCHA en portada impide navegar a resultados', async (t) => {
+  const { page, visited } = await withPage(t, url => url.pathname === '/'
+    ? '<html><body><div class="geetest_holder">¿Eres humano o un robot?</div></body></html>'
+    : fakeInfoJobs(url));
+  await assert.rejects(collectQuery(page, 'Operations Manager', FILTERS, { ...FAST, maxPages: 1 }), /CAPTCHA|anti-bot/i);
+  assert.equal(visited.some(url => new URL(url).pathname.startsWith('/jobsearch/')), false);
+});
+
 test('busqueda: tarjetas, paginacion, dedup, jornada parcial fuera, filtros verificados', async (t) => {
   const { page, visited } = await withPage(t, fakeInfoJobs);
   const r = await collectQuery(page, 'Director de Operaciones', FILTERS, { ...FAST });

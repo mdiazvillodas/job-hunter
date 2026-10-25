@@ -13,7 +13,7 @@
 // Ante un CAPTCHA se detiene (SecurityChallengeError). No lo resuelve ni lo evade.
 
 const { SOURCES } = require('../domain/sources');
-const { buildSearchUrl, canonicalOfferUrl, toJobId, verifyFiltersInUrl } = require('./urls');
+const { BASE_URL, buildSearchUrl, canonicalOfferUrl, toJobId, verifyFiltersInUrl } = require('./urls');
 const { detectInfoJobsChallenge } = require('./challenge');
 const { extractSearchCardsDom } = require('./extract');
 
@@ -23,6 +23,20 @@ const COOKIE_BUTTONS = [
   'button:has-text("Aceptar y cerrar")',
   'button:has-text("Aceptar todo")',
 ];
+
+// Una entrada normal por portada por cada pagina/sesion de recoleccion.
+// Solo se marca lista despues de comprobar que no hay un challenge.
+const initializedPages = new WeakSet();
+
+async function enterInfoJobs(page) {
+  if (initializedPages.has(page)) return;
+  await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  await detectInfoJobsChallenge(page, { stage: 'homepage' });
+  await dismissCookieBanner(page);
+  await detectInfoJobsChallenge(page, { stage: 'homepage' });
+  initializedPages.add(page);
+}
 
 function log(debug, line) {
   if (debug) console.error(line);
@@ -66,6 +80,7 @@ async function openSearchPage(page, query, filters, pageNumber, options) {
 
 // Recorre la paginacion de UNA query. Devuelve jobs unicos de la query + metadata.
 async function collectQuery(page, query, filters, options = {}) {
+  await enterInfoJobs(page);
   const maxResults = options.maxResults > 0 ? options.maxResults : null;
   const maxPages = options.maxPages > 0 ? options.maxPages : null;
   const unique = new Map();
