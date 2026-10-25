@@ -106,7 +106,7 @@ async function applyModalFilters(page, filters, options) {
   }
 
   const showResults = firstVisible(modal,
-    'button[aria-label="Apply current filters to show results"], button:has-text("Show results"), button:has-text("Mostrar resultados")');
+    'button[aria-label="Apply current filters to show results"], button:has-text("Show results"), button:has-text("Mostrar"):has-text("resultados")');
   await showResults.click();
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});

@@ -27,9 +27,9 @@ function html(mode,query,custom=false){
  function apply(){if(mode==='classic'){const u=new URL(location.href);if(document.getElementById('advanced-filter-timePostedRange-r604800').checked)u.searchParams.set('f_TPR','r604800');if(document.getElementById('advanced-filter-jobType-F').checked)u.searchParams.set('f_JT','F');history.replaceState({},'',u);}document.querySelector('[role=dialog]').hidden=true;}
  </script>`;
 }
-async function fixture(t,{mode='semantic',custom=false}={}){
+async function fixture(t,{mode='semantic',custom=false,spanish=false}={}){
  const browser=await chromium.launch({headless:true});t.after(()=>browser.close());const page=await browser.newPage();page.setDefaultTimeout(1000);
- await page.route('**/*',r=>{const u=new URL(r.request().url());if(u.hostname!=='www.linkedin.com')return r.abort();return r.fulfill({contentType:'text/html',body:html(mode,u.searchParams.get('keywords')||'Head of Operations',custom)});});
+ await page.route('**/*',r=>{const u=new URL(r.request().url());if(u.hostname!=='www.linkedin.com')return r.abort();let body=html(mode,u.searchParams.get('keywords')||'Head of Operations',custom);if(spanish)body=body.replaceAll('City, state, or zip code','Ciudad, provincia/estado o código postal').replaceAll('Search by title, skill, or company','Busca por cargo, aptitud o empresa').replaceAll('All filters','Todos los filtros').replaceAll('Show results','Mostrar 2\u00a0resultados');return r.fulfill({contentType:'text/html; charset=utf-8',body});});
  await page.goto('https://www.linkedin.com/jobs/search/?keywords=Head%20of%20Operations');return page;
 }
 const filters={location:'Barcelona',datePosted:'Past week',employmentType:'Full-time'};
@@ -106,6 +106,10 @@ test('diálogo visible de error de vídeo no se confunde con filtros ni impide s
 });
 test('flujo clásico conserva ubicación estricta por geoId y filtros por URL',async t=>{
  const page=await fixture(t,{mode:'classic'});const r=await initializeSearchWithFilters(page,'Head of Operations',filters);assert.equal(r.filtersActive.locationActive,true);assert.equal(r.filtersActive.datePostedActive,true);assert.equal(r.filtersActive.employmentTypeActive,true);assert(!r.filtersActive.locationMode);assert(await changeSearchQuery(page,'Operations Lead',{queryTimeout:1000}));
+});
+
+test('clásico español: aplica ubicación, fecha y jornada con botón Mostrar N resultados',async t=>{
+ const page=await fixture(t,{mode:'classic',spanish:true});const r=await initializeSearchWithFilters(page,'Arquitecto retail',filters);assert.equal(r.filtersActive.locationActive,true);assert.equal(r.filtersActive.datePostedActive,true);assert.equal(r.filtersActive.employmentTypeActive,true);assert(!r.filtersActive.locationMode);assert(await changeSearchQuery(page,'Arquitecto tiendas',{queryTimeout:1000}));
 });
 test('ubicaciones con caracteres especiales se componen sin regex ni pérdida de texto',()=>{assert.equal(semantic.composeQuery('Operations','A Coruña (España)'),'Operations in A Coruña (España)');});
 test('warning geográfico llega del pipeline al mensaje ntfy, sin notificación real',async()=>{
