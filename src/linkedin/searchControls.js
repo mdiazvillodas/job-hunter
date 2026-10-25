@@ -4,7 +4,11 @@ function firstVisible(root, selector) {
 }
 
 async function getSearchInput(page, label, { timeout = 15000 } = {}) {
-  const selector = `input[aria-label="${label}"]`;
+  const aliases = {
+    'City, state, or zip code': ['City, state, or zip code', 'Ciudad, provincia/estado o código postal'],
+    'Search by title, skill, or company': ['Search by title, skill, or company', 'Busca por cargo, aptitud o empresa'],
+  };
+  const selector = (aliases[label] || [label]).map(value => `input[aria-label="${value}"]`).join(', ');
   const input = firstVisible(page, selector);
   try {
     await page.locator(selector).first().waitFor({ state: 'attached', timeout });

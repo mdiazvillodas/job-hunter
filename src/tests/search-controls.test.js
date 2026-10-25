@@ -43,6 +43,15 @@ for (const headless of [false, true]) {
       assert.deepEqual(page.viewportSize(), { width: 1100, height: 700 });
     });
 
+    await t.test('clasico español: ubicación y puesto sin usar la interfaz conversacional', async () => {
+      await page.setContent('<input hidden aria-label="Ciudad, provincia/estado o código postal"><input aria-label="Ciudad, provincia/estado o código postal"><input aria-label="Busca por cargo, aptitud o empresa">');
+      await (await getSearchInput(page, labels[0])).fill('Barcelona');
+      await (await getSearchInput(page, labels[1])).fill('Arquitecto retail');
+      assert.equal(await page.locator('input').nth(0).inputValue(), '');
+      assert.equal(await page.locator('input').nth(1).inputValue(), 'Barcelona');
+      assert.equal(await page.locator('input').nth(2).inputValue(), 'Arquitecto retail');
+    });
+
     await t.test('control ausente: falla explicitamente sin cambiar filtros o viewport', async () => {
       await page.setContent('<input value="original">');
       const size = page.viewportSize();

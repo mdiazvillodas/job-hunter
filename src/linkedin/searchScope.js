@@ -87,7 +87,7 @@ async function applyModalFilters(page, filters, options) {
   const jobTypeId = JOB_TYPE_IDS[String(filters.employmentType || '').toLowerCase()];
 
   const allFiltersButton = firstVisible(page,
-    'button[aria-label="Show all filters. Clicking this button displays all available filter options."], button:has-text("All filters")'
+    'button[aria-label="Show all filters. Clicking this button displays all available filter options."], button:has-text("All filters"), button:has-text("Todos los filtros")'
   );
   await allFiltersButton.click();
 
@@ -106,7 +106,7 @@ async function applyModalFilters(page, filters, options) {
   }
 
   const showResults = firstVisible(modal,
-    'button[aria-label="Apply current filters to show results"], button:has-text("Show results")');
+    'button[aria-label="Apply current filters to show results"], button:has-text("Show results"), button:has-text("Mostrar resultados")');
   await showResults.click();
 
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
