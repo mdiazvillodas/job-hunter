@@ -15,3 +15,16 @@ test('InfoJobs headless independiente no cambia el modo global del navegador Lin
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../infojobs/browser.js'),'utf8'),s);await s.module.exports.launchInfoJobsBrowser('/own-profile');assert.equal(options.headless,expected);
  }
 });
+
+test('guardar preferencias conserva fuentes y otros datos propios de la instancia',()=>{
+ const os=require('node:os');const root=fs.mkdtempSync(path.join(os.tmpdir(),'jh-instance-settings-'));
+ try{
+  fs.writeFileSync(path.join(root,'candidate-settings.json'),JSON.stringify({query:'Retail',location:'Barcelona',sources:['linkedin','infojobs']}));
+  fs.writeFileSync(path.join(root,'.env'),'INFOJOBS_HEADLESS="true"\n');
+  const file=path.resolve(__dirname,'../ui/settings.js'),s={module:{exports:{}},__dirname:path.join(root,'src/ui'),process:{env:{}},require:createRequire(file)};
+  vm.runInNewContext(fs.readFileSync(file,'utf8'),s);
+  s.module.exports.save({query:'Arquitecto retail',location:'Barcelona',apiKey:'',limit:0,minutes:0});
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'candidate-settings.json'),'utf8')).sources,['linkedin','infojobs']);
+  assert(fs.readFileSync(path.join(root,'.env'),'utf8').includes('INFOJOBS_HEADLESS="true"'));
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
