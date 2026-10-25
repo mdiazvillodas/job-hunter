@@ -254,7 +254,10 @@ async function ensureSearchBoxExpandedForLocation(page, options) {
   }
 
   const keyword = await getKeywordInput(page);
-  await keyword.click();
+  // Aqui el click SI es la interaccion que despliega la barra, asi que se
+  // conserva; pero se acota y se repliega al foco por si el icono superpuesto
+  // tambien lo intercepta (ver la nota en applyLocationFilter).
+  await keyword.click({ timeout: 5000 }).catch(() => keyword.focus());
   const visible = await location
     .waitFor({ state: 'visible', timeout: 10000 })
     .then(() => true)
@@ -308,7 +311,13 @@ async function applyLocationFilter(page, location, options) {
   await ensureSearchBoxExpandedForLocation(page, options);
 
   const input = await getLocationInput(page);
-  await input.click();
+  // Se enfoca SIN puntero. LinkedIn superpone al campo un <label for> con el
+  // icono del buscador semantico (jobs-search-box__input-icon) que intercepta
+  // los eventos de puntero: click() pasa el hit-test al label y agota su
+  // timeout de 30s aunque el input este visible, habilitado y estable.
+  // Para escribir no hace falta un click real: fill()/type() actuan sobre el
+  // elemento enfocado.
+  await input.focus();
   await input.fill('');
   await input.type(location, { delay: 60 });
   await page.waitForTimeout(1500);
@@ -563,7 +572,10 @@ function withKeyword(href, query) {
 // sugerencia en lugar de la nuestra.
 async function setKeywordText(page, keywordInput, query) {
   const matches = async () => normalizeKeyword(await keywordInput.inputValue()) === normalizeKeyword(query);
-  await keywordInput.click();
+  // Foco sin puntero, por el icono superpuesto que intercepta el click
+  // (ver la nota en applyLocationFilter). Coherente con lo de arriba: lo que
+  // escribe es fill(), que no depende del click.
+  await keywordInput.focus();
   await page.keyboard.press('Escape').catch(() => {});
   await keywordInput.fill('');
   await keywordInput.fill(query);

@@ -54,6 +54,10 @@ function makePage(behaviour = {}) {
 
   const keywordLocator = {
     click: async () => { state.typeaheadOpen = true; },
+    // El codigo enfoca en vez de clickear (el icono superpuesto de LinkedIn
+    // intercepta el puntero). Enfocar tambien despliega el typeahead, asi que
+    // se mantiene la misma consecuencia y el Escape sigue cubierto.
+    focus: async () => { state.typeaheadOpen = true; },
     fill: async (v) => { state.inputValue = v; state.fills.push(v); if (v) state.typeaheadOpen = true; },
     inputValue: async () => state.inputValue,
     press: async (key) => {

@@ -95,6 +95,9 @@ function linkedinPage(config = {}) {
       scrollIntoViewIfNeeded: async () => {},
       check: async () => { state.actions.push(['check', kind]); },
       click: async () => { state.actions.push(['click', kind]); if (extra.onClick) extra.onClick(); },
+      // Enfocar sin puntero: es como el codigo activa los inputs de la barra,
+      // porque el icono superpuesto de LinkedIn intercepta el click.
+      focus: async () => { state.actions.push(['focus', kind]); if (extra.onFocus) extra.onFocus(); },
       fill: async (value) => { state.actions.push(['fill', value]); if (extra.onFill) extra.onFill(value); },
       type: async (value, opts) => { state.actions.push(['type', value, opts]); if (extra.onType) extra.onType(value); },
       press: async (key) => { state.actions.push(['press', key]); if (extra.onPress) extra.onPress(key); },

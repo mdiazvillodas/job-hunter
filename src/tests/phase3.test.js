@@ -588,6 +588,9 @@ async function run() {
           count: async () => 0,
           innerText: async () => '',
           click: async () => { actions.push(['click']); },
+          // El codigo enfoca sin puntero: el icono superpuesto de LinkedIn
+          // intercepta el click sobre los inputs de la barra.
+          focus: async () => { actions.push(['focus']); },
           fill: async (value) => { actions.push(['fill', value]); },
           type: async (value, options) => { actions.push(['type', value, options]); },
           press: async (key) => { actions.push(['press', key]); },
@@ -613,7 +616,9 @@ async function run() {
   ok('31e. keyword prefiere id estructural y acepta fallback español', preferredKeyword.selector === KEYWORD_INPUT_SELECTORS[0] && spanishKeyword.selector === KEYWORD_INPUT_SELECTORS[3]);
   const filterPage = selectorPage(LOCATION_INPUT_SELECTORS[3]);
   await applyLocationFilter(filterPage, 'España', {});
-  ok('31f. filtro conserva limpieza, valor y Enter cuando no hay sugerencia', JSON.stringify(filterPage.actions) === JSON.stringify([['click'], ['fill', ''], ['type', 'España', { delay: 60 }], ['press', 'Enter']]));
+  // El campo se activa con focus() y no con click(): el <label> del icono que
+  // LinkedIn superpone intercepta el puntero y agotaba el timeout de click.
+  ok('31f. filtro conserva limpieza, valor y Enter cuando no hay sugerencia', JSON.stringify(filterPage.actions) === JSON.stringify([['focus'], ['fill', ''], ['type', 'España', { delay: 60 }], ['press', 'Enter']]));
   let missingSelectorError;
   try { await getLocationInput(selectorPage('not-present')); } catch (error) { missingSelectorError = error; }
   ok('31g. input ausente produce error claro y estable', missingSelectorError && missingSelectorError.name === 'LinkedInSelectorError' && missingSelectorError.message === 'LinkedIn search location input was not found.');
